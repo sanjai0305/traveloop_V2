@@ -1,91 +1,41 @@
-// models/Budget.js
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
-const budgetSchema = new mongoose.Schema(
-  {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    tripId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Trip",
-      required: true,
-    },
-    budgetName: {
-      type: String,
-      required: true,
-    },
-    totalBudget: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
-    plannedExpense: {
-      type: Number,
-      default: 0,
-    },
-    actualExpense: {
-      type: Number,
-      default: 0,
-    },
-    remainingBudget: {
-      type: Number,
-      default: 0,
-    },
-    utilizationPercentage: {
-      type: Number,
-      default: 0,
-    },
-    currency: {
-      type: String,
-      default: "INR",
-    },
-    category: {
-      type: String,
-      default: "", // Solo Trip, Family Trip, Friends Trip, Business Trip
-    },
-    categories: {
-      accommodation: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      },
-      food: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      },
-      transport: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      },
-      activities: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      },
-      shopping: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      },
-      others: {
-        planned: { type: Number, default: 0 },
-        actual: { type: Number, default: 0 }
-      }
-    },
-    isArchived: {
-      type: Boolean,
-      default: false,
-    },
-    isActive: {
-      type: Boolean,
-      default: false,
+const Budget = {
+  findOne: async (query = {}) => {
+    let q = supabase.from("budgets").select("*");
+    if (query.tripId) {
+      q = q.eq("tripId", query.tripId);
     }
+    if (query.isArchived !== undefined) {
+      q = q.eq("isArchived", query.isArchived);
+    }
+    if (query.isActive !== undefined) {
+      q = q.eq("isActive", query.isActive);
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        await supabase.from("budgets").update({ totalBudget: this.totalBudget, isArchived: this.isArchived, isActive: this.isActive }).eq("id", this.id);
+      }
+    };
   },
-  {
-    timestamps: true,
+  create: async (payload) => {
+    const mapped = {
+      tripId: payload.tripId,
+      totalBudget: payload.totalBudget || 0,
+      isArchived: payload.isArchived || false,
+      isActive: payload.isActive !== undefined ? payload.isActive : true,
+    };
+    const { data, error } = await supabase.from("budgets").insert([mapped]).select().single();
+    if (error) throw error;
+    return {
+      ...data,
+      _id: data.id,
+    };
   }
-);
-
-const Budget = mongoose.model("Budget", budgetSchema);
+};
 
 export default Budget;

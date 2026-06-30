@@ -1,102 +1,57 @@
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
-const userSchema = new mongoose.Schema(
-  {
-    firstName: {
-      type: String,
-      required: true,
-    },
-
-    lastName: {
-      type: String,
-      required: true,
-    },
-
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-
-    phone: {
-      type: String,
-    },
-
-    city: {
-      type: String,
-    },
-
-    country: {
-      type: String,
-    },
-
-    additionalInfo: {
-      type: String,
-      default: "",
-    },
-
-    password: {
-      type: String,
-    },
-
-    googleId: {
-      type: String,
-      default: null,
-    },
-
-    avatar: {
-      type: String,
-      default: "",
-    },
-
-    authProvider: {
-      type: String,
-      enum: ["email", "google"],
-      default: "email",
-    },
-
-    savedDestinations: [
-      {
-        type: String,
+const User = {
+  findOne: async (query) => {
+    let q = supabase.from("users").select("*");
+    if (query.email) {
+      q = q.eq("email", query.email);
+    }
+    if (query.googleId) {
+      q = q.eq("googleId", query.googleId);
+    }
+    if (query.firebaseUid) {
+      q = q.eq("firebaseUid", query.firebaseUid);
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        // Strip functions
+        delete fields.save;
+        await supabase.from("users").update(fields).eq("id", id);
       }
-    ],
-
-    language: {
-      type: String,
-      default: "en",
-    },
-
-    privacyVisibility: {
-      type: String,
-      default: "private",
-    },
-
-    notificationPreferences: {
-      reminders: { type: Boolean, default: true },
-      budget: { type: Boolean, default: true },
-      weather: { type: Boolean, default: true },
-      statusUpdates: { type: Boolean, default: true },
-    },
-    xp: { type: Number, default: 0 },
-    level: { type: Number, default: 1 },
-    streak: { type: Number, default: 0 },
-    lastActiveDate: { type: String, default: null },
-    upiId: { type: String, default: "" },
-    achievements: { type: [String], default: [] },
-    acceptedTerms: { type: Boolean, default: false },
-    termsAcceptedAt: { type: Date, default: null },
-    termsVersion: { type: String, default: "" },
-    lastLogin: { type: Date, default: null },
-    firebaseUid: { type: String, default: "" },
+    };
   },
-  {
-    timestamps: true,
+  findById: async (id) => {
+    if (!id) return null;
+    const { data } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("users").update(fields).eq("id", id);
+      }
+    };
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from("users").insert([payload]).select().single();
+    if (error) throw error;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("users").update(fields).eq("id", id);
+      }
+    };
   }
-);
-
-const User = mongoose.model(
-  "User",
-  userSchema
-);
+};
 
 export default User;

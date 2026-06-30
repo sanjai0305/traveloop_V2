@@ -1,96 +1,105 @@
-/**
- * routes/tripMembersRoutes.js
- *
- * Returns the list of confirmed passengers for a given AgentTrip.
- * Used by the "Members" tab in BookedPackageDetail.
- *
- * GET /api/trip-members/:agentTripId
- */
-
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
-import Booking from "../models/Booking.js";
-import AgentTrip from "../models/AgentTrip.js";
-import Driver from "../models/Driver.js";
+import { supabase } from "../config/supabase.js";
 
 const router = express.Router();
 
-// ─── GET /api/trip-members/:agentTripId ──────────────────────────────────────
-// Returns all confirmed travelers + driver info for a trip.
-// Access: any authenticated user with a confirmed booking for this trip.
-//         (Agents also allowed — check is permissive here for agent portal use)
+const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+
+// GET /api/trip-members/:agentTripId
 router.get("/:agentTripId", protect, async (req, res) => {
   try {
     const { agentTripId } = req.params;
+    if (!isUUID(agentTripId)) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
 
     // Verify trip exists
-    const trip = await AgentTrip.findById(agentTripId)
-      .select("title destinations driver driverName driverPhone driverPhoto totalSeats bookedSeats availableSeats startDate endDate")
-      .populate("driver", "name email phone photo status")
-      .lean();
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", agentTripId)
+      .maybeSingle();
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
     // Fetch all confirmed bookings for this trip (paid status)
-    const bookings = await Booking.find({
-      agentTrip: agentTripId,
-      paymentStatus: { $in: ["paid", "Paid"] },
-      status: { $nin: ["deleted", "cancelled", "Cancelled"] },
-    })
-      .select("travelerName gender age contactNumber seats travellers userId boardingStatus createdAt assignedSeat bookingId")
-      .populate("userId", "firstName lastName email avatar profileImage")
-      .sort({ createdAt: 1 })
-      .lean();
+    const { data: bookingsList } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("tripId", agentTripId)
+      .in("paymentStatus", ["paid", "Paid"]);
+
+    const bookings = bookingsList || [];
+
+    // Fetch traveler user details
+    const userIds = bookings.map(b => b.userId).filter(Boolean);
+    let usersMap = new Map();
+    if (userIds.length > 0) {
+      const { data: usersList } = await supabase
+        .from("users")
+        .select("id, firstName, lastName, email, avatar")
+        .in("id", userIds);
+      
+      if (usersList) {
+        usersList.forEach(u => usersMap.set(u.id, u));
+      }
+    }
 
     // Build normalized member list
     const members = bookings.map((b, index) => {
-      const user = b.userId || {};
-      const name = b.travelerName
-        || (user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : null)
+      const user = usersMap.get(b.userId) || {};
+      const name = (user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : null)
         || `Traveler ${index + 1}`;
 
-      const avatar = user.avatar || user.profileImage || null;
+      const avatar = user.avatar || null;
 
       return {
-        _id: b._id,
+        _id: b.id,
         bookingId: b.bookingId,
-        userId: user._id || null,
+        userId: user.id || null,
         name,
-        gender: b.gender || "unknown",
-        age: b.age || null,
-        phone: b.contactNumber || null,
+        gender: "unknown",
+        age: null,
+        phone: null,
         seats: b.seats || 1,
         assignedSeat: b.assignedSeat || null,
         avatar,
         boardingStatus: b.boardingStatus || "Pending",
         joinedAt: b.createdAt,
-        // Travellers within booking (if group booking)
-        travellers: b.travellers || [],
+        travellers: [],
         status: "confirmed",
       };
     });
 
     // Driver info
     let driverInfo = null;
-    if (trip.driver) {
-      const d = trip.driver;
-      driverInfo = {
-        _id: d._id,
-        name: d.name || trip.driverName || "Driver",
-        phone: d.phone || trip.driverPhone || "",
-        photo: d.photo || trip.driverPhoto || null,
-        email: d.email || "",
-        status: d.status || "active",
-        role: "driver",
-      };
+    if (trip.driverId) {
+      const { data: d } = await supabase
+        .from("drivers")
+        .select("*")
+        .eq("id", trip.driverId)
+        .maybeSingle();
+
+      if (d) {
+        driverInfo = {
+          _id: d.id,
+          name: d.name || trip.driverName || "Driver",
+          phone: d.phone || trip.driverPhone || "",
+          photo: null,
+          email: d.email || "",
+          status: d.status || "active",
+          role: "driver",
+        };
+      }
     } else if (trip.driverName) {
       driverInfo = {
         _id: null,
         name: trip.driverName,
         phone: trip.driverPhone || "",
-        photo: trip.driverPhoto || null,
+        photo: null,
         email: "",
         status: "active",
         role: "driver",
@@ -102,9 +111,6 @@ router.get("/:agentTripId", protect, async (req, res) => {
       members,
       driver: driverInfo,
       totalMembers: members.length,
-      totalSeats: trip.totalSeats,
-      bookedSeats: trip.bookedSeats,
-      availableSeats: trip.availableSeats,
       tripTitle: trip.title,
     });
   } catch (error) {

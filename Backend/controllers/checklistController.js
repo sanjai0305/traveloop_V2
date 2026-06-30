@@ -1,5 +1,4 @@
-import Checklist from "../models/Checklist.js";
-import Trip from "../models/Trip.js";
+import { supabase } from "../config/supabase.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { hasTripPermission } from "../utils/permissionHelper.js";
 
@@ -58,167 +57,173 @@ const PACKING_RULES = {
   },
   // By travel style
   styles: {
-    beach: [
-      { item: "Swimwear (2x)",        category: "Clothes" },
+    adventure: [
+      { item: "Hiking boots / Trail runners", category: "Clothes" },
+      { item: "First aid kit",        category: "Health" },
+      { item: "Hydration pack / Water bottle", category: "Accessories" },
+      { item: "Quick-dry towel",      category: "Toiletries" },
+      { item: "Headlamp / Flashlight", category: "Electronics" },
+      { item: "Multi-tool",           category: "Accessories" },
+    ],
+    leisure: [
+      { item: "Swimwear",             category: "Clothes" },
       { item: "Beach towel",          category: "Accessories" },
-      { item: "Flip flops",           category: "Clothes" },
-      { item: "Sunscreen SPF 50+",    category: "Toiletries" },
-      { item: "Waterproof phone case",category: "Electronics" },
-      { item: "Snorkelling gear",     category: "Accessories" },
+      { item: "Casual shirts/dresses",category: "Clothes" },
+      { item: "E-reader / Book",      category: "Electronics" },
     ],
     business: [
-      { item: "Formal shirts (3x)",   category: "Clothes" },
-      { item: "Formal trousers (2x)", category: "Clothes" },
-      { item: "Blazer",               category: "Clothes" },
-      { item: "Formal shoes",         category: "Clothes" },
-      { item: "Laptop + charger",     category: "Electronics" },
+      { item: "Formal suit / blazer", category: "Clothes" },
+      { item: "Laptop & charger",     category: "Electronics" },
+      { item: "Notebook & pen",       category: "Documents" },
       { item: "Business cards",       category: "Documents" },
-      { item: "Presentation clicker", category: "Electronics" },
     ],
-    adventure: [
-      { item: "Hiking boots",         category: "Clothes" },
-      { item: "Moisture-wicking tees",category: "Clothes" },
-      { item: "Trekking pants",       category: "Clothes" },
-      { item: "First aid kit",        category: "Health" },
-      { item: "Water bottle (2L)",    category: "Accessories" },
-      { item: "Headlamp + batteries", category: "Electronics" },
+    backpacking: [
+      { item: "Backpack rain cover",  category: "Accessories" },
+      { item: "Travel lock",          category: "Accessories" },
+      { item: "Microfibre towel",     category: "Toiletries" },
+      { item: "Universal adapter",    category: "Electronics" },
+      { item: "Sleeping bag liner",   category: "Accessories" },
+    ],
+    family: [
+      { item: "Wet wipes",            category: "Toiletries" },
+      { item: "Hand sanitiser",       category: "Health" },
+      { item: "Kids entertainment / toys", category: "Accessories" },
+      { item: "Snacks",               category: "Health" },
+    ],
+  },
+  // Destination-specific triggers (regex pattern match)
+  destinations: [
+    { pattern: /beach|goa|bali|maldives|hawaii|phuket/i, items: [
+      { item: "Flip flops",           category: "Clothes" },
+      { item: "Swimwear / Boardshorts", category: "Clothes" },
+      { item: "Beach bag",            category: "Accessories" },
+      { item: "After-sun lotion (Aloe)", category: "Toiletries" },
+    ]},
+    { pattern: /mountain|trek|himalaya|nepal|switzerland|manali|ladakh/i, items: [
+      { item: "Thermal undergarments",category: "Clothes" },
       { item: "Trekking poles",       category: "Accessories" },
-      { item: "Energy bars / snacks", category: "Food" },
-    ],
-    backpacker: [
-      { item: "Lightweight backpack", category: "Accessories" },
-      { item: "Packable towel",       category: "Accessories" },
-      { item: "Universal travel adapter", category: "Electronics" },
-      { item: "Padlock",              category: "Accessories" },
-      { item: "Hostel-friendly flip flops", category: "Clothes" },
-      { item: "Reusable water bottle",category: "Accessories" },
-    ],
-    casual: [
-      { item: "Casual t-shirts (5x)", category: "Clothes" },
-      { item: "Jeans / Trousers (2x)",category: "Clothes" },
-      { item: "Sneakers",             category: "Clothes" },
-      { item: "Comfortable shoes",    category: "Clothes" },
-    ],
-  },
-  // By destination keyword
-  destinations: {
-    beach: [
-      { item: "Swimwear (2x)",        category: "Clothes" },
-      { item: "Sunscreen SPF 50+",    category: "Toiletries" },
-      { item: "Sunglasses",           category: "Accessories" },
-    ],
-    mountain: [
-      { item: "Warm layers",          category: "Clothes" },
-      { item: "Altitude sickness med",category: "Health" },
-      { item: "Trekking poles",       category: "Accessories" },
-    ],
-    japan: [
-      { item: "Universal adapter (Type A)", category: "Electronics" },
-      { item: "Portable WiFi / SIM",  category: "Electronics" },
-      { item: "IC Card (Suica) cash", category: "Documents" },
-      { item: "Pocket tissues",       category: "Toiletries" },
-    ],
-    europe: [
-      { item: "Universal adapter (Type C)", category: "Electronics" },
-      { item: "Schengen visa docs",   category: "Documents" },
-      { item: "Euro cash (small bills)", category: "Documents" },
-      { item: "Travel-size shampoo",  category: "Toiletries" },
-    ],
-    dubai: [
-      { item: "Modest clothing (full sleeves)", category: "Clothes" },
-      { item: "Sunscreen SPF 50+",    category: "Toiletries" },
-      { item: "Currency exchange (AED)", category: "Documents" },
-    ],
-    goa: [
-      { item: "Swimwear",             category: "Clothes" },
-      { item: "Sunscreen SPF 50+",    category: "Toiletries" },
-      { item: "Sandals",              category: "Clothes" },
-      { item: "Insect repellent",     category: "Health" },
-    ],
-    bali: [
-      { item: "Swimwear",             category: "Clothes" },
-      { item: "Temple scarf / Sarong",category: "Clothes" },
-      { item: "Insect repellent",     category: "Health" },
-      { item: "Cash (IDR)",           category: "Documents" },
-    ],
-  },
-  // By duration
-  duration: {
-    short: [ // 1-3 days
-      { item: "Mini toiletries bag",  category: "Toiletries" },
-      { item: "Change of clothes (2x)", category: "Clothes" },
-    ],
-    medium: [ // 4-7 days
-      { item: "Laundry bag",          category: "Accessories" },
-      { item: "Full toiletry kit",    category: "Toiletries" },
-    ],
-    long: [ // 8+ days
-      { item: "Laundry bag",          category: "Accessories" },
-      { item: "Portable laundry soap",category: "Toiletries" },
-      { item: "Extra memory card",    category: "Electronics" },
-      { item: "Travel pillow",        category: "Accessories" },
-    ],
-  },
+      { item: "High-calorie snacks",  category: "Health" },
+      { item: "Lip balm with SPF",    category: "Toiletries" },
+      { item: "Warm socks (wool)",    category: "Clothes" },
+    ]},
+    { pattern: /europe|paris|london|rome|tokyo|new york/i, items: [
+      { item: "Comfortable walking shoes", category: "Clothes" },
+      { item: "Universal plug adapter",category: "Electronics" },
+      { item: "City map / Guide app", category: "Documents" },
+      { item: "Light travel umbrella",category: "Accessories" },
+    ]},
+  ]
 };
 
-const generateSmartPackingList = ({ destination = "", duration = 5, season = "summer", travelStyle = "casual" }) => {
-  const dest = destination.toLowerCase();
-  const items = new Map(); // use Map to deduplicate by item name
+// HELPER: Generates smart packing list based on rules
+const generateSmartPackingList = ({ destination, duration, season, travelStyle }) => {
+  const items = [];
+  const added = new Set();
 
-  const addItem = (i) => {
-    const key = i.item.toLowerCase();
-    if (!items.has(key)) items.set(key, i);
+  const addUnique = (list) => {
+    if (!list) return;
+    list.forEach((i) => {
+      const key = `${i.item}-${i.category}`.toLowerCase();
+      if (!added.has(key)) {
+        added.add(key);
+        items.push({ ...i });
+      }
+    });
   };
 
-  // Always-include
-  PACKING_RULES.always.forEach(addItem);
+  // 1. Always items
+  addUnique(PACKING_RULES.always);
 
-  // Season
-  const seasonKey = season.toLowerCase();
-  (PACKING_RULES.seasons[seasonKey] || PACKING_RULES.seasons.summer).forEach(addItem);
-
-  // Style
-  const styleKey = travelStyle.toLowerCase();
-  (PACKING_RULES.styles[styleKey] || PACKING_RULES.styles.casual).forEach(addItem);
-
-  // Duration
-  const durationKey = duration <= 3 ? "short" : duration <= 7 ? "medium" : "long";
-  PACKING_RULES.duration[durationKey].forEach(addItem);
-
-  // Destination keywords
-  for (const [keyword, destItems] of Object.entries(PACKING_RULES.destinations)) {
-    if (dest.includes(keyword)) {
-      destItems.forEach(addItem);
-    }
+  // 2. Season items
+  if (season && PACKING_RULES.seasons[season.toLowerCase()]) {
+    addUnique(PACKING_RULES.seasons[season.toLowerCase()]);
   }
 
-  return Array.from(items.values());
+  // 3. Travel style items
+  if (travelStyle && PACKING_RULES.styles[travelStyle.toLowerCase()]) {
+    addUnique(PACKING_RULES.styles[travelStyle.toLowerCase()]);
+  }
+
+  // 4. Destination match rules
+  if (destination) {
+    PACKING_RULES.destinations.forEach((rule) => {
+      if (rule.pattern.test(destination)) {
+        addUnique(rule.items);
+      }
+    });
+  }
+
+  // 5. Quantity calculation rules based on trip duration
+  items.forEach((item) => {
+    if (item.category === "Clothes") {
+      if (item.item.toLowerCase().includes("t-shirt") || item.item.toLowerCase().includes("top")) {
+        const count = Math.min(duration, 8);
+        item.item = `${item.item} x${count}`;
+      } else if (item.item.toLowerCase().includes("socks") || item.item.toLowerCase().includes("undergarment")) {
+        const count = Math.min(duration + 1, 8);
+        item.item = `${item.item} x${count}`;
+      }
+    }
+  });
+
+  return items;
 };
+
+// ─── ENDPOINTS ─────────────────────────────────────────────────────────────
 
 // CREATE CHECKLIST ITEM
 export const createChecklistItem = async (req, res) => {
   try {
-    const { trip: tripId, item, category } = req.body;
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+    const { tripId, item, category } = req.body;
+
+    if (!tripId || !item) {
+      return res.status(400).json({ success: false, message: "tripId and item description are required" });
+    }
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "create")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
-    const checklist = await Checklist.create({
-      trip: tripId,
-      item,
-      category,
-    });
+    const { data: newChecklist, error } = await supabase
+      .from("checklists")
+      .insert([{
+        tripId,
+        userId: req.user.id,
+        itemName: item,
+        category: category || "General",
+        packed: false
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const checklist = {
+      ...newChecklist,
+      _id: newChecklist.id,
+      trip: newChecklist.tripId,
+      item: newChecklist.itemName,
+      checked: newChecklist.packed
+    };
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(tripId, req.user.id, `${userName} added packing item: "${item}"`);
 
     res.status(201).json({
       success: true,
-      message: "Checklist Item Added",
+      message: "Checklist Item Created",
       checklist,
     });
   } catch (error) {
@@ -229,68 +234,43 @@ export const createChecklistItem = async (req, res) => {
   }
 };
 
-// GET CHECKLIST
+// GET CHECKLIST FOR A TRIP
 export const getChecklist = async (req, res) => {
   try {
     const { tripId } = req.params;
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "read")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view this checklist" });
     }
 
-    let checklist = await Checklist.find({ trip: tripId });
+    const { data: listRows } = await supabase
+      .from("checklists")
+      .select("*")
+      .eq("tripId", tripId);
 
-    // Prepopulate standard default checklist list items on first fetch (only for owners/editors)
-    if (checklist.length === 0 && hasTripPermission(trip, req.user.id, "create")) {
-      const DEFAULTS = [
-        { item: "T-shirts (5x)", category: "clothes" },
-        { item: "Trousers (2x)", category: "clothes" },
-        { item: "Underwear (5x)", category: "clothes" },
-        { item: "Socks (5x)", category: "clothes" },
-        { item: "Jacket", category: "clothes" },
-        { item: "Swimwear", category: "clothes" },
-        { item: "Phone charger", category: "electronics" },
-        { item: "Power bank", category: "electronics" },
-        { item: "Laptop + charger", category: "electronics" },
-        { item: "Earphones", category: "electronics" },
-        { item: "Travel adapter", category: "electronics" },
-        { item: "Passport / ID", category: "documents" },
-        { item: "Flight tickets", category: "documents" },
-        { item: "Hotel booking", category: "documents" },
-        { item: "Travel insurance", category: "documents" },
-        { item: "Visa documents", category: "documents" },
-        { item: "Toothbrush & paste", category: "toiletries" },
-        { item: "Shampoo & conditioner", category: "toiletries" },
-        { item: "Sunscreen SPF 50+", category: "toiletries" },
-        { item: "Deodorant", category: "toiletries" },
-        { item: "Face wash", category: "toiletries" },
-        { item: "Paracetamol", category: "health" },
-        { item: "Antacids", category: "health" },
-        { item: "Motion sickness", category: "health" },
-        { item: "First aid kit", category: "health" },
-        { item: "Camera + lens", category: "camera" },
-        { item: "Memory cards", category: "camera" },
-        { item: "Tripod", category: "camera" }
-      ];
-
-      const createdItems = [];
-      for (const d of DEFAULTS) {
-        const item = await Checklist.create({
-          trip: tripId,
-          item: d.item,
-          category: d.category,
-          checked: false
-        });
-        createdItems.push(item);
-      }
-      checklist = createdItems;
-    }
+    const checklist = (listRows || []).map(row => ({
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      item: row.itemName,
+      checked: row.packed
+    }));
 
     res.status(200).json({
       success: true,
+      count: checklist.length,
       checklist,
     });
   } catch (error) {
@@ -301,41 +281,127 @@ export const getChecklist = async (req, res) => {
   }
 };
 
-// UPDATE CHECKLIST ITEM
-export const updateChecklistItem = async (req, res) => {
+// TOGGLE CHECKLIST ITEM
+export const toggleChecklistItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const { checked, item, category } = req.body;
+    const { checked } = req.body;
 
-    const checklistItem = await Checklist.findById(id);
-    if (!checklistItem) {
+    const { data: row } = await supabase
+      .from("checklists")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!row) {
       return res.status(404).json({ success: false, message: "Checklist item not found" });
     }
 
-    const trip = await Trip.findById(checklistItem.trip);
-    if (!trip) {
+    const checklistItem = {
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      item: row.itemName,
+      checked: row.packed
+    };
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", checklistItem.trip)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
+    checklistItem.checked = checked;
+
+    await supabase
+      .from("checklists")
+      .update({ packed: checked })
+      .eq("id", id);
+
     const userName = req.user.firstName || req.user.email;
-    if (checked !== undefined && checked !== checklistItem.checked) {
-      await logActivity(checklistItem.trip, req.user.id, `${userName} ${checked ? "checked" : "unchecked"} packing item: "${checklistItem.item}"`);
-    } else if (item !== undefined && item !== checklistItem.item) {
-      await logActivity(checklistItem.trip, req.user.id, `${userName} renamed packing item to "${item}"`);
-    }
-
-    if (checked !== undefined) checklistItem.checked = checked;
-    if (item !== undefined) checklistItem.item = item;
-    if (category !== undefined) checklistItem.category = category;
-
-    await checklistItem.save();
+    await logActivity(checklistItem.trip, req.user.id, `${userName} marked "${checklistItem.item}" as ${checked ? "packed" : "unpacked"}`);
 
     res.status(200).json({
       success: true,
-      message: "Checklist Item Updated",
+      message: "Checklist item toggled successfully",
+      checklist: checklistItem,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// UPDATE CHECKLIST ITEM DETAILS (item description or category)
+export const updateChecklistItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { item, category } = req.body;
+
+    const { data: row } = await supabase
+      .from("checklists")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Checklist item not found" });
+    }
+
+    const checklistItem = {
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      item: row.itemName,
+      checked: row.packed
+    };
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", checklistItem.trip)
+      .maybeSingle();
+
+    if (!tripRow) {
+      return res.status(404).json({ success: false, message: "Associated Trip not found" });
+    }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
+    if (!hasTripPermission(trip, req.user.id, "update")) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
+    }
+
+    const oldItem = checklistItem.item;
+    checklistItem.item = item || checklistItem.item;
+    checklistItem.category = category || checklistItem.category;
+
+    await supabase
+      .from("checklists")
+      .update({
+        itemName: checklistItem.item,
+        category: checklistItem.category
+      })
+      .eq("id", id);
+
+    const userName = req.user.firstName || req.user.email;
+    await logActivity(checklistItem.trip, req.user.id, `${userName} updated packing item: "${oldItem}" to "${checklistItem.item}"`);
+
+    res.status(200).json({
+      success: true,
+      message: "Checklist item updated successfully",
       checklist: checklistItem,
     });
   } catch (error) {
@@ -351,15 +417,36 @@ export const deleteChecklistItem = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const checklistItem = await Checklist.findById(id);
-    if (!checklistItem) {
+    const { data: row } = await supabase
+      .from("checklists")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!row) {
       return res.status(404).json({ success: false, message: "Checklist item not found" });
     }
 
-    const trip = await Trip.findById(checklistItem.trip);
-    if (!trip) {
+    const checklistItem = {
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      item: row.itemName,
+      checked: row.packed
+    };
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", checklistItem.trip)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "delete")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
@@ -367,7 +454,10 @@ export const deleteChecklistItem = async (req, res) => {
     const userName = req.user.firstName || req.user.email;
     await logActivity(checklistItem.trip, req.user.id, `${userName} deleted packing item: "${checklistItem.item}"`);
 
-    await Checklist.findByIdAndDelete(id);
+    await supabase
+      .from("checklists")
+      .delete()
+      .eq("id", id);
 
     res.status(200).json({
       success: true,
@@ -385,15 +475,27 @@ export const deleteChecklistItem = async (req, res) => {
 export const resetChecklist = async (req, res) => {
   try {
     const { tripId } = req.params;
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
-    await Checklist.updateMany({ trip: tripId }, { checked: false });
+    await supabase
+      .from("checklists")
+      .update({ packed: false })
+      .eq("tripId", tripId);
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(tripId, req.user.id, `${userName} reset the checklist`);
@@ -441,22 +543,44 @@ export const bulkCreateChecklist = async (req, res) => {
       return res.status(400).json({ success: false, message: "tripId and items array required" });
     }
 
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "create")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
-    const docs = items.map((i) => ({
-      trip: tripId,
-      item: i.item,
+    const inserts = items.map((i) => ({
+      tripId,
+      userId: req.user.id,
+      itemName: i.item,
       category: i.category || "General",
-      checked: false,
+      packed: false,
     }));
 
-    const created = await Checklist.insertMany(docs);
+    const { data: createdRows, error } = await supabase
+      .from("checklists")
+      .insert(inserts)
+      .select();
+
+    if (error) throw error;
+
+    const created = (createdRows || []).map(row => ({
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      item: row.itemName,
+      checked: row.packed
+    }));
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(tripId, req.user.id, `${userName} bulk-added ${created.length} packing suggestions`);

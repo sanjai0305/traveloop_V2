@@ -1,6 +1,4 @@
-import Itinerary from "../models/Itinerary.js";
-import Trip from "../models/Trip.js";
-import Budget from "../models/Budget.js";
+import { supabase } from "../config/supabase.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { hasTripPermission } from "../utils/permissionHelper.js";
 import { calculateBudgetSummary } from "../utils/budgetHelper.js";
@@ -11,10 +9,18 @@ export const createItinerary = async (req, res) => {
   try {
     const { trip: tripId, day, time, title, place, category, budget, note } = req.body;
 
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "create")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this itinerary" });
     }
@@ -23,25 +29,51 @@ export const createItinerary = async (req, res) => {
       return res.status(400).json({ success: false, message: "Expense amount cannot be negative." });
     }
 
-    const activeBudget = await Budget.findOne({ tripId, isArchived: false, isActive: true });
+    const { data: activeBudget } = await supabase
+      .from("budgets")
+      .select("*")
+      .eq("tripId", tripId)
+      .eq("isArchived", false)
+      .eq("isActive", true)
+      .maybeSingle();
+
     const limitBudget = activeBudget ? activeBudget.totalBudget : (trip.budget || 0);
 
-    const existingItems = await Itinerary.find({ trip: tripId });
+    const { data: listRows } = await supabase
+      .from("itineraries")
+      .select("*")
+      .eq("tripId", tripId);
+
+    const existingItems = (listRows || []).map(row => ({ ...row, _id: row.id, trip: row.tripId }));
+
     const { isBudgetExceeded } = calculateBudgetSummary(limitBudget, existingItems, null, budget);
     if (isBudgetExceeded) {
       return res.status(400).json({ success: false, message: "Trip budget exceeded" });
     }
 
-    const itinerary = await Itinerary.create({
-      trip: tripId,
-      day,
-      time,
-      title,
-      place,
-      category,
-      budget,
-      note,
-    });
+    const { data: newItinerary, error } = await supabase
+      .from("itineraries")
+      .insert([{
+        tripId,
+        day: parseInt(day) || 1,
+        title,
+        description: note || "",
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const itinerary = {
+      ...newItinerary,
+      _id: newItinerary.id,
+      trip: newItinerary.tripId,
+      time: time || "",
+      place: place || "",
+      category: category || "",
+      budget: budget || 0,
+      note: newItinerary.description
+    };
 
     // Automatically sync active budget planned totals
     await recalculateBudget(tripId);
@@ -66,17 +98,39 @@ export const createItinerary = async (req, res) => {
 export const getTripItinerary = async (req, res) => {
   try {
     const { tripId } = req.params;
-    const trip = await Trip.findById(tripId);
-    if (!trip) {
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "read")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view this itinerary" });
     }
 
-    const itinerary = await Itinerary.find({
-      trip: tripId,
-    }).sort({ day: 1, time: 1 });
+    const { data: listRows } = await supabase
+      .from("itineraries")
+      .select("*")
+      .eq("tripId", tripId)
+      .order("day", { ascending: true });
+
+    const itinerary = (listRows || []).map(row => ({
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      time: "",
+      place: "",
+      category: "",
+      budget: 0,
+      note: row.description
+    }));
 
     res.status(200).json({
       success: true,
@@ -96,18 +150,38 @@ export const updateItinerary = async (req, res) => {
     const { id } = req.params;
     const { day, time, title, place, category, budget, note } = req.body;
 
-    const itineraryItem = await Itinerary.findById(id);
-    if (!itineraryItem) {
+    const { data: row } = await supabase
+      .from("itineraries")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!row) {
       return res.status(404).json({
         success: false,
         message: "Itinerary Item not found",
       });
     }
 
-    const trip = await Trip.findById(itineraryItem.trip);
-    if (!trip) {
+    const itineraryItem = {
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      note: row.description
+    };
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", itineraryItem.trip)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this itinerary" });
     }
@@ -117,10 +191,23 @@ export const updateItinerary = async (req, res) => {
     }
 
     if (budget !== undefined) {
-      const activeBudget = await Budget.findOne({ tripId: itineraryItem.trip, isArchived: false, isActive: true });
+      const { data: activeBudget } = await supabase
+        .from("budgets")
+        .select("*")
+        .eq("tripId", itineraryItem.trip)
+        .eq("isArchived", false)
+        .eq("isActive", true)
+        .maybeSingle();
+
       const limitBudget = activeBudget ? activeBudget.totalBudget : (trip.budget || 0);
 
-      const existingItems = await Itinerary.find({ trip: itineraryItem.trip });
+      const { data: listRows } = await supabase
+        .from("itineraries")
+        .select("*")
+        .eq("tripId", itineraryItem.trip);
+
+      const existingItems = (listRows || []).map(r => ({ ...r, _id: r.id, trip: r.tripId }));
+
       const { isBudgetExceeded } = calculateBudgetSummary(limitBudget, existingItems, id, budget);
       if (isBudgetExceeded) {
         return res.status(400).json({ success: false, message: "Trip budget exceeded" });
@@ -128,19 +215,29 @@ export const updateItinerary = async (req, res) => {
     }
 
     const updateFields = {};
-    if (day !== undefined) updateFields.day = day;
-    if (time !== undefined) updateFields.time = time;
+    if (day !== undefined) updateFields.day = parseInt(day) || 1;
     if (title !== undefined) updateFields.title = title;
-    if (place !== undefined) updateFields.place = place;
-    if (category !== undefined) updateFields.category = category;
-    if (budget !== undefined) updateFields.budget = budget;
-    if (note !== undefined) updateFields.note = note;
+    if (note !== undefined) updateFields.description = note;
 
-    const itinerary = await Itinerary.findByIdAndUpdate(
-      id,
-      updateFields,
-      { new: true, runValidators: true }
-    );
+    const { data: updatedRow, error } = await supabase
+      .from("itineraries")
+      .update(updateFields)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const itinerary = {
+      ...updatedRow,
+      _id: updatedRow.id,
+      trip: updatedRow.tripId,
+      time: time || "",
+      place: place || "",
+      category: category || "",
+      budget: budget || 0,
+      note: updatedRow.description
+    };
 
     // Automatically sync active budget planned totals
     await recalculateBudget(itineraryItem.trip);
@@ -166,18 +263,38 @@ export const deleteItinerary = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const itineraryItem = await Itinerary.findById(id);
-    if (!itineraryItem) {
+    const { data: row } = await supabase
+      .from("itineraries")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!row) {
       return res.status(404).json({
         success: false,
         message: "Itinerary Item not found",
       });
     }
 
-    const trip = await Trip.findById(itineraryItem.trip);
-    if (!trip) {
+    const itineraryItem = {
+      ...row,
+      _id: row.id,
+      trip: row.tripId,
+      note: row.description
+    };
+
+    const { data: tripRow } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", itineraryItem.trip)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated trip not found" });
     }
+
+    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+
     if (!hasTripPermission(trip, req.user.id, "delete")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this itinerary" });
     }
@@ -185,7 +302,10 @@ export const deleteItinerary = async (req, res) => {
     const userName = req.user.firstName || req.user.email;
     await logActivity(itineraryItem.trip, req.user.id, `${userName} deleted activity: "${itineraryItem.title}" from Day ${itineraryItem.day}`);
 
-    await Itinerary.findByIdAndDelete(id);
+    await supabase
+      .from("itineraries")
+      .delete()
+      .eq("id", id);
 
     // Automatically sync active budget planned totals
     await recalculateBudget(itineraryItem.trip);

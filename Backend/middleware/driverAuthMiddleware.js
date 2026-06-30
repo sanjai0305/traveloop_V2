@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import Driver from "../models/Driver.js";
+import { supabase } from "../config/supabase.js";
 
 const protectDriver = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -16,16 +16,24 @@ const protectDriver = async (req, res, next) => {
       return res.status(403).json({ success: false, message: "Not a driver account" });
     }
 
-    const driver = await Driver.findById(decoded.id).select("-emailOtp -emailOtpExpiry");
-    if (!driver) {
+    const { data: driverRow, error } = await supabase
+      .from("drivers")
+      .select("id, name, email, phone, status, vehicleNumber, licenseNumber")
+      .eq("id", decoded.id)
+      .maybeSingle();
+
+    if (error || !driverRow) {
       return res.status(401).json({ success: false, message: "Driver account not found" });
     }
 
-    if (driver.status === "suspended") {
+    if (driverRow.status === "suspended") {
       return res.status(403).json({ success: false, message: "Driver account suspended" });
     }
 
-    req.driver = driver;
+    req.driver = {
+      ...driverRow,
+      _id: driverRow.id,
+    };
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

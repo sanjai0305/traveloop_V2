@@ -1,47 +1,50 @@
-/**
- * routes/driverUpdatesRoutes.js
- *
- * Driver Update announcements for a trip.
- *
- * GET    /api/driver-updates/:tripId          — any authenticated traveler/agent
- * POST   /api/driver-updates/:tripId          — driver only
- * DELETE /api/driver-updates/:tripId/:updateId — driver only (own messages)
- */
-
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
 import protectDriver from "../middleware/driverAuthMiddleware.js";
-import DriverUpdate from "../models/DriverUpdate.js";
-import AgentTrip from "../models/AgentTrip.js";
+import { supabase } from "../config/supabase.js";
 
 const router = express.Router();
 
-// ─── GET /api/driver-updates/:tripId ─────────────────────────────────────────
-// Returns all non-deleted updates for a trip, newest first.
-// Access: any authenticated user
+const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+
+// GET /api/driver-updates/:tripId
 router.get("/:tripId", protect, async (req, res) => {
   try {
     const { tripId } = req.params;
+    if (!isUUID(tripId)) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
 
-    // Verify trip exists
-    const trip = await AgentTrip.findById(tripId).select("title driver").lean();
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("title, driverId")
+      .eq("id", tripId)
+      .maybeSingle();
+
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const updates = await DriverUpdate.find({
-      trip: tripId,
-      isDeleted: false,
-    })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
+    const { data: updatesList } = await supabase
+      .from("driver_updates")
+      .select("*")
+      .eq("tripId", tripId)
+      .eq("isDeleted", false)
+      .order("createdAt", { ascending: false })
+      .limit(50);
+
+    const updates = (updatesList || []).map(u => ({
+      ...u,
+      _id: u.id,
+      trip: u.tripId,
+      driver: u.driverId,
+    }));
 
     res.status(200).json({
       success: true,
       updates,
       tripTitle: trip.title,
-      hasDriver: !!trip.driver,
+      hasDriver: !!trip.driverId,
     });
   } catch (error) {
     console.error("[DriverUpdates GET] Error:", error);
@@ -49,56 +52,65 @@ router.get("/:tripId", protect, async (req, res) => {
   }
 });
 
-// ─── POST /api/driver-updates/:tripId ────────────────────────────────────────
-// Driver posts a new announcement.
-// Access: driver only (protectDriver middleware)
+// POST /api/driver-updates/:tripId
 router.post("/:tripId", protectDriver, async (req, res) => {
   try {
     const { tripId } = req.params;
-    const { type = "info", message, imageUrl = "", locationData } = req.body;
+    const { type = "info", message } = req.body;
 
     if (!message || !message.trim()) {
       return res.status(400).json({ success: false, message: "Message is required" });
     }
 
-    // Verify the trip exists and this driver is assigned to it
-    const trip = await AgentTrip.findById(tripId).select("driver title").lean();
+    if (!isUUID(tripId)) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("driverId, title")
+      .eq("id", tripId)
+      .maybeSingle();
+
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const driverId = req.driver._id.toString();
-    if (trip.driver && trip.driver.toString() !== driverId) {
+    const driverId = req.driver.id;
+    if (trip.driverId && trip.driverId !== driverId) {
       return res.status(403).json({
         success: false,
         message: "You are not the assigned driver for this trip",
       });
     }
 
-    const update = await DriverUpdate.create({
-      trip: tripId,
-      driver: req.driver._id,
-      driverName: req.driver.name || "Driver",
-      driverPhoto: req.driver.photo || "",
-      type: type.toLowerCase(),
-      message: message.trim(),
-      imageUrl: imageUrl || "",
-      locationData: locationData || {},
-    });
+    const { data: updateRow, error } = await supabase
+      .from("driver_updates")
+      .insert([{
+        tripId,
+        driverId: req.driver.id,
+        driverName: req.driver.name || "Driver",
+        type: type.toLowerCase(),
+        message: message.trim(),
+        isDeleted: false
+      }])
+      .select()
+      .single();
 
-    // Emit socket event so travelers receive it instantly
+    if (error) throw error;
+
+    const update = {
+      ...updateRow,
+      _id: updateRow.id,
+      trip: updateRow.tripId,
+      driver: updateRow.driverId,
+    };
+
     const io = req.app.get("io");
     if (io) {
       io.to(`trip_${tripId}`).emit("driver-update-posted", {
         tripId,
-        update: {
-          _id: update._id,
-          type: update.type,
-          message: update.message,
-          driverName: update.driverName,
-          driverPhoto: update.driverPhoto,
-          createdAt: update.createdAt,
-        },
+        update,
       });
     }
 
@@ -113,27 +125,27 @@ router.post("/:tripId", protectDriver, async (req, res) => {
   }
 });
 
-// ─── DELETE /api/driver-updates/:tripId/:updateId ────────────────────────────
-// Driver deletes one of their own announcements (soft-delete).
-// Access: driver only
+// DELETE /api/driver-updates/:tripId/:updateId
 router.delete("/:tripId/:updateId", protectDriver, async (req, res) => {
   try {
     const { tripId, updateId } = req.params;
-
-    const update = await DriverUpdate.findOne({
-      _id: updateId,
-      trip: tripId,
-      driver: req.driver._id,
-    });
-
-    if (!update) {
+    if (!isUUID(tripId) || !isUUID(updateId)) {
       return res.status(404).json({ success: false, message: "Update not found or not yours" });
     }
 
-    update.isDeleted = true;
-    await update.save();
+    const { data: update, error } = await supabase
+      .from("driver_updates")
+      .update({ isDeleted: true })
+      .eq("id", updateId)
+      .eq("tripId", tripId)
+      .eq("driverId", req.driver.id)
+      .select()
+      .maybeSingle();
 
-    // Notify connected clients
+    if (error || !update) {
+      return res.status(404).json({ success: false, message: "Update not found or not yours" });
+    }
+
     const io = req.app.get("io");
     if (io) {
       io.to(`trip_${tripId}`).emit("driver-update-deleted", { tripId, updateId });

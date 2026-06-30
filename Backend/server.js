@@ -11,7 +11,7 @@ import { fileURLToPath } from "url";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
 import sanitizeInput from "./middleware/sanitize.js";
-import connectDB from "./config/db.js";
+// Removed connectDB import
 
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
@@ -42,13 +42,7 @@ import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 
 
-// MongoDB — non-fatal on Vercel (DB errors return 503, not crash)
-let dbConnected = false;
-connectDB()
-  .then(() => { dbConnected = true; })
-  .catch((err) => {
-    console.error("[Server] MongoDB failed to connect. API routes requiring DB will return 503.", err.message);
-  });
+let dbConnected = true;
 
 const app = express();
 const server = http.createServer(app);

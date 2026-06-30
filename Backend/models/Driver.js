@@ -1,50 +1,50 @@
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
-const driverSchema = new mongoose.Schema(
-  {
-    // Identity
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    phone: { type: String, default: "" },
-
-    // Vehicle & License
-    licenseNumber: { type: String, default: "" },
-    vehicleNumber:  { type: String, default: "" },
-    photo:          { type: String, default: "" },   // URL or base64
-    emergencyContact: { type: String, default: "" },
-
-    // Account status
-    status: {
-      type: String,
-      enum: ["pending_verification", "active", "suspended"],
-      default: "pending_verification",
-    },
-    emailVerified: { type: Boolean, default: false },
-
-    // OTP fields (email-based login)
-    emailOtp:        { type: String, default: null },
-    emailOtpExpiry:  { type: Date,   default: null },
-    emailOtpAttempts: { type: Number, default: 0 },
-
-    // Google sign-in UID
-    googleUid: { type: String, default: null },
-
-    // Relations
-    assignedAgent: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Agent",
-    },
-    assignedTrips: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "AgentTrip",
-      },
-    ],
-
-    lastLogin: { type: Date, default: null },
+const Driver = {
+  findOne: async (query) => {
+    let q = supabase.from("drivers").select("*");
+    if (query.email) {
+      q = q.eq("email", query.email);
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("drivers").update(fields).eq("id", id);
+      }
+    };
   },
-  { timestamps: true }
-);
+  findById: async (id) => {
+    if (!id) return null;
+    const { data } = await supabase.from("drivers").select("*").eq("id", id).maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("drivers").update(fields).eq("id", id);
+      }
+    };
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from("drivers").insert([payload]).select().single();
+    if (error) throw error;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("drivers").update(fields).eq("id", id);
+      }
+    };
+  }
+};
 
-const Driver = mongoose.model("Driver", driverSchema);
 export default Driver;

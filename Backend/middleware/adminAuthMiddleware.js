@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
-import Admin from "../models/Admin.js";
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
 export const verifyAdmin = async (req, res, next) => {
   let token;
@@ -23,12 +22,13 @@ export const verifyAdmin = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Check if DB is connected
-      if (mongoose.connection.readyState === 1) {
-        req.admin = await Admin.findById(decoded.id).select("-passwordHash -password");
-      }
+      const { data: admin, error } = await supabase
+        .from("admins")
+        .select("id, name, email, role, twoFactorEnabled, googleId, lastLogin")
+        .eq("id", decoded.id)
+        .maybeSingle();
 
-      if (!req.admin) {
+      if (error || !admin) {
         console.warn(`[Admin Auth] Admin lookup failed for ID: ${decoded.id}`);
         return res.status(401).json({
           success: false,
@@ -36,9 +36,15 @@ export const verifyAdmin = async (req, res, next) => {
         });
       }
 
+      req.admin = {
+        _id: admin.id,
+        id: admin.id,
+        ...admin
+      };
+
       next();
     } catch (error) {
-      console.error("[Admin Auth Error]:", error.name, error.message);
+      console.error("[Admin Auth Error]:", error);
       if (error.name === "TokenExpiredError") {
         return res.status(401).json({
           success: false,
@@ -53,7 +59,7 @@ export const verifyAdmin = async (req, res, next) => {
       });
     }
   } else {
-    res.status(401).json({
+    return res.status(401).json({
       success: false,
       message: "No Token Provided",
     });

@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
     "@vercel/node": "^5.8.9",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -29,6 +30,7 @@
     "pdfkit": "^0.18.0",
     "razorpay": "^2.9.6",
     "socket.io": "^4.8.1",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.21.0"
   }
 }

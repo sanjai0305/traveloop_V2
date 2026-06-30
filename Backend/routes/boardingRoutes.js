@@ -1,20 +1,15 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import mongoose from "mongoose";
 import protect from "../middleware/authMiddleware.js";
-import Booking from "../models/Booking.js";
-import AgentTrip from "../models/AgentTrip.js";
-import BoardingPass from "../models/BoardingPass.js";
+import { supabase } from "../config/supabase.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
 
-// ────────────────────────────────────────────────────────────────────────────
+const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+
 // POST /api/boarding/generate-qr
-// Traveler generates a signed QR for their booking.
-// Only allowed within 24 hours of the trip start date (or on trip day).
-// ────────────────────────────────────────────────────────────────────────────
 router.post("/generate-qr", protect, async (req, res) => {
   try {
     const { bookingId } = req.body;
@@ -24,23 +19,28 @@ router.post("/generate-qr", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "bookingId required" });
     }
 
-    // Validate ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    if (!isUUID(bookingId)) {
       return res.status(400).json({ success: false, message: "Invalid booking ID format" });
     }
 
     // Load booking
-    const booking = await Booking.findById(bookingId);
-    if (!booking) {
+    const { data: bookingRow } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("id", bookingId)
+      .maybeSingle();
+
+    if (!bookingRow) {
       return res.status(400).json({ success: false, message: "Booking not found" });
     }
+
+    const booking = { ...bookingRow, _id: bookingRow.id, agentTrip: bookingRow.tripId };
 
     // Verify ownership
     if (booking.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: "Booking ownership mismatch" });
     }
 
-    // Verify payment is completed: Paid or Confirmed (case-insensitive)
     const isPaid = 
       (booking.status && ["paid", "confirmed"].includes(booking.status.toLowerCase())) ||
       (booking.paymentStatus && ["paid", "confirmed"].includes(booking.paymentStatus.toLowerCase()));
@@ -50,17 +50,22 @@ router.post("/generate-qr", protect, async (req, res) => {
     }
 
     // Load trip
-    const trip = await AgentTrip.findById(booking.agentTrip);
-    if (!trip) {
+    const { data: tripRow } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", booking.agentTrip)
+      .maybeSingle();
+
+    if (!tripRow) {
       return res.status(400).json({ success: false, message: "Trip not found" });
     }
 
-    // Verify only active trips
-    if (trip.status === "cancelled" || trip.status === "Cancelled" || trip.status === "deleted" || trip.isDeleted) {
+    const trip = { ...tripRow, _id: tripRow.id };
+
+    if (trip.status === "cancelled" || trip.status === "Cancelled" || trip.status === "deleted") {
       return res.status(400).json({ success: false, message: "Trip is not active or has been cancelled" });
     }
 
-    // Verify travel date eligibility: Only when driver has opened boarding
     if (trip.boardingStatus !== "OPEN") {
       return res.status(400).json({
         success: false,
@@ -79,7 +84,6 @@ router.post("/generate-qr", protect, async (req, res) => {
     const tripEndOfDay = new Date(trip.startDate + "T23:59:59");
     const expiry = Math.floor(tripEndOfDay.getTime() / 1000);
 
-    // Sign the QR JWT token with required payload fields
     const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET;
     const uniqueToken = crypto.randomBytes(16).toString("hex");
     const qrToken = jwt.sign(
@@ -87,11 +91,11 @@ router.post("/generate-qr", protect, async (req, res) => {
         bookingId: booking._id.toString(),
         userId: req.user._id.toString(),
         tripId: trip._id.toString(),
-        seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "Waiting For Driver Assignment",
+        seatNumber: booking.assignedSeat || "Waiting For Driver Assignment",
         tripDate: trip.startDate,
-        boardingPoint: booking.pickupLocation || trip.pickupLocation || "",
-        pickupLocation: booking.pickupLocation || trip.pickupLocation || "",
-        travelerName: booking.travelerName || "",
+        boardingPoint: trip.pickupLocation || "",
+        pickupLocation: trip.pickupLocation || "",
+        travelerName: "",
         timestamp: new Date().toISOString(),
         encryptedToken: uniqueToken,
         expiryTime: expiry,
@@ -102,43 +106,32 @@ router.post("/generate-qr", protect, async (req, res) => {
 
     console.log("Generated QR Token:", qrToken);
 
-    // Generate QR Image URL using api.qrserver.com
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrToken)}`;
 
-    // Create/update BoardingPass first to prevent duplicate null key index issues
-    const tokenHash = crypto.createHash("sha256").update(qrToken).digest("hex");
-    const bp = await BoardingPass.findOneAndUpdate(
-      { booking: booking._id, agentTrip: trip._id },
-      {
-        booking: booking._id,
-        bookingId: booking.bookingId,
-        agentTrip: trip._id,
-        userId: req.user._id,
-        qrTokenHash: tokenHash, // FIX: set hash to avoid E11000 duplicate key error on qrTokenHash: null
-        qrGeneratedAt: new Date(),
-        $setOnInsert: { status: "not_boarded" },
-      },
-      { upsert: true, new: true }
-    );
+    // Update Booking fields in PostgreSQL
+    const updatePayload = {
+      token: qrToken,
+      boardingStatus: "not_boarded",
+    };
 
-    // Update Booking fields
-    booking.boardingPass = bp._id;
-    booking.qrCode = qrImage;
-    booking.token = qrToken;
-    booking.generatedAt = new Date();
-    booking.expiresAt = new Date(expiry * 1000);
-    booking.qrToken = qrToken;
-    booking.qrExpiry = new Date(expiry * 1000);
-    booking.boardingStatus = booking.boardingStatus || "not_boarded";
-    booking.boardingPassGenerated = true;
-    booking.boardingPassGeneratedAt = new Date();
-    await booking.save();
+    const { data: updatedBooking } = await supabase
+      .from("bookings")
+      .update(updatePayload)
+      .eq("id", bookingId)
+      .select()
+      .single();
 
-    // Trigger notifications
+    const resultBooking = {
+      ...updatedBooking,
+      _id: updatedBooking.id,
+      agentTrip: updatedBooking.tripId,
+      qrCode: qrImage,
+      boardingPassGenerated: true,
+    };
+
     if (booking.userId) {
       try {
         await triggerNotification(booking.userId, "QR Activated", `Your Boarding Pass for ${trip.title} is now active!`, "info", trip._id);
-        await triggerNotification(booking.userId, "Trip Tomorrow", `Get ready! Your trip ${trip.title} departs tomorrow.`, "info", trip._id);
       } catch (notifErr) {
         console.warn("Notification trigger failed:", notifErr.message);
       }
@@ -149,8 +142,8 @@ router.post("/generate-qr", protect, async (req, res) => {
       qrImage,
       token: qrToken,
       expiresAt: new Date(expiry * 1000),
-      boardingId: bp._id.toString(),
-      booking,
+      boardingId: resultBooking._id.toString(),
+      booking: resultBooking,
     });
   } catch (err) {
     console.error("[Boarding generate-qr]", err);
@@ -158,20 +151,34 @@ router.post("/generate-qr", protect, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // GET /api/boarding/:bookingId
-// ────────────────────────────────────────────────────────────────────────────
 router.get("/:bookingId", protect, async (req, res) => {
   try {
     const { bookingId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    if (!isUUID(bookingId)) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    const booking = await Booking.findById(bookingId).populate("agentTrip");
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+    const { data: bookingRow } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("id", bookingId)
+      .maybeSingle();
 
-    // Verify ownership
+    if (!bookingRow) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    const { data: tripRow } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", bookingRow.tripId)
+      .maybeSingle();
+
+    const booking = {
+      ...bookingRow,
+      _id: bookingRow.id,
+      agentTrip: tripRow ? { ...tripRow, _id: tripRow.id } : null,
+    };
+
     if (booking.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: "Forbidden" });
     }
@@ -186,9 +193,7 @@ router.get("/:bookingId", protect, async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────────────────
 // POST /api/boarding/verify
-// ────────────────────────────────────────────────────────────────────────────
 router.post("/verify", async (req, res) => {
   try {
     const { qrToken } = req.body;
@@ -201,12 +206,25 @@ router.post("/verify", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid token payload" });
     }
 
-    const booking = await Booking.findById(decoded.bookingId).populate("agentTrip");
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+    const { data: bookingRow } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("id", decoded.bookingId)
+      .maybeSingle();
 
-    if (booking.tripDeleted || (booking.agentTrip && booking.agentTrip.isDeleted) || (booking.agentTrip && booking.agentTrip.status === "deleted")) {
-      return res.status(400).json({ success: false, message: "This trip has been removed by the agency. Booking is invalid." });
-    }
+    if (!bookingRow) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    const { data: tripRow } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", bookingRow.tripId)
+      .maybeSingle();
+
+    const booking = {
+      ...bookingRow,
+      _id: bookingRow.id,
+      agentTrip: tripRow ? { ...tripRow, _id: tripRow.id } : null,
+    };
 
     res.json({
       success: true,
