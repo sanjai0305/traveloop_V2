@@ -1,0 +1,25 @@
+# =========================
+# BACKEND SPECIFIC
+# =========================
+
+# Environment variable files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# NODE MODULES
+Backend/node_modules/
+
+# LOGS
+Backend/logs/
+Backend/*.log
+
+# TEMP FILES
+Backend/tmp/
+
+# UPLOADS
+Backend/uploads/
+
+# DATABASE FILES
+Backend/*.sqlite
+Backend/*.db

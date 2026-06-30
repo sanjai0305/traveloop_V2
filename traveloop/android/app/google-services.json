@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "740933888609",
+    "project_id": "traveloop-version-2-83bd2",
+    "storage_bucket": "traveloop-version-2-83bd2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:740933888609:android:0f8618d0d113784b205820",
+        "android_client_info": {
+          "package_name": "com.traveloop.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "740933888609-a3mvig897m7rvmm0ltdjdv2dop74tmtd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.traveloop.app",
+            "certificate_hash": "ff649eb2d50f36bc70a3e4d7c35b4389f97e5de0"
+          }
+        },
+        {
+          "client_id": "740933888609-i01jkrhkjs48lc5r4dhj8iplt8baa003.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGel_exiDkDDCUmuHNPKAkWz8UjfFUd1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "740933888609-i01jkrhkjs48lc5r4dhj8iplt8baa003.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "740933888609-f4sp2ta5tme54fpesjperbsv0dq76236.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.traveloop.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
