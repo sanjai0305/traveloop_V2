@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import admin from "firebase-admin";
+import admin from "../config/firebaseAdmin.js";
 
 const router = express.Router();
 
@@ -14,21 +14,6 @@ const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, "../uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const serviceAccountPath = path.join(__dirname, "../serviceAccountKey.json");
-
-// Initialize Firebase Admin if not initialized
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-    console.log("[Firebase Admin] Initialized in upload routes successfully.");
-  } catch (err) {
-    console.error("[Firebase Admin] Failed to initialize in upload routes:", err);
-  }
 }
 
 // Multer Storage config

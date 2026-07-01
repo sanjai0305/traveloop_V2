@@ -1,4 +1,5 @@
 import "./config/env.js";
+import "./config/firebaseAdmin.js";
 import express from "express";
 import { Server } from "socket.io";
 import http from "http";
@@ -198,12 +199,13 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check endpoint — useful for Vercel deployment verification
+// Health check endpoint — useful for Render deployment verification
 app.get("/api/health", (req, res) => {
-  res.status(dbConnected ? 200 : 503).json({
-    success: dbConnected,
-    status: dbConnected ? "healthy" : "degraded",
-    db: dbConnected ? "connected" : "disconnected — set MONGO_URI in Vercel env vars",
+  const supabaseConnected = !!process.env.SUPABASE_URL;
+  res.status(supabaseConnected ? 200 : 503).json({
+    success: supabaseConnected,
+    status: supabaseConnected ? "healthy" : "degraded",
+    db: supabaseConnected ? "connected" : "disconnected — set SUPABASE_URL in Render env vars",
     env: process.env.NODE_ENV || "development",
     timestamp: new Date().toISOString(),
   });
@@ -267,20 +269,31 @@ app.use((err, req, res, next) => {
 });
 
 /* -----------------------------
-   LOCAL DEV ONLY
+   SERVER STARTUP
 ------------------------------ */
 
-if (process.env.NODE_ENV !== "production") {
-  let port = parseInt(process.env.PORT || "5000", 10);
+let port = parseInt(process.env.PORT || "5000", 10);
+
+if (process.env.NODE_ENV === "production") {
+  server.listen(port, () => {
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`✅ Supabase Connected`);
+    console.log(`✅ Firebase Admin Initialized`);
+    console.log(`✅ Socket.io Enabled`);
+    console.log(`✅ Routes Loaded Successfully`);
+    console.log(`✅ Render Deployment Healthy`);
+  });
+} else {
   const maxPort = port + 2;
 
   const startServer = (p) => {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
-      console.log(`✅ MongoDB Connected`);
-      console.log(`✅ Firebase initialized`);
-      console.log(`✅ Socket.io enabled`);
-      console.log(`✅ Routes loaded successfully`);
+      console.log(`✅ Supabase Connected`);
+      console.log(`✅ Firebase Admin Initialized`);
+      console.log(`✅ Socket.io Enabled`);
+      console.log(`✅ Routes Loaded Successfully`);
+      console.log(`✅ Render Deployment Healthy`);
     });
   };
 

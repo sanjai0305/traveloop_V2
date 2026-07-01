@@ -1,7 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import admin from "firebase-admin";
+import admin from "../config/firebaseAdmin.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -13,19 +13,6 @@ import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const serviceAccountPath = path.join(__dirname, "../serviceAccountKey.json");
-
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-    console.log("[Firebase Admin] Initialized successfully with project ID:", serviceAccount.project_id);
-  } catch (err) {
-    console.error("[Firebase Admin] Failed to initialize Firebase Admin SDK:", err);
-  }
-}
 
 const router = express.Router();
 
