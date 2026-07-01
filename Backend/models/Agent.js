@@ -1,120 +1,67 @@
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
-const agentSchema = new mongoose.Schema(
-  {
-    uid: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-    },
-    displayName: {
-      type: String,
-      default: "",
-    },
-    phone: {
-      type: String,
-      default: "",
-    },
-    companyName: {
-      type: String,
-      default: "",
-    },
-    gstNumber: {
-      type: String,
-      default: "",
-    },
-    businessCategory: {
-      type: String,
-      default: "",
-    },
-    address: {
-      type: String,
-      default: "",
-    },
-    city: {
-      type: String,
-      default: "",
-    },
-    state: {
-      type: String,
-      default: "",
-    },
-    country: {
-      type: String,
-      default: "",
-    },
-    website: {
-      type: String,
-      default: "",
-    },
-    instagram: {
-      type: String,
-      default: "",
-    },
-    facebook: {
-      type: String,
-      default: "",
-    },
-    logo: {
-      type: String,
-      default: "",
-    },
-    profileImage: {
-      type: String,
-      default: "",
-    },
-    profileCompleted: {
-      type: Boolean,
-      default: false,
-    },
-    emailVerified: {
-      type: Boolean,
-      default: false,
-    },
-    revenue: {
-      type: Number,
-      default: 0,
-    },
-    totalBookings: {
-      type: Number,
-      default: 0,
-    },
-    commissionRate: {
-      type: Number,
-      default: 10,
-    },
-    walletBalance: {
-      type: Number,
-      default: 0,
-    },
-    totalRevenue: {
-      type: Number,
-      default: 0,
-    },
-    pendingRevenue: {
-      type: Number,
-      default: 0,
-    },
-    settledRevenue: {
-      type: Number,
-      default: 0,
-    },
-    status: {
-      type: String,
-      enum: ["pending", "approved", "suspended"],
-      default: "approved",
-    },
+const Agent = {
+  findOne: async (query = {}) => {
+    let q = supabase.from("agents").select("*");
+    if (query.email) {
+      q = q.eq("email", query.email);
+    } else if (query.uid) {
+      q = q.eq("uid", query.uid);
+    } else if (query.$or) {
+      const emailQuery = query.$or.find(item => item.email);
+      const uidQuery = query.$or.find(item => item.uid);
+      if (emailQuery && uidQuery) {
+        q = q.or(`email.eq.${emailQuery.email},uid.eq.${uidQuery.uid}`);
+      } else if (emailQuery) {
+        q = q.eq("email", emailQuery.email);
+      } else if (uidQuery) {
+        q = q.eq("uid", uidQuery.uid);
+      }
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("agents").update(fields).eq("id", id);
+      }
+    };
   },
-  {
-    timestamps: true,
+  findById: async (id) => {
+    if (!id) return null;
+    const { data } = await supabase.from("agents").select("*").eq("id", id).maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("agents").update(fields).eq("id", id);
+      }
+    };
+  },
+  create: async (payload) => {
+    const { data, error } = await supabase.from("agents").insert([payload]).select().single();
+    if (error) throw error;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id, _id, ...fields } = this;
+        delete fields.save;
+        await supabase.from("agents").update(fields).eq("id", id);
+      }
+    };
+  },
+  findByIdAndUpdate: async (id, updateFields, options) => {
+    const { data, error } = await supabase.from("agents").update(updateFields).eq("id", id).select().single();
+    if (error) throw error;
+    return data ? { ...data, _id: data.id } : null;
   }
-);
+};
 
-const Agent = mongoose.model("Agent", agentSchema);
 export default Agent;

@@ -1,6 +1,6 @@
 import express from "express";
 import crypto from "crypto";
-import mongoose from "mongoose";
+import mongoose from "../config/mongooseMock.js";
 import Razorpay from "razorpay";
 import protect from "../middleware/authMiddleware.js";
 import AgentTrip from "../models/AgentTrip.js";

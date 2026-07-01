@@ -278,10 +278,10 @@ if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
     console.log(`✅ Supabase Connected`);
-    console.log(`✅ Firebase Admin Initialized`);
-    console.log(`✅ Socket.io Enabled`);
-    console.log(`✅ Routes Loaded Successfully`);
-    console.log(`✅ Render Deployment Healthy`);
+    console.log(`✅ Firebase initialized`);
+    console.log(`✅ Socket.io enabled`);
+    console.log(`✅ Routes loaded successfully`);
+    console.log(`✅ Render deployment healthy`);
   });
 } else {
   const maxPort = port + 2;
@@ -290,10 +290,10 @@ if (process.env.NODE_ENV === "production") {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
       console.log(`✅ Supabase Connected`);
-      console.log(`✅ Firebase Admin Initialized`);
-      console.log(`✅ Socket.io Enabled`);
-      console.log(`✅ Routes Loaded Successfully`);
-      console.log(`✅ Render Deployment Healthy`);
+      console.log(`✅ Firebase initialized`);
+      console.log(`✅ Socket.io enabled`);
+      console.log(`✅ Routes loaded successfully`);
+      console.log(`✅ Render deployment healthy`);
     });
   };
 

@@ -1,64 +1,41 @@
-import mongoose from "mongoose";
+import { supabase } from "../config/supabase.js";
 
-const paymentSchema = new mongoose.Schema(
-  {
-    bookingId: {
-      type: String,
-      required: true,
-    },
-    tripId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "AgentTrip",
-      required: true,
-    },
-    agentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Agent",
-      required: true,
-    },
-    travelerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-    },
-    status: {
-      type: String,
-      required: true,
-      default: "Pending", // e.g., Pending, Paid, Failed
-    },
-    orderId: {
-      type: String,
-      required: true,
-    },
-    paymentId: {
-      type: String,
-      default: "",
-    },
-    signature: {
-      type: String,
-      default: "",
-    },
-    gateway: {
-      type: String,
-      default: "razorpay",
-    },
-    transactionId: {
-      type: String,
-      default: "",
-    },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
+const Payment = {
+  create: async (payload) => {
+    const mapped = {
+      bookingId: payload.bookingId,
+      amount: payload.amount,
+      paymentMethod: payload.gateway || payload.paymentMethod || 'Razorpay',
+      status: payload.status || 'Paid',
+      transactionId: payload.transactionId || payload.paymentId || '',
+    };
+    const { data, error } = await supabase.from("payments").insert([mapped]).select().single();
+    if (error) throw error;
+    return {
+      ...data,
+      _id: data.id,
+    };
   },
-  {
-    timestamps: true,
+  find: async (query = {}) => {
+    let q = supabase.from("payments").select("*");
+    if (query.bookingId) {
+      q = q.eq("bookingId", query.bookingId);
+    }
+    const { data } = await q;
+    return (data || []).map(r => ({ ...r, _id: r.id }));
+  },
+  findOne: async (query = {}) => {
+    let q = supabase.from("payments").select("*");
+    if (query.bookingId) {
+      q = q.eq("bookingId", query.bookingId);
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+    };
   }
-);
+};
 
-const Payment = mongoose.model("Payment", paymentSchema);
 export default Payment;

@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose from "../config/mongooseMock.js";
 
 const chatReadStatusSchema = new mongoose.Schema(
   {

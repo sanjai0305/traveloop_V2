@@ -1,6 +1,6 @@
 import express from "express";
 import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
+import mongoose from "../config/mongooseMock.js";
 import admin from "../config/firebaseAdmin.js";
 import path from "path";
 import { fileURLToPath } from "url";
