@@ -10,6 +10,36 @@ import { createUserProfile, updateLastLogin } from "./firestoreService";
 import { getApiUrl } from "../utils/api";
 
 /**
+ * Maps Firebase Auth errors to clear, user-friendly messages.
+ */
+const mapFirebaseError = (error) => {
+  const code = error?.code || (error?.message && error.message.match(/auth\/[a-zA-Z\-]+/)?.[0]) || "";
+  
+  switch (code) {
+    case "auth/unauthorized-domain":
+      return new Error("This domain is not authorized for Firebase Sign-In. Please add it to Authorized Domains in the Firebase Console.");
+    case "auth/network-request-failed":
+      return new Error("Network error occurred. Please check your internet connection and try again.");
+    case "auth/email-already-in-use":
+      return new Error("An account already exists with this email address.");
+    case "auth/user-not-found":
+      return new Error("No account found with this email address. Please check your spelling or register.");
+    case "auth/wrong-password":
+      return new Error("Incorrect password. Please verify your credentials and try again.");
+    case "auth/invalid-credential":
+      return new Error("Invalid credentials. Please verify your email and password.");
+    case "auth/user-disabled":
+      return new Error("This user account has been disabled. Please contact support.");
+    case "auth/too-many-requests":
+      return new Error("Too many unsuccessful login attempts. Please try again later.");
+    case "auth/operation-not-allowed":
+      return new Error("Email registration is currently unavailable. Please try again later.");
+    default:
+      return new Error(error?.message || "Authentication failed. Please try again.");
+  }
+};
+
+/**
  * Helper to make API requests to the backend.
  */
 const apiRequest = async (endpoint, method, body) => {
@@ -58,10 +88,7 @@ export const registerWithEmailPassword = async (formData, otpToken) => {
     console.log(`[Email Auth] Firebase user created. Firebase UID: ${firebaseUser.uid}`);
   } catch (error) {
     console.error("[Internal Auth Error] Firebase registration failed:", error);
-    if (error && (error.code === "auth/operation-not-allowed" || (error.message && error.message.includes("auth/operation-not-allowed")))) {
-      throw new Error("Email registration is currently unavailable. Please try again later.");
-    }
-    throw new Error(error.message || "Failed to create Firebase Auth account");
+    throw mapFirebaseError(error);
   }
 
   // 2. Create User in Backend (passing firebaseUid and otpToken)
@@ -125,7 +152,7 @@ export const loginWithEmailPassword = async (email, password) => {
     console.log(`[Email Auth] Firebase authenticated. Firebase UID: ${firebaseUser.uid}`);
   } catch (error) {
     console.error("Firebase Auth sign in failed:", error);
-    throw new Error(error.message || "Failed to sign in via Firebase Auth");
+    throw mapFirebaseError(error);
   }
 
   // 2. Sign in via Backend
@@ -195,7 +222,7 @@ export const sendPasswordReset = async (email) => {
     await sendPasswordResetEmail(auth, email);
   } catch (error) {
     console.error("Firebase sendPasswordResetEmail failed:", error);
-    throw new Error(error.message || "Failed to send reset email");
+    throw mapFirebaseError(error);
   }
 };
 

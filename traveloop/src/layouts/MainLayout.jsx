@@ -11,6 +11,7 @@ import BottomNavBar from "../components/mobile/BottomNavBar";
 // Import shared navigation components
 import Sidebar from "@shared-ui/navigation/Sidebar";
 import Navbar from "@shared-ui/navigation/Navbar";
+import ServerStatusIndicator from "../components/common/ServerStatusIndicator";
 
 const pageVariants = {
   initial: { opacity: 0, x: 16 },
@@ -78,6 +79,7 @@ const MainLayout = ({ children }) => {
               </motion.div>
             </AnimatePresence>
           </main>
+          <ServerStatusIndicator />
         </div>
       </div>
     );
@@ -109,8 +111,9 @@ const MainLayout = ({ children }) => {
         </AnimatePresence>
       </main>
 
-      {/* FLOATING BOTTOM NAV */}
+      {/* BOTTOM NAVIGATION */}
       <BottomNavBar />
+      <ServerStatusIndicator />
     </div>
   );
 };

@@ -118,6 +118,7 @@ app.use(
     origin: [
       "https://traveloop-v2-htv5-nl3gdvozh-sanjais-projects-b9c29d70.vercel.app",
       "https://traveloopv2.duckdns.org",
+      "http://localhost:3000",
       "http://localhost:5173"
     ],
     credentials: true,

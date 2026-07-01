@@ -3,6 +3,19 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+// Validate Environment Loading
+console.log("=== [Traveloop Env Validation] ===");
+console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
+console.log("Firebase Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+console.log("App Mode:", import.meta.env.MODE);
+if (!import.meta.env.VITE_API_URL) {
+  console.warn("⚠️ VITE_API_URL is not set! API calls may fall back to root.");
+}
+if (!import.meta.env.VITE_FIREBASE_API_KEY) {
+  console.error("❌ VITE_FIREBASE_API_KEY is not defined! Auth services will fail.");
+}
+console.log("==================================");
+
 // Global broken image fallback listener (capture phase)
 window.addEventListener(
   "error",
