@@ -1,0 +1,48 @@
+name: Firebase CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Firebase Functions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: functions/package.json
+
+      - name: Install Dependencies
+        run: |
+          cd functions
+          npm install
+        name: Install functions dependencies
+
+      - name: Deploy to Firebase Functions
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "Authenticating via Google Cloud Service Account..."
+            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
+            export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/service-account.json
+            
+            # Run the deployment and ensure we clean up the credential file afterward
+            npx --package firebase-tools firebase deploy --only functions --non-interactive || (rm -f service-account.json && exit 1)
+            rm -f service-account.json
+          elif [ -n "${{ secrets.FIREBASE_TOKEN }}" ]; then
+            echo "Authenticating via legacy Firebase Token..."
+            npx --package firebase-tools firebase deploy --only functions --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+          else
+            echo "ERROR: Neither FIREBASE_SERVICE_ACCOUNT nor FIREBASE_TOKEN is set in GitHub Secrets."
+            exit 1
+          fi
+        shell: bash
+        name: Firebase deploy
