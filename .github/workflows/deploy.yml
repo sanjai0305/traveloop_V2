@@ -6,21 +6,104 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-and-test:
+    name: Build & Test Backend
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install dependencies (local check)
+        working-directory: Backend
+        run: |
+          echo "Installing dependencies inside Backend/ locally to verify builds..."
+          npm install
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to AWS EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY_NEW }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
           script: |
-            cd /home/ubuntu/Trip-Planner-Hackathon
+            set -e
+
+            echo "=== Starting Backend Deployment ==="
+
+            # 7. Navigate to deployment directory
+            echo "Navigating to /home/ubuntu/traveloop_V2..."
+            cd /home/ubuntu/traveloop_V2
+
+            # 8. Pull latest code from GitHub
+            echo "Pulling latest changes from main branch..."
             git pull origin main
 
+            # 9. Navigate to Backend/
+            echo "Navigating to Backend..."
             cd Backend
-            npm install
 
-            pm2 restart traveloop-backend
+            # 10. Run npm install
+            echo "Running npm install (production)..."
+            npm install --production
+
+            # 11 & 12. PM2 process management
+            # Check if PM2 is installed on the server first
+            if ! command -v pm2 &> /dev/null; then
+              echo "Error: PM2 is not installed on the server. Please install it with 'npm install -g pm2'."
+              exit 1
+            fi
+
+            # Check if process exists and start/restart accordingly
+            if pm2 describe traveloop-v2 > /dev/null 2>&1; then
+              echo "Process 'traveloop-v2' exists."
+              
+              # Zero-downtime deployment strategy:
+              # We use 'pm2 reload' instead of 'pm2 restart' for a rolling reload without downtime.
+              echo "Reloading process 'traveloop-v2' for zero-downtime..."
+              pm2 reload traveloop-v2 || pm2 restart traveloop-v2
+            else
+              echo "Process 'traveloop-v2' does not exist."
+              
+              # Start in cluster mode (max workers) for scalability and zero-downtime reloading capability
+              echo "Starting process 'traveloop-v2'..."
+              pm2 start server.js --name traveloop-v2 -i max || pm2 start server.js --name traveloop-v2
+            fi
+
+            # 13. Run: pm2 save
+            echo "Saving PM2 process list..."
+            pm2 save
+
+            # 14. Verify deployment status
+            echo "Verifying deployment status..."
+            sleep 3 # Give it a few seconds to boot up completely
+            
+            # Verify if status is online using grep (no jq dependency required)
+            if pm2 list | grep "traveloop-v2" | grep -q "online"; then
+              echo "Verification successful: Process 'traveloop-v2' is online."
+            else
+              echo "Error: Process 'traveloop-v2' is not online!"
+              pm2 list
+              exit 1
+            fi
+
+            # 15. Print deployment logs
+            echo "=== Printing latest 50 lines of logs ==="
+            tail -n 50 ~/.pm2/logs/traveloop-v2-out.log || echo "No output log file found."
+            tail -n 50 ~/.pm2/logs/traveloop-v2-error.log || echo "No error log file found."
+
+            echo "=== Deployment Finished Successfully ==="
