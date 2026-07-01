@@ -27,20 +27,25 @@ jobs:
           npm install
 
       - name: Firebase Deploy
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
-          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+          if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
             echo "Authenticating via Google Cloud Service Account..."
-            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > service-account.json
+            printf "%s" "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
             export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/service-account.json
             
-            # Run the deployment and ensure we clean up the credential file afterward
             npx --package firebase-tools firebase deploy --only functions --non-interactive || (rm -f service-account.json && exit 1)
             rm -f service-account.json
-          elif [ -n "${{ secrets.FIREBASE_TOKEN }}" ]; then
+          elif [ -n "$FIREBASE_TOKEN" ]; then
             echo "Authenticating via legacy Firebase Token..."
-            npx --package firebase-tools firebase deploy --only functions --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+            npx --package firebase-tools firebase deploy \
+              --only functions \
+              --token "$FIREBASE_TOKEN" \
+              --non-interactive
           else
-            echo "ERROR: Neither FIREBASE_SERVICE_ACCOUNT nor FIREBASE_TOKEN is set in GitHub Secrets."
+            echo "ERROR: Firebase secrets missing"
             exit 1
           fi
         shell: bash
