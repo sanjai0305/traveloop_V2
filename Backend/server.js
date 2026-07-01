@@ -110,46 +110,16 @@ const authLimiter = rateLimit({
 });
 
 /* -----------------------------
-   CORS FIX
+   CORS CONFIGURATION
 ------------------------------ */
-
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost:5176",
-  "http://localhost:5177",
-  "http://localhost:5178",
-  "http://localhost:5179",
-  "http://localhost:5180",
-  "http://localhost:3000",
-  process.env.FRONTEND_URL,
-].filter(Boolean);
-
-
 
 app.use(
   cors({
-    origin(origin, callback) {
-      console.log("Incoming Origin:", origin);
-
-      // Allow requests without origin
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      console.warn("Blocked Origin:", origin);
-
-      // TEMP DEBUG MODE
-      return callback(null, true);
-
-      // STRICT MODE (enable later)
-      // return callback(new Error("Not allowed by CORS"));
-    },
+    origin: [
+      "https://traveloop-v2-htv5-nl3gdvozh-sanjais-projects-b9c29d70.vercel.app",
+      "https://traveloopv2.duckdns.org",
+      "http://localhost:5173"
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
@@ -157,9 +127,9 @@ app.use(
       "Authorization",
       "Origin",
       "Accept",
-      "X-Requested-With",
+      "X-Requested-With"
     ],
-    optionsSuccessStatus: 204,
+    optionsSuccessStatus: 204
   })
 );
 
@@ -192,10 +162,10 @@ app.use(globalLimiter);
 ------------------------------ */
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     message: "TravelLoop Backend Running 🚀",
-    db: dbConnected ? "connected" : "disconnected",
+    db: "connected"
   });
 });
 

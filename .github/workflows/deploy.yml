@@ -33,77 +33,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Verify SSH Key Secret Presence (No-Leak Debug)
-        run: |
-          echo "=== SSH Key Diagnostic Check ==="
-          if [ -z "${{ secrets.EC2_SSH_KEY_B64 }}" ]; then
-            echo "ERROR: EC2_SSH_KEY_B64 is empty or not set in GitHub Secrets!"
-            exit 1
-          fi
-          
-          # Count characters in the Base64 secret
-          CHAR_COUNT=$(echo -n "${{ secrets.EC2_SSH_KEY_B64 }}" | wc -m)
-          echo "Base64 Secret length (characters): $CHAR_COUNT"
-          
-          # Check for unexpected whitespaces
-          if [[ "${{ secrets.EC2_SSH_KEY_B64 }}" =~ [[:space:]] ]]; then
-            echo "WARNING: Secret contains whitespace/spaces. It might be corrupted."
-          else
-            echo "✓ Secret is a continuous string (no whitespaces)"
-          fi
-          echo "=== Diagnostic Check Completed ==="
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Decode SSH Private Key
+      - name: Setup SSH
         run: |
-          echo "${{ secrets.EC2_SSH_KEY_B64 }}" | base64 -d > private_key.pem
-          chmod 600 private_key.pem
-          
-          # Verify decoded key content structure safely
-          echo "=== Decoded Key Verification ==="
-          if grep -q "BEGIN" private_key.pem; then
-            echo "✓ Decoded key contains BEGIN header"
-          else
-            echo "✗ ERROR: Decoded key does NOT contain BEGIN header. Base64 string may be malformed."
-            exit 1
-          fi
-          
-          if grep -q "END" private_key.pem; then
-            echo "✓ Decoded key contains END footer"
-          else
-            echo "✗ ERROR: Decoded key does NOT contain END footer. Base64 string may be malformed."
-            exit 1
-          fi
-          echo "=== Decoded Key Verification Completed ==="
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to AWS EC2 via SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key_path: private_key.pem
-          port: ${{ secrets.EC2_PORT || 22 }}
-          script: |
+      - name: Test SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo Connected Successfully"
+
+      - name: Deploy to AWS EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
 
             echo "=== Starting Backend Deployment ==="
 
-            # 7. Navigate to deployment directory
+            # Navigate to deployment directory
             echo "Navigating to /home/ubuntu/traveloop_V2..."
             cd /home/ubuntu/traveloop_V2
 
-            # 8. Pull latest code from GitHub
+            # Pull latest code from GitHub
             echo "Pulling latest changes from main branch..."
             git pull origin main
 
-            # 9. Navigate to Backend/
+            # Navigate to Backend/
             echo "Navigating to Backend..."
             cd Backend
 
-            # 10. Run npm install
+            # Run npm install
             echo "Running npm install (production)..."
             npm install --production
 
-            # 11 & 12. PM2 process management
+            # PM2 process management
             # Check if PM2 is installed on the server first
             if ! command -v pm2 &> /dev/null; then
               echo "Error: PM2 is not installed on the server. Please install it with 'npm install -g pm2'."
@@ -119,15 +88,15 @@ jobs:
               pm2 start server.js --name traveloop-v2
             fi
 
-            # 13. Run: pm2 save
+            # Save PM2 processes
             echo "Saving PM2 process list..."
             pm2 save
 
-            # 14. Verify deployment status
+            # Verify deployment status
             echo "Verifying deployment status..."
             sleep 3 # Give it a few seconds to boot up completely
             
-            # Verify if status is online using grep (no jq dependency required)
+            # Verify if status is online
             if pm2 list | grep "traveloop-v2" | grep -q "online"; then
               echo "Verification successful: Process 'traveloop-v2' is online."
             else
@@ -136,15 +105,10 @@ jobs:
               exit 1
             fi
 
-            # 15. Print deployment logs
+            # Print deployment logs
             echo "=== Printing latest 50 lines of logs ==="
             tail -n 50 ~/.pm2/logs/traveloop-v2-out.log || echo "No output log file found."
             tail -n 50 ~/.pm2/logs/traveloop-v2-error.log || echo "No error log file found."
 
             echo "=== Deployment Finished Successfully ==="
-
-      - name: Clean up temporary private key
-        if: always()
-        run: |
-          echo "Cleaning up temporary private key file..."
-          rm -f private_key.pem
+          EOF
