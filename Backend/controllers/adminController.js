@@ -11,6 +11,7 @@ import Settlement from "../models/Settlement.js";
 import Commission from "../models/Commission.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { supabase } from "../config/supabase.js";
 
 // Firebase imports for OTP sharing
 import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore";
@@ -207,7 +208,10 @@ export const logoutAdmin = async (req, res) => {
 
 export const getAdminProfile = async (req, res) => {
   try {
-    const adminUser = await Admin.findById(req.admin._id).select("-passwordHash -password");
+    const adminUser = await Admin.findById(req.admin._id || req.admin.id);
+    if (!adminUser) {
+      return res.status(404).json({ success: false, message: "Admin profile not found" });
+    }
     res.status(200).json({
       success: true,
       admin: {
@@ -252,12 +256,29 @@ export const getDashboardStats = async (req, res) => {
     });
 
     const totalBookings = bookings.length;
-    const totalAgents = await Agent.countDocuments({});
-    const totalDrivers = await Driver.countDocuments({});
-    const totalUsers = await User.countDocuments({});
+
+    // Helper to get count
+    const getCount = async (table, filterFn = null) => {
+      let q = supabase.from(table).select("*", { count: "exact", head: true });
+      if (filterFn) {
+        q = filterFn(q);
+      }
+      const { count, error } = await q;
+      if (error) throw error;
+      return count || 0;
+    };
+
+    const totalAgents = await getCount("agents");
+    const totalDrivers = await getCount("drivers");
+    const totalUsers = await getCount("users");
     
-    const totalTrips = (await AgentTrip.countDocuments({})) + (await Trip.countDocuments({}));
-    const activeTrips = await AgentTrip.countDocuments({ approvalStatus: "approved", publishStatus: "published" });
+    const totalAgentTrips = await getCount("agent_trips");
+    const totalPlannerTrips = await getCount("trips");
+    const totalTrips = totalAgentTrips + totalPlannerTrips;
+
+    const activeTrips = await getCount("agent_trips", q => q.eq("approvalStatus", "approved").eq("status", "published"));
+    const cancelledTrips = await getCount("agent_trips", q => q.eq("status", "cancelled"));
+    const pendingRefunds = await getCount("bookings", q => q.eq("refundStatus", "requested"));
 
     res.status(200).json({
       success: true,
@@ -270,8 +291,8 @@ export const getDashboardStats = async (req, res) => {
         totalAgents,
         totalDrivers,
         activeTrips,
-        cancelledTrips: await AgentTrip.countDocuments({ status: "cancelled" }),
-        pendingRefunds: await Booking.countDocuments({ refundStatus: "requested" }),
+        cancelledTrips,
+        pendingRefunds,
         pendingRefundsAmount: refundAmount,
       },
       // Backend expected response variables
@@ -298,8 +319,44 @@ export const getDashboardStats = async (req, res) => {
 
 export const getFinanceDetails = async (req, res) => {
   try {
-    const bookings = await Booking.find({}).populate("agentTrip agent userId");
-    const settlements = await Settlement.find({}).populate("bookingId tripId agentId");
+    const { data: bookingsData, error: bookingsError } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        agentTrip:tripId(*),
+        userId(*)
+      `);
+    if (bookingsError) throw bookingsError;
+
+    const { data: settlementsData, error: settlementsError } = await supabase
+      .from("settlements")
+      .select(`
+        *,
+        bookingId:bookings(*),
+        tripId:agent_trips(*),
+        agentId:agents(*)
+      `);
+    if (settlementsError) throw settlementsError;
+
+    // Map fields to match mongoose object assumptions
+    const bookings = (bookingsData || []).map(b => {
+      const mapped = { ...b, _id: b.id };
+      if (mapped.agentTrip) {
+        mapped.agentTrip = { ...mapped.agentTrip, _id: mapped.tripId };
+      }
+      if (mapped.userId) {
+        mapped.userId = { ...mapped.userId, _id: mapped.userId.id };
+      }
+      return mapped;
+    });
+
+    const settlements = (settlementsData || []).map(s => ({
+      ...s,
+      _id: s.id,
+      bookingId: s.bookingId ? { ...s.bookingId, _id: s.bookingId.id } : null,
+      tripId: s.tripId ? { ...s.tripId, _id: s.tripId.id } : null,
+      agentId: s.agentId ? { ...s.agentId, _id: s.agentId.id } : null
+    }));
     
     res.status(200).json({
       success: true,
@@ -307,6 +364,7 @@ export const getFinanceDetails = async (req, res) => {
       settlements,
     });
   } catch (error) {
+    console.error("getFinanceDetails error:", error);
     res.status(500).json({ success: false, message: "Server Error retrieving finance details" });
   }
 };
@@ -395,15 +453,30 @@ export const updateDefaultCommission = async (req, res) => {
 
 export const getPayoutsList = async (req, res) => {
   try {
-    const pendingSettlements = await Booking.find({ status: "Paid" })
-      .populate("agentTrip agent userId")
-      .sort({ createdAt: -1 });
+    const { data: bookingsData, error } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        agentTrip:tripId(*),
+        userId(*)
+      `)
+      .eq("paymentStatus", "Paid")
+      .order("createdAt", { ascending: false });
+
+    if (error) throw error;
+    const pendingSettlements = (bookingsData || []).map(b => ({
+      ...b,
+      _id: b.id,
+      agentTrip: b.agentTrip ? { ...b.agentTrip, _id: b.tripId } : null,
+      userId: b.userId ? { ...b.userId, _id: b.userId.id } : null
+    }));
 
     res.status(200).json({
       success: true,
       payouts: pendingSettlements,
     });
   } catch (error) {
+    console.error("getPayoutsList error:", error);
     res.status(500).json({ success: false, message: "Server Error fetching payouts list" });
   }
 };
@@ -513,12 +586,42 @@ export const deleteAgent = async (req, res) => {
 
 export const getTrips = async (req, res) => {
   try {
-    const trips = await AgentTrip.find({})
-      .populate("agent", "companyName displayName logo email phone")
-      .populate("driver", "name phone vehicleNumber")
-      .sort({ createdAt: -1 });
+    const { data: tripsData, error } = await supabase
+      .from("agent_trips")
+      .select(`
+        *,
+        agent:agentId(companyName, email),
+        driver:driverId(name, phone, vehicleNumber)
+      `)
+      .order("createdAt", { ascending: false });
+
+    if (error) throw error;
+    const trips = (tripsData || []).map(t => {
+      const mapped = { ...t, _id: t.id };
+      if (mapped.agent) {
+        mapped.agent = {
+          _id: t.agentId,
+          companyName: t.agent.companyName,
+          displayName: t.agent.companyName,
+          email: t.agent.email,
+          logo: "",
+          phone: ""
+        };
+      }
+      if (mapped.driver) {
+        mapped.driver = {
+          _id: t.driverId,
+          name: t.driver.name,
+          phone: t.driver.phone,
+          vehicleNumber: t.driver.vehicleNumber
+        };
+      }
+      return mapped;
+    });
+
     res.status(200).json({ success: true, trips });
   } catch (error) {
+    console.error("getTrips error:", error);
     res.status(500).json({ success: false, message: "Server Error retrieving trips list" });
   }
 };
@@ -563,20 +666,24 @@ export const updateTrip = async (req, res) => {
       trip.deletedAt = new Date();
       trip.deletedBy = req.admin ? req.admin._id.toString() : "Admin";
       trip.status = "deleted";
-      await trip.save();
+      
+      await supabase
+        .from("agent_trips")
+        .update({
+          isDeleted: true,
+          deletedAt: trip.deletedAt,
+          deletedBy: trip.deletedBy,
+          status: "deleted"
+        })
+        .eq("id", id);
 
       // Cascade booking cancellations
-      await Booking.updateMany(
-        { agentTrip: id },
-        {
-          $set: {
-            status: "cancelled",
-            paymentStatus: "Cancelled",
-            tripDeleted: true,
-            cancelReason: "Trip removed by agency"
-          }
-        }
-      );
+      await supabase
+        .from("bookings")
+        .update({
+          paymentStatus: "Cancelled"
+        })
+        .eq("tripId", id);
 
       // Broadcast soft-delete event in real time via Socket.io
       const io = req.app.get("io");
@@ -587,11 +694,44 @@ export const updateTrip = async (req, res) => {
       return res.status(200).json({ success: true, message: "Trip soft-deleted successfully" });
     }
 
-    await trip.save();
-    const updatedTrip = await AgentTrip.findById(id).populate("agent", "companyName displayName logo email");
+    await supabase
+      .from("agent_trips")
+      .update({
+        approvalStatus: trip.approvalStatus,
+        publishStatus: trip.publishStatus,
+        status: trip.status,
+        publishedAt: trip.publishedAt,
+        isHidden: trip.isHidden,
+        isFeatured: trip.isFeatured
+      })
+      .eq("id", id);
+
+    const { data: updatedTripData, error: updateTripErr } = await supabase
+      .from("agent_trips")
+      .select(`
+        *,
+        agent:agentId(companyName, email)
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (updateTripErr) throw updateTripErr;
+    const updatedTrip = updatedTripData ? {
+      ...updatedTripData,
+      _id: updatedTripData.id,
+      agent: updatedTripData.agent ? {
+        _id: updatedTripData.agentId,
+        companyName: updatedTripData.agent.companyName,
+        displayName: updatedTripData.agent.companyName,
+        email: updatedTripData.agent.email,
+        logo: "",
+        phone: ""
+      } : null
+    } : null;
 
     res.status(200).json({ success: true, message: "Trip updated successfully", trip: updatedTrip });
   } catch (error) {
+    console.error("updateTrip error:", error);
     res.status(500).json({ success: false, message: "Server Error updating trip" });
   }
 };
@@ -711,14 +851,50 @@ export const purgeTrip = async (req, res) => {
 
 export const getBookingsLedger = async (req, res) => {
   try {
-    const bookings = await Booking.find({})
-      .populate("agentTrip", "title destinations duration startDate endDate coverImage")
-      .populate("agent", "companyName displayName email walletBalance pendingRevenue settledRevenue commissionRate")
-      .populate("userId", "firstName lastName email phone")
-      .sort({ createdAt: -1 });
+    const { data: bookingsData, error } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        agentTrip:tripId(title, destinations, duration, startDate, endDate, coverImage, agentId),
+        userId(firstName, lastName, email, phone)
+      `)
+      .order("createdAt", { ascending: false });
+
+    if (error) throw error;
+
+    const bookings = await Promise.all((bookingsData || []).map(async (b) => {
+      const mapped = { ...b, _id: b.id };
+      if (mapped.agentTrip) {
+        mapped.agentTrip = { ...mapped.agentTrip, _id: mapped.tripId };
+        if (mapped.agentTrip.agentId) {
+          const { data: agentData } = await supabase
+            .from("agents")
+            .select("companyName, email")
+            .eq("id", mapped.agentTrip.agentId)
+            .maybeSingle();
+          if (agentData) {
+            mapped.agent = {
+              _id: mapped.agentTrip.agentId,
+              companyName: agentData.companyName,
+              displayName: agentData.companyName,
+              email: agentData.email,
+              walletBalance: 0,
+              pendingRevenue: 0,
+              settledRevenue: 0,
+              commissionRate: 10
+            };
+          }
+        }
+      }
+      if (mapped.userId) {
+        mapped.userId = { ...mapped.userId, _id: mapped.userId.id };
+      }
+      return mapped;
+    }));
 
     res.status(200).json({ success: true, bookings });
   } catch (error) {
+    console.error("getBookingsLedger error:", error);
     res.status(500).json({ success: false, message: "Server Error retrieving bookings ledger" });
   }
 };
@@ -727,11 +903,44 @@ export const getBookingById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const booking = await Booking.findById(id)
-      .populate("agentTrip agent userId");
-    if (!booking) {
+    const { data: bookingData, error } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        agentTrip:tripId(*),
+        userId(*)
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!bookingData) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
+
+    const booking = { ...bookingData, _id: bookingData.id };
+    if (booking.agentTrip) {
+      booking.agentTrip = { ...booking.agentTrip, _id: booking.tripId };
+      if (booking.agentTrip.agentId) {
+        const { data: agentData } = await supabase
+          .from("agents")
+          .select("companyName, email")
+          .eq("id", booking.agentTrip.agentId)
+          .maybeSingle();
+        if (agentData) {
+          booking.agent = {
+            _id: booking.agentTrip.agentId,
+            companyName: agentData.companyName,
+            displayName: agentData.companyName,
+            email: agentData.email
+          };
+        }
+      }
+    }
+    if (booking.userId) {
+      booking.userId = { ...booking.userId, _id: booking.userId.id };
+    }
+
     res.status(200).json({ success: true, booking });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server Error fetching booking" });
@@ -769,9 +978,25 @@ export const updateBooking = async (req, res) => {
 
 export const getSettlements = async (req, res) => {
   try {
-    const settlements = await Settlement.find({})
-      .populate("bookingId tripId agentId")
-      .sort({ createdAt: -1 });
+    const { data, error } = await supabase
+      .from("settlements")
+      .select(`
+        *,
+        bookingId:bookings(*),
+        tripId:agent_trips(*),
+        agentId:agents(*)
+      `)
+      .order("createdAt", { ascending: false });
+
+    if (error) throw error;
+    const settlements = (data || []).map(s => ({
+      ...s,
+      _id: s.id,
+      bookingId: s.bookingId ? { ...s.bookingId, _id: s.bookingId.id } : null,
+      tripId: s.tripId ? { ...s.tripId, _id: s.tripId.id } : null,
+      agentId: s.agentId ? { ...s.agentId, _id: s.agentId.id } : null
+    }));
+
     res.status(200).json({ success: true, settlements });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server Error retrieving settlements list" });

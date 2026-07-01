@@ -118,7 +118,7 @@ export const updateBudget = async (req, res) => {
         return res.status(400).json({ success: false, message: "Budget amount cannot be negative." });
       }
       if (budget.plannedExpense > newLimit || budget.actualExpense > newLimit) {
-        return res.status(400).json({ success: false, message: "Trip budget exceeded" });
+        return res.status(400).json({ success: false, message: "Trip budget exceeded." });
       }
       budget.totalBudget = newLimit;
     }

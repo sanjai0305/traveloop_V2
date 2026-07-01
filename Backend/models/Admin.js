@@ -1,82 +1,65 @@
-import mongoose from "../config/mongooseMock.js";
+import { supabase } from "../config/supabase.js";
 import bcrypt from "bcryptjs";
 
-const adminSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      default: "Admin User",
+const wrapAdmin = (data) => {
+  if (!data) return null;
+  return {
+    ...data,
+    _id: data.id,
+    matchPassword: async function(enteredPassword) {
+      const hashToCompare = this.passwordHash;
+      if (!hashToCompare) return false;
+      return await bcrypt.compare(enteredPassword, hashToCompare);
     },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    passwordHash: {
-      type: String,
-      default: null,
-    },
-    password: {
-      type: String,
-      required: false,
-    },
-    role: {
-      type: String,
-      enum: ["Super Admin", "Finance Admin", "Support Admin", "Operations Admin"],
-      default: "Super Admin",
-    },
-    twoFactorEnabled: {
-      type: Boolean,
-      default: true,
-    },
-    twoFactorSecret: {
-      type: String,
-      default: null,
-    },
-    googleId: {
-      type: String,
-      default: null,
-    },
-    lastLogin: {
-      type: Date,
-      default: null,
-    }
-  },
-  {
-    timestamps: true,
-  }
-);
+    save: async function() {
+      const { id: _id, _id: __id, matchPassword: _match, save: _save, ...fields } = this;
+      
+      // Handle password hashing if plain password is set on the object
+      if (fields.password) {
+        const salt = await bcrypt.genSalt(10);
+        fields.passwordHash = await bcrypt.hash(fields.password, salt);
+        delete fields.password;
+        this.passwordHash = fields.passwordHash;
+        delete this.password;
+      }
 
-// Method to compare passwords
-adminSchema.methods.matchPassword = async function(enteredPassword) {
-  const hashToCompare = this.passwordHash || this.password;
-  if (!hashToCompare) return false;
-  return await bcrypt.compare(enteredPassword, hashToCompare);
+      await supabase.from("admins").update(fields).eq("id", _id || id);
+    }
+  };
 };
 
-// Hook to hash password before saving
-adminSchema.pre("save", async function() {
-  // If we have password but no passwordHash, migrate it
-  if (this.password && !this.passwordHash) {
-    if (this.password.startsWith("$2a$") || this.password.startsWith("$2b$")) {
-      this.passwordHash = this.password;
-    } else {
-      const salt = await bcrypt.genSalt(10);
-      this.passwordHash = await bcrypt.hash(this.password, salt);
+const Admin = {
+  findOne: async (query = {}) => {
+    let q = supabase.from("admins").select("*");
+    if (query.email) {
+      q = q.eq("email", query.email.toLowerCase());
     }
-    this.password = undefined;
-  }
+    const { data, error } = await q.maybeSingle();
+    if (error) throw error;
+    return wrapAdmin(data);
+  },
 
-  // If password field is present and modified, compute passwordHash
-  if (this.isModified("password") && this.password) {
-    const salt = await bcrypt.genSalt(10);
-    this.passwordHash = await bcrypt.hash(this.password, salt);
-    this.password = undefined; // clear out cleartext password
-  }
-});
+  findById: async (id) => {
+    if (!id) return null;
+    const { data, error } = await supabase.from("admins").select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return wrapAdmin(data);
+  },
 
-const Admin = mongoose.model("Admin", adminSchema);
+  create: async (payload) => {
+    const fields = { ...payload };
+    
+    // Hash password before inserting
+    if (fields.password) {
+      const salt = await bcrypt.genSalt(10);
+      fields.passwordHash = await bcrypt.hash(fields.password, salt);
+      delete fields.password;
+    }
+
+    const { data, error } = await supabase.from("admins").insert([fields]).select().single();
+    if (error) throw error;
+    return wrapAdmin(data);
+  }
+};
+
 export default Admin;

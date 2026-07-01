@@ -48,7 +48,7 @@ export const createItinerary = async (req, res) => {
 
     const { isBudgetExceeded } = calculateBudgetSummary(limitBudget, existingItems, null, budget);
     if (isBudgetExceeded) {
-      return res.status(400).json({ success: false, message: "Trip budget exceeded" });
+      return res.status(400).json({ success: false, message: "Trip budget exceeded." });
     }
 
     const { data: newItinerary, error } = await supabase
@@ -58,6 +58,10 @@ export const createItinerary = async (req, res) => {
         day: parseInt(day) || 1,
         title,
         description: note || "",
+        time: time || "",
+        place: place || "",
+        category: category || "",
+        budget: Number(budget) || 0,
       }])
       .select()
       .single();
@@ -68,10 +72,6 @@ export const createItinerary = async (req, res) => {
       ...newItinerary,
       _id: newItinerary.id,
       trip: newItinerary.tripId,
-      time: time || "",
-      place: place || "",
-      category: category || "",
-      budget: budget || 0,
       note: newItinerary.description
     };
 
@@ -210,7 +210,7 @@ export const updateItinerary = async (req, res) => {
 
       const { isBudgetExceeded } = calculateBudgetSummary(limitBudget, existingItems, id, budget);
       if (isBudgetExceeded) {
-        return res.status(400).json({ success: false, message: "Trip budget exceeded" });
+        return res.status(400).json({ success: false, message: "Trip budget exceeded." });
       }
     }
 
@@ -218,6 +218,10 @@ export const updateItinerary = async (req, res) => {
     if (day !== undefined) updateFields.day = parseInt(day) || 1;
     if (title !== undefined) updateFields.title = title;
     if (note !== undefined) updateFields.description = note;
+    if (time !== undefined) updateFields.time = time;
+    if (place !== undefined) updateFields.place = place;
+    if (category !== undefined) updateFields.category = category;
+    if (budget !== undefined) updateFields.budget = Number(budget) || 0;
 
     const { data: updatedRow, error } = await supabase
       .from("itineraries")
@@ -232,10 +236,6 @@ export const updateItinerary = async (req, res) => {
       ...updatedRow,
       _id: updatedRow.id,
       trip: updatedRow.tripId,
-      time: time || "",
-      place: place || "",
-      category: category || "",
-      budget: budget || 0,
       note: updatedRow.description
     };
 

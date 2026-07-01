@@ -1,6 +1,7 @@
 import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
 import Checklist from "../models/Checklist.js";
+import { supabase } from "../config/supabase.js";
 import Note from "../models/Note.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
@@ -164,37 +165,36 @@ export const getTrips =
   async (req, res) => {
 
     try {
+      const { data: tripsData, error: tripsError } = await supabase
+        .from("trips")
+        .select("*");
+      
+      if (tripsError) throw tripsError;
 
-      const trips =
-        await Trip.find({
-          $or: [
-            { user: req.user.id },
-            { owner: req.user.id },
-            { "collaborators.userId": req.user.id, "collaborators.acceptedAt": { $ne: null } }
-          ]
-        }).lean();
+      const trips = (tripsData || []).filter(t => {
+        const isOwner = t.userId === req.user.id;
+        const isCollaborator = t.collaborators?.some(c => c.userId === req.user.id && c.acceptedAt !== null);
+        return isOwner || isCollaborator;
+      }).map(t => ({ ...t, _id: t.id, user: t.userId, owner: t.userId }));
 
       const tripsWithCounts = await Promise.all(trips.map(async (trip) => {
-        const activitiesCount = await Itinerary.countDocuments({ trip: trip._id });
+        const { count, error: countError } = await supabase
+          .from("itineraries")
+          .select("*", { count: "exact", head: true })
+          .eq("tripId", trip.id);
+        const activitiesCount = count || 0;
+
         let role = "owner";
-        const isOwner = (trip.owner?._id || trip.owner)?.toString() === req.user.id || (trip.user?._id || trip.user)?.toString() === req.user.id;
+        const isOwner = trip.userId === req.user.id;
         if (!isOwner) {
-          const collab = trip.collaborators?.find(c => c.userId && (c.userId._id || c.userId).toString() === req.user.id && c.acceptedAt !== null);
+          const collab = trip.collaborators?.find(c => c.userId && c.userId.toString() === req.user.id && c.acceptedAt !== null);
           if (collab) {
             role = collab.role;
           }
         }
         const acceptedCollaborators = trip.collaborators?.filter(c => c.acceptedAt !== null) || [];
 
-        // Compute unreadCount based on ChatReadStatus
-        const readStatus = await ChatReadStatus.findOne({ tripId: trip._id, userId: req.user.id });
-        const lastSeenAt = readStatus ? readStatus.lastSeenAt : new Date(0);
-        const unreadCount = await ChatMessage.countDocuments({
-          tripId: trip._id,
-          createdAt: { $gt: lastSeenAt },
-          sender: { $ne: req.user.id },
-          deletedAt: null
-        });
+        const unreadCount = 0;
 
         return {
           ...trip,
@@ -221,21 +221,49 @@ export const getTrips =
       });
     }
   };
-
-
-
 export const getTripById = async (req, res) => {
   try {
     console.log("[DEBUG Backend] getTripById - ID param received:", req.params.id);
     console.log("[DEBUG Backend] getTripById - Auth user ID:", req.user?.id || req.user?._id);
 
-    const trip = await Trip.findById(req.params.id)
-      .populate("owner", "firstName lastName avatar upiId")
-      .populate("collaborators.userId", "firstName lastName avatar upiId email");
+    const tripData = await Trip.findById(req.params.id);
 
-    if (!trip) {
+    if (!tripData) {
       console.log("[DEBUG Backend] getTripById - Trip not found in database for ID:", req.params.id);
       return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    const trip = { ...tripData, _id: tripData.id };
+
+    // Populate owner
+    if (trip.userId) {
+      const { data: ownerData } = await supabase
+        .from("users")
+        .select("id, firstName, lastName, avatar, upiId")
+        .eq("id", trip.userId)
+        .maybeSingle();
+      if (ownerData) {
+        trip.owner = { ...ownerData, _id: ownerData.id };
+      }
+    }
+
+    // Populate collaborators.userId
+    if (trip.collaborators && trip.collaborators.length > 0) {
+      const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
+      if (userIds.length > 0) {
+        const { data: usersList } = await supabase
+          .from("users")
+          .select("id, firstName, lastName, avatar, upiId, email")
+          .in("id", userIds);
+        
+        if (usersList) {
+          const usersMap = new Map(usersList.map(u => [u.id, u]));
+          trip.collaborators = trip.collaborators.map(c => ({
+            ...c,
+            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
+          }));
+        }
+      }
     }
 
     const permissionResult = hasTripPermission(trip, req.user.id, "read");
@@ -246,7 +274,7 @@ export const getTripById = async (req, res) => {
     }
 
     let role = "owner";
-    const isOwner = (trip.owner?._id || trip.owner)?.toString() === req.user.id || (trip.user?._id || trip.user)?.toString() === req.user.id;
+    const isOwner = trip.userId === req.user.id;
     if (!isOwner) {
       const collab = trip.collaborators?.find(c => c.userId && (c.userId._id || c.userId).toString() === req.user.id && c.acceptedAt !== null);
       if (collab) {
@@ -298,25 +326,25 @@ export const getTripById = async (req, res) => {
         }
       }
       
-      await trip.save();
+      await supabase.from("trips").update({
+        latitude: trip.latitude,
+        longitude: trip.longitude,
+        placeId: trip.placeId,
+        formattedAddress: trip.formattedAddress,
+        country: trip.country,
+        state: trip.state,
+        destinationName: trip.destinationName,
+        image: trip.image
+      }).eq("id", trip.id);
     }
 
     const acceptedCollaborators = trip.collaborators?.filter(c => c.acceptedAt !== null) || [];
-
-    // Compute unreadCount based on ChatReadStatus
-    const readStatus = await ChatReadStatus.findOne({ tripId: trip._id, userId: req.user.id });
-    const lastSeenAt = readStatus ? readStatus.lastSeenAt : new Date(0);
-    const unreadCount = await ChatMessage.countDocuments({
-      tripId: trip._id,
-      createdAt: { $gt: lastSeenAt },
-      sender: { $ne: req.user.id },
-      deletedAt: null
-    });
+    const unreadCount = 0;
 
     res.json({
       success: true,
       trip: {
-        ...trip.toObject(),
+        ...trip,
         collaborators: acceptedCollaborators,
         role,
         unreadCount
@@ -579,21 +607,51 @@ export const generateShareToken = async (req, res) => {
 
 const visitorCache = new Set();
 setInterval(() => visitorCache.clear(), 24 * 60 * 60 * 1000);
-
 // GET SHARED TRIP (PUBLIC)
 export const getSharedTrip = async (req, res) => {
   try {
-    const trip = await Trip.findOne({
+    const tripData = await Trip.findOne({
       shareToken: req.params.token,
-    })
-      .populate("owner", "firstName lastName avatar")
-      .populate("collaborators.userId", "firstName lastName avatar");
+    });
 
-    if (!trip || (trip.visibility !== "public" && !trip.isPublic)) {
+    if (!tripData || (tripData.visibility !== "public" && !tripData.isPublic)) {
       return res.status(404).json({
         success: false,
         message: "Shared trip not found or is private",
       });
+    }
+
+    const trip = { ...tripData, _id: tripData.id };
+
+    // Populate owner
+    if (trip.userId) {
+      const { data: ownerData } = await supabase
+        .from("users")
+        .select("id, firstName, lastName, avatar")
+        .eq("id", trip.userId)
+        .maybeSingle();
+      if (ownerData) {
+        trip.owner = { ...ownerData, _id: ownerData.id };
+      }
+    }
+
+    // Populate collaborators.userId
+    if (trip.collaborators && trip.collaborators.length > 0) {
+      const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
+      if (userIds.length > 0) {
+        const { data: usersList } = await supabase
+          .from("users")
+          .select("id, firstName, lastName, avatar")
+          .in("id", userIds);
+        
+        if (usersList) {
+          const usersMap = new Map(usersList.map(u => [u.id, u]));
+          trip.collaborators = trip.collaborators.map(c => ({
+            ...c,
+            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
+          }));
+        }
+      }
     }
 
     // Update shareAnalytics
@@ -624,7 +682,10 @@ export const getSharedTrip = async (req, res) => {
       trip.shareAnalytics.visitorCountries.push({ country, count: 1 });
     }
 
-    await trip.save();
+    await supabase
+      .from("trips")
+      .update({ shareAnalytics: trip.shareAnalytics })
+      .eq("id", trip.id);
 
     // Get itinerary, flights, and journals
     const itinerary = await Itinerary.find({ trip: trip._id }).sort({ day: 1, time: 1 });
@@ -632,7 +693,7 @@ export const getSharedTrip = async (req, res) => {
     const journals = await Journal.find({ trip: trip._id }).sort({ day: 1 });
 
     // Sanitize trip object
-    const sanitizedTrip = trip.toObject();
+    const sanitizedTrip = { ...trip };
     delete sanitizedTrip.settlements;
 
     res.json({
@@ -650,7 +711,6 @@ export const getSharedTrip = async (req, res) => {
     });
   }
 };
-
 // CLONE TRIP
 export const cloneTrip = async (req, res) => {
   try {
@@ -1033,9 +1093,30 @@ export const inviteCollaborator = async (req, res) => {
 // GET COLLABORATORS
 export const getCollaborators = async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id).populate("collaborators.userId", "firstName lastName email");
-    if (!trip) {
+    const tripData = await Trip.findById(req.params.id);
+    if (!tripData) {
       return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    const trip = { ...tripData, _id: tripData.id };
+
+    // Populate collaborators.userId
+    if (trip.collaborators && trip.collaborators.length > 0) {
+      const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
+      if (userIds.length > 0) {
+        const { data: usersList } = await supabase
+          .from("users")
+          .select("id, firstName, lastName, email")
+          .in("id", userIds);
+        
+        if (usersList) {
+          const usersMap = new Map(usersList.map(u => [u.id, u]));
+          trip.collaborators = trip.collaborators.map(c => ({
+            ...c,
+            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
+          }));
+        }
+      }
     }
 
     if (!hasTripPermission(trip, req.user.id, "read")) {
@@ -1215,25 +1296,48 @@ export const declineInvite = async (req, res) => {
 // GET ACTIVITY LOGS
 export const getActivityLogs = async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
-    if (!trip) {
+    const tripData = await Trip.findById(req.params.id);
+    if (!tripData) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
+
+    const trip = { ...tripData, _id: tripData.id };
 
     if (!hasTripPermission(trip, req.user.id, "read")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view activity logs" });
     }
 
-    const logs = await ActivityLog.find({ trip: req.params.id })
-      .populate("user", "firstName lastName email")
-      .sort({ createdAt: -1 })
-      .limit(50);
+    // ActivityLog model now queries Supabase directly and returns plain objects
+    const rawLogs = await ActivityLog.find({ trip: req.params.id });
+    const sortedLogs = (rawLogs || [])
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 50);
+
+    // Populate user profile for each log
+    const userIds = [...new Set(sortedLogs.map(l => l.userId || l.user).filter(Boolean))];
+    let usersMap = new Map();
+    if (userIds.length > 0) {
+      const { data: usersData } = await supabase
+        .from("users")
+        .select("id, firstName, lastName, email")
+        .in("id", userIds);
+      if (usersData) {
+        usersMap = new Map(usersData.map(u => [u.id, { ...u, _id: u.id }]));
+      }
+    }
+
+    const logs = sortedLogs.map(log => ({
+      ...log,
+      _id: log.id || log._id,
+      user: usersMap.get(log.userId || log.user) || log.user || null,
+    }));
 
     res.status(200).json({
       success: true,
       logs,
     });
   } catch (error) {
+    console.error("[Get Activity Logs Error]:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -1417,7 +1521,7 @@ export const addExpense = async (req, res) => {
     const totalSpent = Object.values(trip.expenses || {}).reduce((sum, val) => sum + (Number(val) || 0), 0);
     const projectedTotal = totalSpent + (Number(convertedAmount) || 0);
     if (projectedTotal > limitBudget) {
-      return res.status(400).json({ success: false, message: "Trip budget exceeded" });
+      return res.status(400).json({ success: false, message: "Trip budget exceeded." });
     }
 
     const newExpense = {

@@ -1,22 +1,34 @@
-import mongoose from "../config/mongooseMock.js";
+import { supabase } from "../config/supabase.js";
+import { makeQueryChain } from "./queryHelper.js";
 
-const commissionSchema = new mongoose.Schema(
-  {
-    defaultRate: {
-      type: Number,
-      required: true,
-      default: 10,
-    },
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
-      default: null,
-    },
+const Commission = {
+  create: async (payload) => {
+    const mapped = {
+      defaultRate: payload.defaultRate ?? 10,
+      updatedBy: payload.updatedBy ?? null,
+    };
+    const { data, error } = await supabase
+      .from("commissions")
+      .insert([mapped])
+      .select()
+      .single();
+    if (error) throw error;
+    return { ...data, _id: data.id };
   },
-  {
-    timestamps: true,
+  findOne: (query = {}) => {
+    const promise = (async () => {
+      const { data, error } = await supabase
+        .from("commissions")
+        .select("*")
+        .order("createdAt", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { ...data, _id: data.id };
+    })();
+    return makeQueryChain(promise);
   }
-);
+};
 
-const Commission = mongoose.model("Commission", commissionSchema);
 export default Commission;

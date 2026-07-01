@@ -10,6 +10,7 @@ import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
 import Driver from "../models/Driver.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
+import { supabase } from "../config/supabase.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -612,7 +613,16 @@ router.get(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
     let trip;
 
     if (isDbConnected()) {
-      trip = await AgentTrip.findById(req.params.id).populate("driver");
+      const { data, error } = await supabase
+        .from("agent_trips")
+        .select(`
+          *,
+          driver:drivers(*)
+        `)
+        .eq("id", req.params.id)
+        .maybeSingle();
+      if (error) throw error;
+      trip = data ? { ...data, _id: data.id } : null;
     } else {
       trip = fallbackTrips.get(req.params.id);
     }
@@ -884,15 +894,21 @@ router.get("/bookings", protectAgent, async (req, res) => {
     let bookings = [];
 
     if (isDbConnected()) {
-      bookings = await Booking.find({ agent: req.agent._id })
-        .populate("agentTrip")
-        .sort({ bookingDate: -1 });
+      const { data, error } = await supabase
+        .from("bookings")
+        .select(`
+          *,
+          agentTrip:tripId!inner(*)
+        `)
+        .eq("agentTrip.agentId", req.agent.id)
+        .order("createdAt", { ascending: false });
 
-      bookings = bookings.map(b => {
-        const obj = b.toObject();
-        obj.tripName = b.agentTrip ? b.agentTrip.title : "Deleted Trip";
-        return obj;
-      });
+      if (error) throw error;
+      bookings = (data || []).map(b => ({
+        ...b,
+        _id: b.id,
+        tripName: b.agentTrip ? b.agentTrip.title : "Deleted Trip"
+      }));
     } else {
       bookings = Array.from(fallbackBookings.values())
         .filter(b => b.agent.toString() === req.agent._id.toString())
@@ -929,18 +945,34 @@ router.put("/bookings/:id/status", protectAgent, async (req, res) => {
     let booking;
 
     if (isDbConnected()) {
-      booking = await Booking.findById(req.params.id).populate("agentTrip");
-      if (!booking) {
+      const { data, error } = await supabase
+        .from("bookings")
+        .select(`
+          *,
+          agentTrip:tripId(*)
+        `)
+        .eq("id", req.params.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
         return res.status(404).json({ success: false, message: "Booking record not found" });
       }
 
-      if (booking.agent.toString() !== req.agent._id.toString()) {
+      if (data.agentTrip?.agentId !== req.agent.id) {
         return res.status(403).json({ success: false, message: "Unauthorized booking update" });
       }
 
-      const previousStatus = booking.paymentStatus;
-      booking.paymentStatus = paymentStatus;
-      await booking.save();
+      const { data: updatedBooking, error: updateError } = await supabase
+        .from("bookings")
+        .update({ paymentStatus })
+        .eq("id", data.id)
+        .select()
+        .single();
+      if (updateError) throw updateError;
+
+      booking = { ...updatedBooking, _id: updatedBooking.id, agentTrip: data.agentTrip };
+      const previousStatus = data.paymentStatus;
 
       if (booking.agentTrip) {
         const trip = booking.agentTrip;
@@ -1084,8 +1116,22 @@ router.get("/analytics", protectAgent, async (req, res) => {
     let bookings = [];
 
     if (isDbConnected()) {
-      trips = await AgentTrip.find({ agent: req.agent._id });
-      bookings = await Booking.find({ agent: req.agent._id }).populate("agentTrip");
+      const { data: agentTripsData, error: tripsError } = await supabase
+        .from("agent_trips")
+        .select("*")
+        .eq("agentId", req.agent.id);
+      if (tripsError) throw tripsError;
+      trips = agentTripsData || [];
+
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from("bookings")
+        .select(`
+          *,
+          agentTrip:tripId!inner(*)
+        `)
+        .eq("agentTrip.agentId", req.agent.id);
+      if (bookingsError) throw bookingsError;
+      bookings = (bookingsData || []).map(b => ({ ...b, _id: b.id }));
     } else {
       trips = Array.from(fallbackTrips.values()).filter(t => t.agent.toString() === req.agent._id.toString());
       bookings = Array.from(fallbackBookings.values()).filter(b => b.agent.toString() === req.agent._id.toString());

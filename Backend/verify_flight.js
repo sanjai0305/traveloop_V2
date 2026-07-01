@@ -1,13 +1,10 @@
+import "dotenv/config";
 import assert from "assert";
-import mongoose from "mongoose";
-import dotenv from "dotenv";
+import mongoose from "./config/mongooseMock.js";
 import User from "./models/User.js";
 import Trip from "./models/Trip.js";
 import Flight from "./models/Flight.js";
 import Notification from "./models/Notification.js";
-
-dotenv.config();
-
 const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);

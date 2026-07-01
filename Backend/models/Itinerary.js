@@ -29,8 +29,10 @@ const Itinerary = {
       day: payload.day || 1,
       title: payload.title,
       description: payload.note || "",
-      isAiSuggestion: payload.isAiSuggestion || false,
-      aiSource: payload.aiSource || "",
+      time: payload.time || "",
+      place: payload.place || "",
+      category: payload.category || "",
+      budget: Number(payload.budget) || 0
     };
     const { data, error } = await supabase.from("itineraries").insert([mapped]).select().single();
     if (error) throw error;
@@ -47,6 +49,10 @@ const Itinerary = {
       day: d.day || 1,
       title: d.title,
       description: d.note || "",
+      time: d.time || "",
+      place: d.place || "",
+      category: d.category || "",
+      budget: Number(d.budget) || 0,
       isAiSuggestion: d.isAiSuggestion || false,
       aiSource: d.aiSource || "",
     }));
@@ -59,6 +65,10 @@ const Itinerary = {
     if (updateFields.day !== undefined) mapped.day = updateFields.day;
     if (updateFields.title !== undefined) mapped.title = updateFields.title;
     if (updateFields.note !== undefined) mapped.description = updateFields.note;
+    if (updateFields.time !== undefined) mapped.time = updateFields.time;
+    if (updateFields.place !== undefined) mapped.place = updateFields.place;
+    if (updateFields.category !== undefined) mapped.category = updateFields.category;
+    if (updateFields.budget !== undefined) mapped.budget = Number(updateFields.budget) || 0;
     
     const { data, error } = await supabase.from("itineraries").update(mapped).eq("id", id).select().single();
     if (error) throw error;
@@ -67,6 +77,22 @@ const Itinerary = {
   findByIdAndDelete: async (id) => {
     await supabase.from("itineraries").delete().eq("id", id);
     return true;
+  },
+  deleteMany: async (filter = {}) => {
+    let q = supabase.from("itineraries").delete();
+    if (filter.trip) {
+      if (filter.trip.$in) {
+        q = q.in("tripId", filter.trip.$in);
+      } else {
+        q = q.eq("tripId", filter.trip);
+      }
+    } else {
+      // DELETE requires a filter/where clause to avoid accidents
+      q = q.not("id", "is", "null");
+    }
+    const { error } = await q;
+    if (error) throw error;
+    return { deletedCount: 1 };
   }
 };
 

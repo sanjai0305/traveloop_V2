@@ -69,6 +69,21 @@ const Checklist = {
   findByIdAndDelete: async (id) => {
     await supabase.from("checklists").delete().eq("id", id);
     return true;
+  },
+  deleteMany: async (filter = {}) => {
+    let q = supabase.from("checklists").delete();
+    if (filter.trip) {
+      if (filter.trip.$in) {
+        q = q.in("tripId", filter.trip.$in);
+      } else {
+        q = q.eq("tripId", filter.trip);
+      }
+    } else {
+      q = q.not("id", "is", "null");
+    }
+    const { error } = await q;
+    if (error) throw error;
+    return { deletedCount: 1 };
   }
 };
 

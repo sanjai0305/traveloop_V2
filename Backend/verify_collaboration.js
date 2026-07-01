@@ -34,6 +34,9 @@ async function runTests() {
       }),
     });
     const regOwnerData = await regOwnerRes.json();
+    if (regOwnerRes.status !== 201) {
+      console.error("[DEBUG] Registration failed with response:", regOwnerData);
+    }
     assert.strictEqual(regOwnerRes.status, 201, "Owner registration success");
     tokenOwner = regOwnerData.token;
 

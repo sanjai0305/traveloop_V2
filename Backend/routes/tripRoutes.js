@@ -29,6 +29,7 @@ import {
 import protect from "../middleware/authMiddleware.js";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
+import { supabase } from "../config/supabase.js";
 
 const router = express.Router();
 
@@ -37,15 +38,34 @@ const router = express.Router();
 // 1. Get all published trips
 router.get("/published", async (req, res) => {
   try {
-    const trips = await AgentTrip.find({
-      isDeleted: { $ne: true },
-      $or: [
-        { status: "published" },
-        { publishStatus: "published" }
-      ]
-    })
-      .populate("agent", "displayName companyName logo profileImage email phone")
-      .sort({ createdAt: -1 });
+    const { data, error } = await supabase
+      .from("agent_trips")
+      .select(`
+        *,
+        agent:agents(companyName, email)
+      `)
+      .neq("isDeleted", true)
+      .or("status.eq.published,publishStatus.eq.published")
+      .order("createdAt", { ascending: false });
+
+    if (error) throw error;
+
+    const trips = (data || []).map(t => {
+      const mapped = { ...t, _id: t.id };
+      if (mapped.agent) {
+        // Flatten companyName/email to match client assumptions if needed
+        mapped.agent = {
+          _id: t.agentId,
+          displayName: t.agent.companyName,
+          companyName: t.agent.companyName,
+          email: t.agent.email,
+          logo: "",
+          profileImage: "",
+          phone: ""
+        };
+      }
+      return mapped;
+    });
 
     res.status(200).json({
       success: true,
@@ -83,17 +103,46 @@ router.put("/:id/publish", protect, async (req, res) => {
 // 2. Get specific published trip detail
 router.get("/published/:id", async (req, res) => {
   try {
-    const trip = await AgentTrip.findById(req.params.id)
-      .populate("agent", "displayName companyName logo profileImage email phone");
-    if (!trip) {
+    const { data: tripData, error: tripError } = await supabase
+      .from("agent_trips")
+      .select(`
+        *,
+        agent:agents(companyName, email)
+      `)
+      .eq("id", req.params.id)
+      .maybeSingle();
+
+    if (tripError) throw tripError;
+    if (!tripData) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
+    const trip = { ...tripData, _id: tripData.id };
+    if (trip.agent) {
+      trip.agent = {
+        _id: tripData.agentId,
+        displayName: tripData.agent.companyName,
+        companyName: tripData.agent.companyName,
+        email: tripData.agent.email,
+        logo: "",
+        profileImage: "",
+        phone: ""
+      };
+    }
+
     // Fetch all bookings for this trip to extract booked seat numbers
-    const bookings = await Booking.find({ agentTrip: trip._id, paymentStatus: { $ne: "Cancelled" } });
+    const { data: bookingsData, error: bookingsError } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("tripId", trip._id)
+      .neq("paymentStatus", "Cancelled");
+
+    if (bookingsError) throw bookingsError;
+
+    const bookings = (bookingsData || []).map(b => ({ ...b, _id: b.id }));
     const bookedSeatNumbers = bookings.reduce((seats, b) => {
-      if (b.seatNumbers && b.seatNumbers.length > 0) {
-        seats.push(...b.seatNumbers);
+      if (b.assignedSeat) {
+        seats.push(b.assignedSeat);
       }
       return seats;
     }, []);

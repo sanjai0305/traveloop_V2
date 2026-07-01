@@ -58,12 +58,19 @@ const Note = {
     await supabase.from("notes").delete().eq("id", id);
     return true;
   },
-  deleteMany: async (query = {}) => {
+  deleteMany: async (filter = {}) => {
     let q = supabase.from("notes").delete();
-    if (query.trip) {
-      q = q.eq("tripId", query.trip);
+    if (filter.trip) {
+      if (filter.trip.$in) {
+        q = q.in("tripId", filter.trip.$in);
+      } else {
+        q = q.eq("tripId", filter.trip);
+      }
+    } else {
+      q = q.not("id", "is", "null");
     }
-    await q;
+    const { error } = await q;
+    if (error) throw error;
     return { deletedCount: 1 };
   }
 };

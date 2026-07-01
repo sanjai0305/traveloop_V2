@@ -1,36 +1,43 @@
 import { supabase } from "../config/supabase.js";
+import { makeQueryChain } from "./queryHelper.js";
 
 const AgentTrip = {
-  find: async (query = {}) => {
-    let q = supabase.from("agent_trips").select("*");
-    if (query.driver) {
-      q = q.eq("driverId", query.driver);
-    }
-    if (query.status) {
-      q = q.eq("status", query.status);
-    }
-    const { data } = await q;
-    return (data || []).map(r => ({ ...r, _id: r.id }));
-  },
-  findOne: async (query = {}) => {
-    let q = supabase.from("agent_trips").select("*");
-    if (query._id) {
-      q = q.eq("id", query._id);
-    }
-    if (query.startDate) {
-      q = q.eq("startDate", query.startDate);
-    }
-    const { data } = await q.maybeSingle();
-    if (!data) return null;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id, _id, ...fields } = this;
-        delete fields.save;
-        await supabase.from("agent_trips").update(fields).eq("id", id);
+  find: (query = {}) => {
+    const promise = (async () => {
+      let q = supabase.from("agent_trips").select("*");
+      if (query.driver) {
+        q = q.eq("driverId", query.driver);
       }
-    };
+      if (query.status) {
+        q = q.eq("status", query.status);
+      }
+      const { data } = await q;
+      return (data || []).map(r => ({ ...r, _id: r.id }));
+    })();
+    return makeQueryChain(promise);
+  },
+  findOne: (query = {}) => {
+    const promise = (async () => {
+      let q = supabase.from("agent_trips").select("*");
+      if (query._id) {
+        q = q.eq("id", query._id);
+      }
+      if (query.startDate) {
+        q = q.eq("startDate", query.startDate);
+      }
+      const { data } = await q.maybeSingle();
+      if (!data) return null;
+      return {
+        ...data,
+        _id: data.id,
+        save: async function() {
+          const { id, _id, ...fields } = this;
+          delete fields.save;
+          await supabase.from("agent_trips").update(fields).eq("id", id);
+        }
+      };
+    })();
+    return makeQueryChain(promise);
   },
   findById: async (id) => {
     if (!id) return null;
@@ -65,8 +72,7 @@ const AgentTrip = {
     return data ? { ...data, _id: data.id } : null;
   },
   findByIdAndDelete: async (id) => {
-    const { error } = await supabase.from("agent_trips").delete().eq("id", id);
-    if (error) throw error;
+    await supabase.from("agent_trips").delete().eq("id", id);
     return true;
   }
 };

@@ -1,52 +1,56 @@
-import mongoose from "../config/mongooseMock.js";
+import { supabase } from "../config/supabase.js";
+import { makeQueryChain } from "./queryHelper.js";
 
-const settlementSchema = new mongoose.Schema(
-  {
-    bookingId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Booking",
-      required: true,
-    },
-    tripId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "AgentTrip",
-      required: true,
-    },
-    agentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Agent",
-      required: true,
-    },
-    grossAmount: {
-      type: Number,
-      required: true,
-    },
-    commissionAmount: {
-      type: Number,
-      required: true,
-    },
-    gatewayFee: {
-      type: Number,
-      required: true,
-    },
-    netAmount: {
-      type: Number,
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: ["Pending", "Paid", "Settled", "Failed"],
-      default: "Pending",
-    },
-    paidAt: {
-      type: Date,
-      default: null,
-    },
+const Settlement = {
+  findById: async (id) => {
+    if (!id) return null;
+    const { data, error } = await supabase
+      .from("settlements")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      ...data,
+      _id: data.id,
+      save: async function() {
+        const { id: _id, _id: __id, save: _save, ...fields } = this;
+        await supabase.from("settlements").update(fields).eq("id", _id || id);
+      }
+    };
   },
-  {
-    timestamps: true,
+  create: async (payload) => {
+    const { data, error } = await supabase
+      .from("settlements")
+      .insert([payload])
+      .select().single();
+    if (error) throw error;
+    return { ...data, _id: data.id };
+  },
+  findOne: (query = {}) => {
+    const promise = (async () => {
+      let q = supabase.from("settlements").select("*");
+      if (query.bookingId) {
+        q = q.eq("bookingId", query.bookingId);
+      }
+      if (query.agentId) {
+        q = q.eq("agentId", query.agentId);
+      }
+      const { data, error } = await q.maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        ...data,
+        _id: data.id,
+        save: async function() {
+          const { id: _id, _id: __id, save: _save, ...fields } = this;
+          await supabase.from("settlements").update(fields).eq("id", _id);
+        }
+      };
+    })();
+    return makeQueryChain(promise);
   }
-);
+};
 
-const Settlement = mongoose.model("Settlement", settlementSchema);
 export default Settlement;
