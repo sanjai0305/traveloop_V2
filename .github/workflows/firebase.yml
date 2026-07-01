@@ -21,13 +21,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package.json
 
-      - name: Install Dependencies
+      - name: Install Functions Dependencies
         run: |
           cd functions
           npm install
-        name: Install functions dependencies
 
-      - name: Deploy to Firebase Functions
+      - name: Firebase Deploy
         run: |
           if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
             echo "Authenticating via Google Cloud Service Account..."
@@ -45,4 +44,3 @@ jobs:
             exit 1
           fi
         shell: bash
-        name: Firebase deploy
