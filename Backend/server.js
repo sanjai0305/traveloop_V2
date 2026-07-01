@@ -278,7 +278,9 @@ if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
     console.log(`✅ Supabase Connected`);
-    console.log(`✅ Routes Loaded Successfully`);
+    console.log(`✅ Socket.io enabled`);
+    console.log(`✅ Routes loaded successfully`);
+    console.log(`✅ Render deployment healthy`);
   });
 } else {
   const maxPort = port + 2;
@@ -287,7 +289,9 @@ if (process.env.NODE_ENV === "production") {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
       console.log(`✅ Supabase Connected`);
-      console.log(`✅ Routes Loaded Successfully`);
+      console.log(`✅ Socket.io enabled`);
+      console.log(`✅ Routes loaded successfully`);
+      console.log(`✅ Render deployment healthy`);
     });
   };
 
