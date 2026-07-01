@@ -278,10 +278,7 @@ if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
     console.log(`✅ Supabase Connected`);
-    console.log(`✅ Firebase initialized`);
-    console.log(`✅ Socket.io enabled`);
-    console.log(`✅ Routes loaded successfully`);
-    console.log(`✅ Render deployment healthy`);
+    console.log(`✅ Routes Loaded Successfully`);
   });
 } else {
   const maxPort = port + 2;
@@ -290,10 +287,7 @@ if (process.env.NODE_ENV === "production") {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
       console.log(`✅ Supabase Connected`);
-      console.log(`✅ Firebase initialized`);
-      console.log(`✅ Socket.io enabled`);
-      console.log(`✅ Routes loaded successfully`);
-      console.log(`✅ Render deployment healthy`);
+      console.log(`✅ Routes Loaded Successfully`);
     });
   };
 
@@ -305,7 +299,7 @@ if (process.env.NODE_ENV === "production") {
         console.log(`🔄 Retrying on port ${port}...`);
         startServer(port);
       } else {
-        console.log(`Backend already running on port 5000`);
+        console.log("Backend already running on port 5000");
         process.exit(0);
       }
     } else {
