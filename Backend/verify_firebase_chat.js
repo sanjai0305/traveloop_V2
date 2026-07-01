@@ -1,16 +1,16 @@
 import assert from "assert";
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { 
-  initializeFirestore, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  collection, 
-  getDocs, 
-  runTransaction, 
-  serverTimestamp, 
-  deleteDoc 
+import {
+  initializeFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
+  deleteDoc
 } from "firebase/firestore";
 import { getDatabase, ref, set, get, remove } from "firebase/database";
 import dotenv from "dotenv";
@@ -35,7 +35,7 @@ const firebaseConfig = {
 
 async function testFirebaseChat() {
   console.log("=== VERIFYING FIREBASE FIRESTORE & REALTIME DB CHAT SYSTEM ===\n");
-  
+
   const isFakeKey = firebaseConfig.apiKey && firebaseConfig.apiKey.includes("FakeKey");
 
   let app, auth, db, rtdb;
@@ -65,110 +65,110 @@ async function testFirebaseChat() {
       // 1. Verify Firestore Member document bootstrapping
       const memberDocRef = doc(db, "trips", testTripId, "members", testUserId);
       await setDoc(memberDocRef, {
-      role: "owner",
-      unreadCount: 0,
-      lastSeenAt: serverTimestamp(),
-    });
-    
-    const otherDocRef = doc(db, "trips", testTripId, "members", otherUserId);
-    await setDoc(otherDocRef, {
-      role: "editor",
-      unreadCount: 0,
-      lastSeenAt: serverTimestamp(),
-    });
-
-    const memberSnap = await getDoc(memberDocRef);
-    assert.strictEqual(memberSnap.data().role, "owner");
-    logPass("Firestore: Member document bootstrapped successfully");
-
-    // 2. Verify Firestore message schema with transaction + unreadCount increment
-    const messageDocRef = doc(collection(db, "trips", testTripId, "messages"));
-    
-    await runTransaction(db, async (transaction) => {
-      // Read members
-      const membersRef = collection(db, "trips", testTripId, "members");
-      const membersSnap = await getDocs(membersRef);
-      
-      membersSnap.forEach((mDoc) => {
-        if (mDoc.id !== testUserId) {
-          const docRef = doc(membersRef, mDoc.id);
-          const currentUnread = mDoc.data().unreadCount || 0;
-          transaction.update(docRef, { unreadCount: currentUnread + 1 });
-        }
+        role: "owner",
+        unreadCount: 0,
+        lastSeenAt: serverTimestamp(),
       });
 
-      // Write message
-      transaction.set(messageDocRef, {
-        senderId: testUserId,
-        senderName: "Test Sender",
-        senderAvatar: "avatar_url",
-        message: "Hello world!",
-        messageType: "text",
-        imageUrl: "",
-        createdAt: serverTimestamp(),
-        editedAt: null,
-        deletedAt: null,
-        replyTo: null,
-        reactions: [],
-        seenBy: [testUserId],
-        version: 1,
+      const otherDocRef = doc(db, "trips", testTripId, "members", otherUserId);
+      await setDoc(otherDocRef, {
+        role: "editor",
+        unreadCount: 0,
+        lastSeenAt: serverTimestamp(),
       });
-    });
 
-    // Verify message wrote successfully
-    const messageSnap = await getDoc(messageDocRef);
-    assert.ok(messageSnap.exists());
-    assert.strictEqual(messageSnap.data().message, "Hello world!");
-    assert.strictEqual(messageSnap.data().senderId, testUserId);
-    assert.strictEqual(messageSnap.data().version, 1);
-    
-    // Verify unreadCount updated for other member
-    const otherSnap = await getDoc(otherDocRef);
-    assert.strictEqual(otherSnap.data().unreadCount, 1);
-    logPass("Firestore: Message transaction sent and incremented other collaborator unreadCount");
+      const memberSnap = await getDoc(memberDocRef);
+      assert.strictEqual(memberSnap.data().role, "owner");
+      logPass("Firestore: Member document bootstrapped successfully");
 
-    // 3. Verify Realtime Database presence tracking
-    const presenceRef = ref(rtdb, `presence/${testTripId}/${testUserId}`);
-    await set(presenceRef, {
-      userId: testUserId,
-      name: "Test User",
-      status: "online",
-      lastSeen: Date.now(),
-    });
+      // 2. Verify Firestore message schema with transaction + unreadCount increment
+      const messageDocRef = doc(collection(db, "trips", testTripId, "messages"));
 
-    const presenceSnap = await get(presenceRef);
-    assert.ok(presenceSnap.exists());
-    assert.strictEqual(presenceSnap.val().status, "online");
-    logPass("Realtime DB: Presence status online set successfully");
+      await runTransaction(db, async (transaction) => {
+        // Read members
+        const membersRef = collection(db, "trips", testTripId, "members");
+        const membersSnap = await getDocs(membersRef);
 
-    // 4. Verify Realtime Database typing indicator tracking
-    const typingRef = ref(rtdb, `typing/${testTripId}/${testUserId}`);
-    await set(typingRef, {
-      userId: testUserId,
-      name: "Test User",
-      typing: true,
-    });
+        membersSnap.forEach((mDoc) => {
+          if (mDoc.id !== testUserId) {
+            const docRef = doc(membersRef, mDoc.id);
+            const currentUnread = mDoc.data().unreadCount || 0;
+            transaction.update(docRef, { unreadCount: currentUnread + 1 });
+          }
+        });
 
-    let typingSnap = await get(typingRef);
-    assert.ok(typingSnap.exists());
-    assert.strictEqual(typingSnap.val().typing, true);
+        // Write message
+        transaction.set(messageDocRef, {
+          senderId: testUserId,
+          senderName: "Test Sender",
+          senderAvatar: "avatar_url",
+          message: "Hello world!",
+          messageType: "text",
+          imageUrl: "",
+          createdAt: serverTimestamp(),
+          editedAt: null,
+          deletedAt: null,
+          replyTo: null,
+          reactions: [],
+          seenBy: [testUserId],
+          version: 1,
+        });
+      });
 
-    await remove(typingRef);
-    typingSnap = await get(typingRef);
-    assert.ok(!typingSnap.exists());
-    logPass("Realtime DB: Typing status toggle verified successfully");
+      // Verify message wrote successfully
+      const messageSnap = await getDoc(messageDocRef);
+      assert.ok(messageSnap.exists());
+      assert.strictEqual(messageSnap.data().message, "Hello world!");
+      assert.strictEqual(messageSnap.data().senderId, testUserId);
+      assert.strictEqual(messageSnap.data().version, 1);
 
-    // Cleanup test database documents
-    await deleteDoc(memberDocRef);
-    await deleteDoc(otherDocRef);
-    await deleteDoc(messageDocRef);
-    await remove(presenceRef);
-    logPass("Cleanup: Temporary Firebase test data removed successfully");
+      // Verify unreadCount updated for other member
+      const otherSnap = await getDoc(otherDocRef);
+      assert.strictEqual(otherSnap.data().unreadCount, 1);
+      logPass("Firestore: Message transaction sent and incremented other collaborator unreadCount");
+
+      // 3. Verify Realtime Database presence tracking
+      const presenceRef = ref(rtdb, `presence/${testTripId}/${testUserId}`);
+      await set(presenceRef, {
+        userId: testUserId,
+        name: "Test User",
+        status: "online",
+        lastSeen: Date.now(),
+      });
+
+      const presenceSnap = await get(presenceRef);
+      assert.ok(presenceSnap.exists());
+      assert.strictEqual(presenceSnap.val().status, "online");
+      logPass("Realtime DB: Presence status online set successfully");
+
+      // 4. Verify Realtime Database typing indicator tracking
+      const typingRef = ref(rtdb, `typing/${testTripId}/${testUserId}`);
+      await set(typingRef, {
+        userId: testUserId,
+        name: "Test User",
+        typing: true,
+      });
+
+      let typingSnap = await get(typingRef);
+      assert.ok(typingSnap.exists());
+      assert.strictEqual(typingSnap.val().typing, true);
+
+      await remove(typingRef);
+      typingSnap = await get(typingRef);
+      assert.ok(!typingSnap.exists());
+      logPass("Realtime DB: Typing status toggle verified successfully");
+
+      // Cleanup test database documents
+      await deleteDoc(memberDocRef);
+      await deleteDoc(otherDocRef);
+      await deleteDoc(messageDocRef);
+      await remove(presenceRef);
+      logPass("Cleanup: Temporary Firebase test data removed successfully");
     }
 
     // 5. Verify Backend Notification Cooldown
     console.log("\n=== VERIFYING BACKEND NOTIFICATION COOLDOWN BRIDGE ===\n");
-    const BASE_URL = "http://localhost:5000/api";
+    const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
     const emailOwner = `owner_${Date.now()}@example.com`;
     const emailCollab = `collab_${Date.now()}@example.com`;
@@ -293,7 +293,7 @@ async function testFirebaseChat() {
     });
     const finalNotifData = await finalNotifRes.json();
     const chatNotifications = finalNotifData.notifications.filter(n => n.type === "chat" && n.trip === tripId);
-    
+
     assert.strictEqual(chatNotifications.length, 1, "There should be exactly 1 chat notification due to 60s cooldown!");
     logPass("Backend: Notification cooldown successfully prevented duplicate notification drawer spam");
 

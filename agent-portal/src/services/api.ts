@@ -6,10 +6,7 @@ const getApiBaseUrl = () => {
     const clean = envUrl.replace(/\/+$/, "");
     return clean.endsWith("/api") ? clean : `${clean}/api`;
   }
-  if (import.meta.env.DEV) {
-    return "http://localhost:5000/api";
-  }
-  return "http://65.2.84.40:5000/api";
+  return "https://traveloopv2.duckdns.org/api";
 };
 
 const api = axios.create({

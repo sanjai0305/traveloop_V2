@@ -50,13 +50,11 @@ export const Settings: React.FC = () => {
               </div>
               <button
                 onClick={() => handleToggle("approvals")}
-                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${
-                  notifications.approvals ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
-                }`}
+                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${notifications.approvals ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
+                  }`}
               >
-                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  notifications.approvals ? "translate-x-4" : ""
-                }`} />
+                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${notifications.approvals ? "translate-x-4" : ""
+                  }`} />
               </button>
             </div>
 
@@ -67,13 +65,11 @@ export const Settings: React.FC = () => {
               </div>
               <button
                 onClick={() => handleToggle("cancellations")}
-                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${
-                  notifications.cancellations ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
-                }`}
+                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${notifications.cancellations ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
+                  }`}
               >
-                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  notifications.cancellations ? "translate-x-4" : ""
-                }`} />
+                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${notifications.cancellations ? "translate-x-4" : ""
+                  }`} />
               </button>
             </div>
 
@@ -84,13 +80,11 @@ export const Settings: React.FC = () => {
               </div>
               <button
                 onClick={() => handleToggle("weeklyReport")}
-                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${
-                  notifications.weeklyReport ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
-                }`}
+                className={`w-10 h-6 rounded-full relative p-0.5 transition-all ${notifications.weeklyReport ? "bg-primary" : "bg-slate-200 dark:bg-slate-800"
+                  }`}
               >
-                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${
-                  notifications.weeklyReport ? "translate-x-4" : ""
-                }`} />
+                <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${notifications.weeklyReport ? "translate-x-4" : ""
+                  }`} />
               </button>
             </div>
           </div>
@@ -107,10 +101,10 @@ export const Settings: React.FC = () => {
             <div className="flex justify-between py-2">
               <span className="text-slate-500 dark:text-slate-450">API Base Connection</span>
               <span className="text-slate-700 dark:text-slate-300 font-mono text-[10px] bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded">
-                {import.meta.env.VITE_API_URL || "http://localhost:5000/api"}
+                {import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org/api"}
               </span>
             </div>
-            
+
             <div className="flex justify-between py-2 border-t border-slate-105/50 dark:border-slate-800">
               <span className="text-slate-500 dark:text-slate-450">GST Verification Status</span>
               <span className="text-emerald-500 font-bold">GSTIN Validated</span>

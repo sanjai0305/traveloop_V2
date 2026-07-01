@@ -5,10 +5,7 @@ const getSocketUrl = () => {
   if (envUrl) {
     return envUrl.replace(/\/api\/?$/, "");
   }
-  if (import.meta.env.DEV) {
-    return "http://localhost:5000";
-  }
-  return "http://65.2.84.40:5000";
+  return "https://traveloopv2.duckdns.org";
 };
 
 const socketUrl = getSocketUrl();

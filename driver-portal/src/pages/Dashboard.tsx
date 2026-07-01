@@ -24,16 +24,16 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { driver, logout } = useDriverAuth()
 
-  const [trip,       setTrip]       = useState<Trip | null>(null)
-  const [stats,      setStats]      = useState<Stats | null>(null)
-  const [boardingLog,setBoardingLog]= useState<BoardLog[]>([])
-  const [loading,    setLoading]    = useState(true)
+  const [trip, setTrip] = useState<Trip | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [boardingLog, setBoardingLog] = useState<BoardLog[]>([])
+  const [loading, setLoading] = useState(true)
 
   // ── NEW: Post Driver Update state
   const [showUpdateModal, setShowUpdateModal] = useState(false)
-  const [updateType,      setUpdateType]      = useState<'info'|'alert'|'delay'|'location'>('info')
-  const [updateMessage,   setUpdateMessage]   = useState('')
-  const [updateSending,   setUpdateSending]   = useState(false)
+  const [updateType, setUpdateType] = useState<'info' | 'alert' | 'delay' | 'location'>('info')
+  const [updateMessage, setUpdateMessage] = useState('')
+  const [updateSending, setUpdateSending] = useState(false)
 
   const handleOpenBoarding = async (tripId: string) => {
     try {
@@ -65,8 +65,9 @@ export default function Dashboard() {
     if (!updateMessage.trim() || !trip) return
     setUpdateSending(true)
     try {
-      const token = localStorage.getItem('driver_token') || localStorage.getItem('token') || ''
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'}/driver-updates/${trip._id}`, {
+      const token = localStorage.getItem('driver_token') || localStorage.getItem('token') || '';
+      const baseApiUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`) : 'https://traveloopv2.duckdns.org/api');
+      const res = await fetch(`${baseApiUrl}/driver-updates/${trip._id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,7 +99,7 @@ export default function Dashboard() {
       setTrip(res.data.trip)
       setStats(res.data.stats)
       setBoardingLog(res.data.boardingLog || [])
-    } catch (_) {}
+    } catch (_) { }
     finally { setLoading(false) }
   }, [])
 
@@ -136,7 +137,7 @@ export default function Dashboard() {
 
         {loading ? (
           <div className="flex flex-col gap-3">
-            {[1,2,3].map(i => <div key={i} className="h-20 rounded-2xl bg-white/5 animate-pulse" />)}
+            {[1, 2, 3].map(i => <div key={i} className="h-20 rounded-2xl bg-white/5 animate-pulse" />)}
           </div>
         ) : !trip ? (
           <motion.div
@@ -299,23 +300,22 @@ export default function Dashboard() {
 
                     {/* Type selector */}
                     <div className="grid grid-cols-4 gap-2 mb-4">
-                      {(['info','alert','delay','location'] as const).map(t => (
+                      {(['info', 'alert', 'delay', 'location'] as const).map(t => (
                         <button
                           key={t}
                           onClick={() => setUpdateType(t)}
-                          className={`py-1.5 rounded-xl text-xs font-bold border transition-all capitalize ${
-                            updateType === t
+                          className={`py-1.5 rounded-xl text-xs font-bold border transition-all capitalize ${updateType === t
                               ? t === 'alert' ? 'bg-amber-500 text-white border-amber-400'
-                              : t === 'delay' ? 'bg-rose-500 text-white border-rose-400'
-                              : t === 'location' ? 'bg-green-500 text-white border-green-400'
-                              : 'bg-blue-500 text-white border-blue-400'
+                                : t === 'delay' ? 'bg-rose-500 text-white border-rose-400'
+                                  : t === 'location' ? 'bg-green-500 text-white border-green-400'
+                                    : 'bg-blue-500 text-white border-blue-400'
                               : 'bg-white/5 text-slate-400 border-white/10'
-                          }`}
+                            }`}
                         >
                           {t === 'info' ? '📋 Info'
-                           : t === 'alert' ? '⚠️ Alert'
-                           : t === 'delay' ? '⏰ Delay'
-                           : '📍 Location'}
+                            : t === 'alert' ? '⚠️ Alert'
+                              : t === 'delay' ? '⏰ Delay'
+                                : '📍 Location'}
                         </button>
                       ))}
                     </div>
@@ -351,10 +351,10 @@ export default function Dashboard() {
                 <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-3">Boarding Stats</p>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Total',   value: stats.total,   icon: Users,       color: 'text-blue-400' },
-                    { label: 'Boarded', value: stats.boarded, icon: CheckCircle,  color: 'text-emerald-400' },
-                    { label: 'Pending', value: stats.pending, icon: Clock,        color: 'text-amber-400' },
-                    { label: 'No Show', value: stats.noShow,  icon: XCircle,      color: 'text-rose-400' },
+                    { label: 'Total', value: stats.total, icon: Users, color: 'text-blue-400' },
+                    { label: 'Boarded', value: stats.boarded, icon: CheckCircle, color: 'text-emerald-400' },
+                    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-amber-400' },
+                    { label: 'No Show', value: stats.noShow, icon: XCircle, color: 'text-rose-400' },
                   ].map(s => {
                     const Icon = s.icon
                     return (

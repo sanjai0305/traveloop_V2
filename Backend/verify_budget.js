@@ -1,13 +1,13 @@
 import assert from "assert";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message}\x1b[0m`);
 
 async function runTests() {
   console.log("=== TRAVELOOP BUDGET VALIDATION TEST SUITE ===\n");
-  
+
   let token = null;
   let tripId = null;
   let item1Id = null; // 2000 item
@@ -251,7 +251,7 @@ async function runTests() {
       }),
     });
     assert.strictEqual(expenseRes1.status, 201, "Valid expense item should return 201");
-    
+
     logPass("Expenses: Added valid trip expense item of ₹5,000");
 
     // Add invalid expense of 2000000 (exceeds budget)

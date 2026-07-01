@@ -2,7 +2,7 @@ import { io } from "socket.io-client";
 import { getApiUrl } from "./api";
 
 const getSocketUrl = () => {
-  // getApiUrl("") returns e.g. "http://localhost:5000/api/" or "http://65.2.84.40:5000/api/"
+  // getApiUrl("") returns e.g. "import.meta.env.VITE_API_URL/api/" or "http://65.2.84.40:5000/api/"
   const apiUrl = getApiUrl("");
   return apiUrl.replace(/\/api\/?$/, ""); // strip "/api" and any trailing slash
 };

@@ -753,7 +753,8 @@ export const getMe = async (req, res) => {
 // GOOGLE AUTH CALLBACK
 export const googleAuth = async (req, res) => {
   try {
-    const { token: googleToken, clientId } = req.body;
+    const googleToken = req.body.token || req.body.idToken;
+    const { clientId } = req.body;
     if (!googleToken) {
       return res.status(400).json({ success: false, message: "Token is required." });
     }

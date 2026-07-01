@@ -180,6 +180,7 @@ export const loginWithEmailPassword = async (email, password) => {
 export const loginWithGoogle = async (idToken) => {
   // 1. Authenticate with Backend using Google ID Token
   console.log(`[Google Auth] Starting Google Login... Sending idToken to Backend`);
+  console.log(idToken);
   const backendData = await apiRequest("/auth/google", "POST", { idToken });
   console.log(`[Google Auth] Backend authenticated. User ID: ${backendData.user._id}`);
 

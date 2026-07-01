@@ -5,7 +5,7 @@ import { db, auth } from "./config/firebase.js";
 import { doc, getDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.stack || error.message}\x1b[0m`);
@@ -49,12 +49,12 @@ async function runTests() {
 
     // B. Query OTP from Firestore
     const otpDocRef = doc(db, "otps", testEmail.toLowerCase());
-    
+
     // Authenticate anonymously before reading
     if (!auth.currentUser) {
       await signInAnonymously(auth);
     }
-    
+
     const otpSnap = await getDoc(otpDocRef);
     assert.ok(otpSnap.exists(), "OTP document should exist in Firestore");
     const otpData = otpSnap.data();
@@ -142,7 +142,7 @@ async function runTests() {
     assert.strictEqual(autoRes.status, 200, "Autocomplete should return 200 OK");
     assert.strictEqual(autoData.success, true, "Autocomplete success should be true");
     assert.ok(autoData.predictions.length > 0, "Autocomplete predictions should not be empty");
-    
+
     // Find prediction with placeId
     const targetPrediction = autoData.predictions.find(p => p.placeId !== "") || autoData.predictions[0];
     placeId = targetPrediction.placeId;
@@ -272,7 +272,7 @@ async function runTests() {
   console.log("\n===========================================");
   console.log("All test cases completed successfully! 🎉");
   console.log("===========================================\n");
-  
+
   await mongoose.connection.close();
 }
 

@@ -116,7 +116,7 @@ npm install
 ```
 Create a `.env` file inside the `traveloop` folder:
 ```bash
-VITE_API_URL=http://localhost:5000
+VITE_API_URL=import.meta.env.VITE_API_URL
 VITE_GOOGLE_MAPS_API_KEY=your_google_places_api_key
 VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
 VITE_FIREBASE_API_KEY=...
@@ -135,7 +135,7 @@ From the `Backend` folder:
 ```bash
 npm run dev
 ```
-The server starts on `http://localhost:5000`.
+The server starts on `import.meta.env.VITE_API_URL`.
 
 ### Start Frontend Client
 From the `traveloop` folder:

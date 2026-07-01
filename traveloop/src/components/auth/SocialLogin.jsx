@@ -83,8 +83,8 @@ const SocialLogin = () => {
       const provider = new GoogleAuthProvider();
       console.log("[GoogleAuth Audit] Starting Firebase signInWithPopup...");
       const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const idToken = credential?.idToken;
+      const user = result.user;
+      const idToken = await user.getIdToken();
 
       if (idToken) {
         await sendTokenToBackend(idToken);

@@ -1988,7 +1988,7 @@ const BuildItinerary = () => {
 
       const data = await res.json();
       if (data.success) {
-        const publicUrl = `http://localhost:3000/shared/${data.trip.shareToken}`;
+        const publicUrl = `${window.location.origin}/shared/${data.trip.shareToken}`;
         setShareLink(publicUrl);
         navigator.clipboard.writeText(publicUrl);
         setCopiedLink(true);

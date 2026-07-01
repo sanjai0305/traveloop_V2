@@ -50,10 +50,10 @@ export const uploadImage = async (
   const uploadToBackendFallback = (): Promise<string> => {
     return new Promise((resolve, reject) => {
       console.warn("[Upload Service] Firebase Storage unavailable/denied. Falling back to Express server...");
-      
+
       const xhr = new XMLHttpRequest();
-      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-      
+      const apiUrl = import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org";
+
       xhr.open("POST", `${apiUrl}/api/upload`);
 
       // Monitor upload progress
@@ -97,7 +97,7 @@ export const uploadImage = async (
     const storageRef = ref(storage, `${folder}/${filename}`);
 
     console.log(`[Firebase Upload] Initiating upload for ${file.name} to ${folder}...`);
-    
+
     return new Promise((resolve, reject) => {
       const uploadTask = uploadBytesResumable(storageRef, file);
 
@@ -113,7 +113,7 @@ export const uploadImage = async (
         async (error) => {
           console.error("[Firebase Upload Failed] Error code:", error.code, error.message);
           console.log("FAILED");
-          
+
           // Firebase failed, attempt Express Backend fallback
           try {
             const fallbackUrl = await uploadToBackendFallback();

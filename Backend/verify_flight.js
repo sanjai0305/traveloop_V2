@@ -8,7 +8,7 @@ import Notification from "./models/Notification.js";
 
 dotenv.config();
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message}\x1b[0m`);
@@ -34,7 +34,7 @@ async function runTests() {
   let tokenEditor = null;
   let tokenViewer = null;
   let tokenEdgeCase = null;
-  
+
   let ownerId = null;
   let editorId = null;
   let viewerId = null;
@@ -226,7 +226,7 @@ async function runTests() {
     assert.strictEqual(addEdData.success, true);
     assert.ok(addEdData.flight, "Flight object exists in response");
     flightId = addEdData.flight._id;
-    
+
     // Check mock fallback values
     assert.strictEqual(addEdData.flight.departureAirport, "DEL", "Mock flight departure airport");
     assert.strictEqual(addEdData.flight.arrivalAirport, "NRT", "Mock flight arrival airport");
@@ -264,11 +264,11 @@ async function runTests() {
     // 2. Verify that notifications were generated for collaborators (Owner & Viewer)
     const ownerNotifs = await Notification.find({ user: ownerId, trip: tripId });
     const viewerNotifs = await Notification.find({ user: viewerId, trip: tripId });
-    
+
     // There should be 2 notifications per user: one for status change (delayed), and one for gate change (G14 -> G20)
     assert.ok(ownerNotifs.length >= 2, "Notifications created for owner");
     assert.ok(viewerNotifs.length >= 2, "Notifications created for viewer");
-    
+
     const delayNotif = ownerNotifs.find(n => n.title.includes("Flight Delayed"));
     const gateNotif = ownerNotifs.find(n => n.title.includes("Gate Changed"));
     assert.ok(delayNotif, "Flight Delay notification verified");

@@ -12,7 +12,7 @@ const ServerStatusIndicator = () => {
   const checkHealth = async () => {
     setChecking(true);
     try {
-      // Hitting absolute root URL of backend (http://localhost:5000/ or https://traveloopv2.duckdns.org/)
+      // Hitting absolute root URL of backend (import.meta.env.VITE_API_URL/ or https://traveloopv2.duckdns.org/)
       const rootUrl = getApiUrl("").replace(/\/api\/?$/, "/");
       const res = await window.fetch(rootUrl, { method: "GET" });
       if (res.ok) {

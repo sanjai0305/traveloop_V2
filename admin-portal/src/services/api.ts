@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
     const clean = envUrl.replace(/\/+$/, "");
     return clean.endsWith("/api") ? clean : `${clean}/api`;
   }
-  return "http://localhost:5000/api";
+  return "https://traveloopv2.duckdns.org/api";
 };
 
 const api = axios.create({
@@ -44,7 +44,7 @@ api.interceptors.response.use(
       console.warn("[API] Admin unauthorized - clearing session...");
       localStorage.removeItem("admin_token");
       localStorage.removeItem("admin_profile");
-      
+
       if (!window.location.pathname.startsWith("/login")) {
         window.history.pushState({}, "", "/login");
         window.dispatchEvent(new PopStateEvent("popstate"));

@@ -1,6 +1,6 @@
 import assert from "assert";
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
 const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${error.message || error}\x1b[0m`);
@@ -20,7 +20,7 @@ async function runTests() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: adminEmail, password: adminPassword }),
     });
-    
+
     const loginData = await loginRes.json();
     assert.strictEqual(loginRes.status, 200, "Login credentials check status 200");
     assert.strictEqual(loginData.success, true, "Login success boolean");
@@ -117,7 +117,7 @@ async function runTests() {
     const updateCommData = await updateCommRes.json();
     assert.strictEqual(updateCommRes.status, 200, "Update commission status 200");
     assert.strictEqual(updateCommData.defaultCommissionRate, 12, "Commission rate updated to 12%");
-    
+
     // Reset back to 10%
     await fetch(`${BASE_URL}/admin/commission`, {
       method: "PATCH",
