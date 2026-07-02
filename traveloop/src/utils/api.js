@@ -36,6 +36,11 @@ const originalFetch = window.fetch;
 window.fetch = async function (url, options = {}) {
   const urlStr = typeof url === "string" ? url : (url instanceof Request ? url.url : "");
 
+  // If the request targets a Vercel system route, do not intercept it
+  if (urlStr.includes(".well-known/vercel") || urlStr.includes("_vercel")) {
+    return originalFetch.apply(this, arguments);
+  }
+
   // If the request targets our backend API, route it through Axios
   if (urlStr.startsWith(API_BASE_URL) || urlStr.startsWith("/api") || !urlStr.startsWith("http")) {
     let relativePath = urlStr;
