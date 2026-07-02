@@ -117,6 +117,7 @@ const authLimiter = rateLimit({
 app.use(
   cors({
     origin: [
+      "https://traveloop-v2.vercel.app",
       "https://traveloop-v2-htv5-nl3gdvozh-sanjais-projects-b9c29d70.vercel.app",
       "https://traveloopv2.duckdns.org",
       "http://localhost:3000",
@@ -162,6 +163,12 @@ app.use(globalLimiter);
 /* -----------------------------
    HEALTH CHECK
 ------------------------------ */
+
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    success: true
+  });
+});
 
 app.get("/", (req, res) => {
   res.json({
