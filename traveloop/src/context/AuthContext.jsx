@@ -1,5 +1,5 @@
 // src/context/AuthContext.jsx
-import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getApiUrl } from "../utils/api";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../services/firebase";
@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
   const initializedRef = useRef(false);
 
   // ─── CLEAN LOGOUT (internal helper) ───────────────────────────────────────
-  const performLogout = () => {
+  const performLogout = useCallback(() => {
     signOutUser().catch((err) => console.warn("[Auth] Firebase SignOut error:", err));
     setUser(null);
     setToken(null);
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
     setFirebaseUser(null);
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-  };
+  }, []);
 
   // ─── STARTUP AUTH INITIALIZATION ──────────────────────────────────────────
   useEffect(() => {
@@ -176,12 +176,12 @@ export const AuthProvider = ({ children }) => {
     };
     window.addEventListener("auth:expired", handleAuthExpired);
     return () => window.removeEventListener("auth:expired", handleAuthExpired);
-  }, []);
+  }, [performLogout]);
 
   // ─── BACKGROUND TOKEN VERIFICATION ────────────────────────────────────────
   // Verifies stored JWT with backend silently. Forces logout on 401/404.
   // Does NOT block startup — runs after loading is already released.
-  const verifyTokenInBackground = async (storedToken) => {
+  const verifyTokenInBackground = useCallback(async (storedToken) => {
     try {
       const res = await fetch(getApiUrl("auth/me"), {
         headers: { Authorization: `Bearer ${storedToken}` },
@@ -209,10 +209,10 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUserRefreshed(true);
     }
-  };
+  }, [performLogout]);
 
   // ─── REFRESH USER DATA ────────────────────────────────────────────────────
-  const refreshUserData = async () => {
+  const refreshUserData = useCallback(async () => {
     const storedToken = localStorage.getItem("token") || token;
     if (!storedToken) return null;
 
@@ -242,10 +242,10 @@ export const AuthProvider = ({ children }) => {
       console.error("[Auth] refreshUserData failed (network error):", err);
       return null;
     }
-  };
+  }, [token, performLogout]);
 
   // ─── LOGIN ─────────────────────────────────────────────────────────────────
-  const handleLogin = (userData, userToken) => {
+  const handleLogin = useCallback((userData, userToken) => {
     if (!userToken || userToken === "null" || userToken === "undefined" || userToken === "NaN" || userToken === "[object Object]" || userToken.trim() === "" || userToken.split('.').length !== 3) {
       console.error("[Auth] handleLogin: Refusing to store corrupted/invalid token:", userToken);
       return;
@@ -261,36 +261,48 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
     localStorage.setItem("token", userToken);
     console.log("[Auth] handleLogin: session committed for", userData.email);
-  };
+  }, []);
 
   // ─── LOGOUT ────────────────────────────────────────────────────────────────
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     performLogout();
-  };
+  }, [performLogout]);
 
   // ─── UPDATE USER ───────────────────────────────────────────────────────────
-  const handleUpdateUser = (updatedUser) => {
+  const handleUpdateUser = useCallback((updatedUser) => {
     setUser(updatedUser);
     localStorage.setItem("user", JSON.stringify(updatedUser));
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    user,
+    token,
+    isAuthenticated,
+    loading,
+    isInitialized,
+    firebaseUser,
+    userRefreshed,
+    login: handleLogin,
+    logout: handleLogout,
+    updateUser: handleUpdateUser,
+    refreshUserData,
+    sendPasswordReset,
+  }), [
+    user,
+    token,
+    isAuthenticated,
+    loading,
+    isInitialized,
+    firebaseUser,
+    userRefreshed,
+    handleLogin,
+    handleLogout,
+    handleUpdateUser,
+    refreshUserData
+  ]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isAuthenticated,
-        loading,
-        isInitialized,
-        firebaseUser,
-        userRefreshed,
-        login: handleLogin,
-        logout: handleLogout,
-        updateUser: handleUpdateUser,
-        refreshUserData,
-        sendPasswordReset,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
