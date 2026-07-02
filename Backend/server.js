@@ -46,12 +46,21 @@ import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 
 let dbConnected = true;
 
+const allowedOrigins =
+  process.env.ALLOWED_ORIGINS?.split(",")
+    .map(origin => origin.trim())
+    .filter(Boolean) || [];
+
+console.log("Allowed Origins:");
+allowedOrigins.forEach(origin =>
+  console.log("✓", origin)
+);
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    origin: allowedOrigins,
     credentials: true
   }
 });
@@ -114,27 +123,17 @@ const authLimiter = rateLimit({
    CORS CONFIGURATION
 ------------------------------ */
 
-app.use(
-  cors({
-    origin: [
-      "https://traveloop-v2.vercel.app",
-      "https://traveloop-v2-htv5-nl3gdvozh-sanjais-projects-b9c29d70.vercel.app",
-      "https://traveloopv2.duckdns.org",
-      "http://localhost:3000",
-      "http://localhost:5173"
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "Origin",
-      "Accept",
-      "X-Requested-With"
-    ],
-    optionsSuccessStatus: 204
-  })
-);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    console.error("Blocked CORS Origin:", origin);
+    return callback(new Error("CORS not allowed"));
+  },
+  credentials: true
+}));
 
 app.options("*all", cors());
 
