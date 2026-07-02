@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Check, AlertTriangle } from "lucide-react";
 import TermsContent from "../components/auth/TermsContent";
@@ -15,8 +15,11 @@ const TermsAndConditions = () => {
   
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState("");
+  const acceptingRef = useRef(false);
 
   const handleAccept = async () => {
+    if (acceptingRef.current) return; // prevent double invocation
+    acceptingRef.current = true;
     setAccepting(true);
     setError("");
     try {
@@ -24,7 +27,6 @@ const TermsAndConditions = () => {
         setError("Invalid session. Please log in again to accept terms.");
         console.warn("[Terms] Aborting accept-terms: Invalid or missing token.");
         window.dispatchEvent(new CustomEvent("auth:expired"));
-        setAccepting(false);
         return;
       }
 
@@ -53,6 +55,7 @@ const TermsAndConditions = () => {
       setError("Failed to connect to the server. Please try again.");
     } finally {
       setAccepting(false);
+      acceptingRef.current = false;
     }
   };
 

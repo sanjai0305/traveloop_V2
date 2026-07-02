@@ -319,6 +319,9 @@ export const verifyOtp = async (req, res) => {
         phone: user.phone,
         city: user.city,
         country: user.country,
+        acceptedTerms: true,
+        termsAcceptedAt: user.termsAcceptedAt,
+        termsVersion: "2026-06",
       },
       token: generateToken(user.id),
     });
@@ -444,6 +447,9 @@ export const registerUser = async (req, res) => {
         phone: user.phone,
         city: user.city || "",
         country: user.country || "",
+        acceptedTerms: true,
+        termsAcceptedAt: user.termsAcceptedAt,
+        termsVersion: "2026-06",
       },
       token: generateToken(user.id),
     });
@@ -757,11 +763,17 @@ export const googleAuth = async (req, res) => {
       userRow = emailUser;
 
       if (userRow) {
+        // Ensure existing users always get termsVersion set when linking Google account
         const updateData = {
           googleId: sub,
           firebaseUid: sub,
           avatar: picture || userRow.avatar || "",
           authProvider: "google",
+          ...(!userRow.termsVersion ? {
+            acceptedTerms: true,
+            termsAcceptedAt: userRow.termsAcceptedAt || new Date().toISOString(),
+            termsVersion: "2026-06",
+          } : {}),
         };
         Object.assign(userRow, updateData);
         await User.findByIdAndUpdate(userRow._id, updateData, { new: true });

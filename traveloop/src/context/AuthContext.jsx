@@ -14,6 +14,8 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState(null);
+  // true once /auth/me background refresh is done (or confirmed not needed)
+  const [userRefreshed, setUserRefreshed] = useState(false);
 
   // Ref to ensure we only finalize startup once (prevents double-fire from onAuthStateChanged)
   const initializedRef = useRef(false);
@@ -67,6 +69,8 @@ export const AuthProvider = ({ children }) => {
         initializedRef.current = true;
         setLoading(false);
         setIsInitialized(true);
+        // Safety path: no background call will run, mark user as fresh immediately
+        setUserRefreshed(true);
       }
     }, 6000);
 
@@ -112,12 +116,14 @@ export const AuthProvider = ({ children }) => {
               } catch (e) {
                 console.error("[Auth] Failed to parse cached user data:", e);
                 performLogout();
+                setUserRefreshed(true);
               }
             } else {
               // Firebase has a user but no local JWT — sign out of Firebase cleanly
               console.warn("[Auth] Firebase user without matching JWT. Signing out Firebase.");
               signOutUser().catch(() => {});
               setIsAuthenticated(false);
+              setUserRefreshed(true);
             }
           } else {
             // ── NO FIREBASE USER (email/password JWT path or logged out) ──────
@@ -135,9 +141,11 @@ export const AuthProvider = ({ children }) => {
               } catch (e) {
                 console.error("[Auth] Failed to parse stored user:", e);
                 performLogout();
+                setUserRefreshed(true);
               }
             } else {
               setIsAuthenticated(false);
+              setUserRefreshed(true);
             }
           }
         } catch (unexpectedError) {
@@ -182,6 +190,7 @@ export const AuthProvider = ({ children }) => {
       if (res.status === 401 || res.status === 403 || res.status === 404) {
         console.warn("[Auth] Background token verification failed (status:", res.status, "). Logging out.");
         performLogout();
+        setUserRefreshed(true);
         return;
       }
 
@@ -197,6 +206,8 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       // Network failure — keep cached session, do not force logout
       console.warn("[Auth] Background token verification network error (offline?). Keeping cache:", err.message);
+    } finally {
+      setUserRefreshed(true);
     }
   };
 
@@ -272,6 +283,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         isInitialized,
         firebaseUser,
+        userRefreshed,
         login: handleLogin,
         logout: handleLogout,
         updateUser: handleUpdateUser,

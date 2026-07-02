@@ -47,10 +47,12 @@ import ProtectedRoute from "./ProtectedRoute";
 import { useAuth } from "../context/AuthContext";
 
 const TermsReacceptanceCheck = ({ children }) => {
-  const { user, isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading, userRefreshed } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  // Wait for loading AND background /auth/me refresh to complete before
+  // making the terms decision. This prevents false redirects on stale cache.
+  if (loading || !userRefreshed) {
     return <PageSkeletonLoader />;
   }
 
