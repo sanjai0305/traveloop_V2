@@ -4,10 +4,18 @@ import { useAuth } from "../context/AuthContext";
 
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
-const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+const ProtectedRoute = ({ children, isTermsPage = false }) => {
+  const { user, isAuthenticated, loading, userRefreshed } = useAuth();
 
-  if (loading) {
+  console.log("[ProtectedRoute Render]:", {
+    loading,
+    userRefreshed,
+    isAuthenticated,
+    termsVersion: user?.termsVersion,
+    isTermsPage
+  });
+
+  if (loading || !userRefreshed) {
     return <PageSkeletonLoader />;
   }
 
@@ -15,6 +23,16 @@ const ProtectedRoute = ({ children }) => {
     return (
       <Navigate
         to="/"
+        replace
+      />
+    );
+  }
+
+  // Redirect to Terms & Conditions page if the user has not accepted the latest terms version
+  if (user && user.termsVersion !== "2026-06" && !isTermsPage) {
+    return (
+      <Navigate
+        to="/terms-and-conditions?force=true"
         replace
       />
     );

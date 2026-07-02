@@ -5,7 +5,6 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
 } from "react-router-dom";
 
 // SKELETON LOADER
@@ -45,42 +44,6 @@ const BookedPackageDetail = lazy(() => import("../pages/BookedPackageDetail"));
 // PROTECTED ROUTE
 import ProtectedRoute from "./ProtectedRoute";
 import { useAuth } from "../context/AuthContext";
-
-const TermsReacceptanceCheck = ({ children }) => {
-  const { user, isAuthenticated, loading, userRefreshed } = useAuth();
-  const location = useLocation();
-
-  console.log("[TermsReacceptanceCheck] Render:", {
-    pathname: location.pathname,
-    isAuthenticated,
-    loading,
-    userRefreshed,
-    termsVersion: user?.termsVersion,
-    acceptedTerms: user?.acceptedTerms,
-    userExists: !!user
-  });
-
-  // Wait for loading AND background /auth/me refresh to complete before
-  // making the terms decision. This prevents false redirects on stale cache.
-  if (loading || !userRefreshed) {
-    return <PageSkeletonLoader />;
-  }
-
-  // If user is authenticated and hasn't accepted the latest terms version
-  if (isAuthenticated && user && user.termsVersion !== "2026-06") {
-    // Allowed paths during re-acceptance block
-    const isAllowedPath =
-      location.pathname === "/terms-and-conditions" ||
-      location.pathname === "/privacy" ||
-      location.pathname === "/terms";
-
-    if (!isAllowedPath) {
-      return <Navigate to="/terms-and-conditions?force=true" replace />;
-    }
-  }
-
-  return children;
-};
 
 const AppRoutes = () => {
   return (
@@ -268,7 +231,7 @@ const AppRoutes = () => {
           <Route
             path="/terms-and-conditions"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute isTermsPage={true}>
                 <TermsAndConditions />
               </ProtectedRoute>
             }
@@ -326,7 +289,6 @@ const AppRoutes = () => {
             }
           />
         </Routes>
-      </TermsReacceptanceCheck>
       </Suspense>
     </BrowserRouter>
   );
