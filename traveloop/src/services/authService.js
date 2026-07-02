@@ -188,28 +188,26 @@ export const loginWithGoogle = async (idToken) => {
   const backendData = await apiRequest("/auth/google", "POST", { idToken });
   console.log(`[Google Auth] Backend authenticated. User ID: ${backendData.user._id}`);
 
-  // 2. Authenticate with Firebase Auth using Google Credential
+  // 2. Create or update Firestore profile
   try {
-    const credential = GoogleAuthProvider.credential(idToken);
-    const result = await signInWithCredential(auth, credential);
-    const firebaseUser = result.user;
-    console.log(`[Google Auth] Firebase authenticated. Firebase UID: ${firebaseUser.uid}`);
-
-    // 3. Create or update Firestore profile
-    await createUserProfile(firebaseUser.uid, {
-      firstName: backendData.user.firstName,
-      lastName: backendData.user.lastName,
-      email: backendData.user.email,
-      phone: backendData.user.phone,
-      city: backendData.user.city,
-      country: backendData.user.country,
-      avatar: backendData.user.avatar,
-      authProvider: "google",
-      acceptedTerms: backendData.user.acceptedTerms,
-      termsVersion: backendData.user.termsVersion,
-    });
+    const firebaseUser = auth.currentUser;
+    if (firebaseUser) {
+      console.log(`[Google Auth] Firebase user exists. Firebase UID: ${firebaseUser.uid}`);
+      await createUserProfile(firebaseUser.uid, {
+        firstName: backendData.user.firstName,
+        lastName: backendData.user.lastName,
+        email: backendData.user.email,
+        phone: backendData.user.phone,
+        city: backendData.user.city,
+        country: backendData.user.country,
+        avatar: backendData.user.avatar,
+        authProvider: "google",
+        acceptedTerms: backendData.user.acceptedTerms,
+        termsVersion: backendData.user.termsVersion,
+      });
+    }
   } catch (error) {
-    console.error("Firebase Google Auth or Firestore sync failed:", error);
+    console.error("Firestore sync failed:", error);
   }
 
   return backendData;
