@@ -88,3 +88,7 @@ serviceAccountKey.json
 *.json
 Backend/serviceAccountKey.json
 Backend/config/serviceAccountKey.json
+
+# Whitelist config files
+!vercel.json
+!firebase.json
