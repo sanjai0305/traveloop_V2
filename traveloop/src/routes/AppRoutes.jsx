@@ -50,8 +50,7 @@ const AppRoutes = () => {
     <BrowserRouter>
       <AndroidBackButtonHandler />
       <Suspense fallback={<PageSkeletonLoader />}>
-        <TermsReacceptanceCheck>
-          <Routes>
+        <Routes>
             {/* LOGIN */}
             <Route
               path="/"
