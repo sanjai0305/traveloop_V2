@@ -32,6 +32,9 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ onSuccess,
         uid: firebaseUser.uid,
       });
 
+      if (!response || !response.data) {
+        throw new Error("Backend returned null response");
+      }
       const resData = response.data;
       setAuth(resData.token, resData.agent);
       onSuccess(resData.agent);

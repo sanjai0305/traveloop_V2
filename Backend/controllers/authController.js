@@ -711,12 +711,15 @@ export const getMe = async (req, res) => {
 // GOOGLE AUTH CALLBACK
 export const googleAuth = async (req, res) => {
   try {
-    const googleToken = req.body.token || req.body.idToken;
-    const { clientId } = req.body;
-    
-    console.log("Received Google Login Request");
-    console.log("Body:", req.body);
-    console.log("Token exists:", !!googleToken);
+    console.log("Google Login Request");
+    console.log(req.body);
+
+    const { idToken } = req.body;
+    const googleToken = idToken || req.body.token;
+    console.log("Token exists:", !!idToken);
+
+    // Verify Firebase Admin initialization count
+    console.log("Firebase apps length:", admin.apps ? admin.apps.length : 0);
 
     if (!googleToken) {
       return res.status(400).json({ success: false, message: "Token is required." });
@@ -726,9 +729,9 @@ export const googleAuth = async (req, res) => {
     let decoded;
     try {
       decoded = await admin.auth().verifyIdToken(googleToken);
-      console.log("Firebase Decoded Token:", decoded);
+      console.log(decoded);
     } catch (err) {
-      console.error("Firebase ID Token Verification Failed:", err);
+      console.error(err);
       return res.status(401).json({
         success: false,
         message: "Invalid Firebase Token",
@@ -746,7 +749,7 @@ export const googleAuth = async (req, res) => {
       return res.status(400).json({ success: false, message: "Email not provided by Google account" });
     }
 
-    // Search user by googleId
+    // Search user by googleId or email
     let userRow = await User.findOne({ googleId: sub });
     
     if (!userRow) {
@@ -756,6 +759,7 @@ export const googleAuth = async (req, res) => {
       if (userRow) {
         const updateData = {
           googleId: sub,
+          firebaseUid: sub,
           avatar: picture || userRow.avatar || "",
           authProvider: "google",
         };
@@ -766,17 +770,19 @@ export const googleAuth = async (req, res) => {
         const firstName = nameParts[0] || "Google";
         const lastName = nameParts.slice(1).join(" ") || "User";
 
+        console.log("Creating new user in MongoDB");
         const newUser = await User.create({
-            firstName,
-            lastName,
-            email,
-            googleId: sub,
-            avatar: picture || "",
-            authProvider: "google",
-            acceptedTerms: true,
-            termsAcceptedAt: new Date().toISOString(),
-            termsVersion: "2026-06",
-          });
+          firstName,
+          lastName,
+          email,
+          googleId: sub,
+          firebaseUid: sub,
+          avatar: picture || "",
+          authProvider: "google",
+          acceptedTerms: true,
+          termsAcceptedAt: new Date().toISOString(),
+          termsVersion: "2026-06",
+        });
 
         userRow = newUser;
       }
@@ -785,9 +791,12 @@ export const googleAuth = async (req, res) => {
     const user = userRow.toObject ? userRow.toObject() : userRow;
     user._id = user._id || user.id;
 
-    res.status(200).json({
+    console.log("Generating JWT");
+    const token = generateToken(user._id || user.id);
+
+    return res.status(200).json({
       success: true,
-      message: "Google Authentication Successful",
+      token,
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -801,13 +810,15 @@ export const googleAuth = async (req, res) => {
         acceptedTerms: user.acceptedTerms,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
-      },
-      token: generateToken(user._id || user.id),
+      }
     });
 
   } catch (error) {
     console.error("Google Auth Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server Error" });
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
 
