@@ -16,7 +16,9 @@ const adminSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      required: true,
+      required: function () {
+        return this.authProvider === "email";
+      },
     },
     role: {
       type: String,
@@ -33,6 +35,11 @@ const adminSchema = new mongoose.Schema(
     googleId: {
       type: String,
       default: null,
+    },
+    authProvider: {
+      type: String,
+      enum: ["email", "google"],
+      default: "email",
     },
     lastLogin: {
       type: Date,
