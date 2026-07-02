@@ -94,6 +94,7 @@ const TermsAndConditions = () => {
         {/* Action Button for Forced Re-acceptance */}
         {force && (
           <button
+            type="button"
             onClick={handleAccept}
             disabled={accepting}
             className="w-full py-4 rounded-full text-white font-bold text-sm shadow-[0_4px_12px_rgba(20,184,181,0.2)] active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"

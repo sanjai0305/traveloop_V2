@@ -556,7 +556,8 @@ export const getMe = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const user = { ...userRow, _id: userRow.id };
+    const user = userRow.toObject();
+    user._id = user._id || user.id;
     delete user.password;
 
     // Streak check & update
