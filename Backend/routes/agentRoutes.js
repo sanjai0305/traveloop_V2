@@ -258,6 +258,7 @@ router.post("/login", async (req, res) => {
           uid: verifiedUid,
           email: verifiedEmail,
           displayName,
+          companyName: displayName || "Pending Verification",
           emailVerified,
           profileCompleted: false,
         });
