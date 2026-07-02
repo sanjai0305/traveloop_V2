@@ -13,12 +13,26 @@ const TermsAndConditions = () => {
   const { refreshUserData, token, isAuthenticated } = useAuth();
   const toast = useToast();
   
+  console.log("[Terms Render] Rendered with state:", {
+    isAuthenticated,
+    hasToken: !!token,
+    tokenValue: token,
+    force
+  });
+
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState("");
   const acceptingRef = useRef(false);
 
   const handleAccept = async () => {
-    if (acceptingRef.current) return; // prevent double invocation
+    console.log("[Terms] handleAccept clicked!");
+    console.log("[Terms] isAuthenticated:", isAuthenticated);
+    console.log("[Terms] token exists:", !!token);
+    console.log("[Terms] token split count:", token ? token.split('.').length : 0);
+    if (acceptingRef.current) {
+      console.log("[Terms] handleAccept blocked: acceptingRef.current is true");
+      return; // prevent double invocation
+    }
     acceptingRef.current = true;
     setAccepting(true);
     setError("");

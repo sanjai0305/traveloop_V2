@@ -50,6 +50,16 @@ const TermsReacceptanceCheck = ({ children }) => {
   const { user, isAuthenticated, loading, userRefreshed } = useAuth();
   const location = useLocation();
 
+  console.log("[TermsReacceptanceCheck] Render:", {
+    pathname: location.pathname,
+    isAuthenticated,
+    loading,
+    userRefreshed,
+    termsVersion: user?.termsVersion,
+    acceptedTerms: user?.acceptedTerms,
+    userExists: !!user
+  });
+
   // Wait for loading AND background /auth/me refresh to complete before
   // making the terms decision. This prevents false redirects on stale cache.
   if (loading || !userRefreshed) {
