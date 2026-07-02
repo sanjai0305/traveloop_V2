@@ -1,6 +1,9 @@
 import { io } from "socket.io-client";
 
 const getSocketUrl = () => {
+  if (import.meta.env.VITE_SOCKET_URL) {
+    return import.meta.env.VITE_SOCKET_URL;
+  }
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) {
     return envUrl.replace(/\/api\/?$/, "");

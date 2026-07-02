@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import admin from "../config/firebaseAdmin.js";
 import Trip from "../models/Trip.js";
 import Payment from "../models/Payment.js";
 import bcrypt from "bcryptjs";
@@ -71,7 +72,7 @@ export const sendOtp = async (req, res) => {
     // CHECK EXISTING USER (Traveler registration constraint only)
     const emailKey = email.trim().toLowerCase();
     if (!isAgent) {
-      const { data: userExists } = await User.findOne({ email: emailKey });
+      const userExists = await User.findOne({ email: emailKey });
 
       if (userExists) {
         return res.status(400).json({
@@ -221,7 +222,7 @@ export const verifyOtp = async (req, res) => {
     }
 
     // Double check email uniqueness in MongoDB
-    const { data: userExists } = await User.findOne({ email: emailKey });
+    const userExists = await User.findOne({ email: emailKey });
 
     if (userExists) {
       return res.status(400).json({
@@ -360,7 +361,7 @@ export const registerUser = async (req, res) => {
     }
 
     // CHECK EXISTING USER
-    const { data: userExists } = await User.findOne({ email: email.trim().toLowerCase() });
+    const userExists = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (userExists) {
       return res.status(400).json({
@@ -468,7 +469,7 @@ export const loginUser = async (req, res) => {
     }
 
     // FIND USER IN MONGODB
-    const { data: userRow } = await User.findOne({ email: email.trim().toLowerCase() });
+    const userRow = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (!userRow) {
       return res.status(400).json({
@@ -477,7 +478,8 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    const user = { ...userRow, _id: userRow.id };
+    const user = userRow.toObject ? userRow.toObject() : userRow;
+    user._id = user._id || user.id;
 
     // CHECK PASSWORD
     const isMatch = await bcrypt.compare(password, user.password);
@@ -711,40 +713,44 @@ export const googleAuth = async (req, res) => {
   try {
     const googleToken = req.body.token || req.body.idToken;
     const { clientId } = req.body;
+    
+    console.log("Received Google Login Request");
+    console.log("Body:", req.body);
+    console.log("Token exists:", !!googleToken);
+
     if (!googleToken) {
       return res.status(400).json({ success: false, message: "Token is required." });
     }
 
-    // For test verify sandbox, decode payload safely
-    const parts = googleToken.split(".");
-    if (parts.length !== 3) {
-      return res.status(400).json({ success: false, message: "Invalid ID Token format." });
-    }
-    const payloadBuffer = Buffer.from(parts[1], "base64");
-    const data = JSON.parse(payloadBuffer.toString("utf8"));
-
-    const allowedClientIds = [
-      clientId,
-      "176828060174-fkphm10lp2ggqe0b58jdcajjs8lkcuus.apps.googleusercontent.com",
-      "872930983851-sp955pg20dv701f90lfej5ult72tle27.apps.googleusercontent.com"
-    ].filter(Boolean);
-
-    const isAllowed = allowedClientIds.includes(data.aud) || (data.aud && data.aud.startsWith("740933888609-"));
-
-    if (clientId && !isAllowed) {
-      return res.status(400).json({ success: false, message: "Google Client ID mismatch" });
+    // Verify token using firebase-admin SDK
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(googleToken);
+      console.log("Firebase Decoded Token:", decoded);
+    } catch (err) {
+      console.error("Firebase ID Token Verification Failed:", err);
+      return res.status(401).json({
+        success: false,
+        message: "Invalid Firebase Token",
+      });
     }
 
-    const { sub, email, name, picture } = data;
+    const { sub, email, name, picture } = {
+      sub: decoded.uid || decoded.sub,
+      email: decoded.email,
+      name: decoded.name,
+      picture: decoded.picture
+    };
+
     if (!email) {
       return res.status(400).json({ success: false, message: "Email not provided by Google account" });
     }
 
     // Search user by googleId
-    let { data: userRow } = await User.findOne({ googleId: sub });
+    let userRow = await User.findOne({ googleId: sub });
     
     if (!userRow) {
-      const { data: emailUser } = await User.findOne({ email });
+      const emailUser = await User.findOne({ email });
       userRow = emailUser;
 
       if (userRow) {
@@ -754,7 +760,7 @@ export const googleAuth = async (req, res) => {
           authProvider: "google",
         };
         Object.assign(userRow, updateData);
-        await User.findByIdAndUpdate(userRow.id, updateData, { new: true })
+        await User.findByIdAndUpdate(userRow._id, updateData, { new: true });
       } else {
         const nameParts = name ? name.split(" ") : ["Google", "User"];
         const firstName = nameParts[0] || "Google";
@@ -772,18 +778,18 @@ export const googleAuth = async (req, res) => {
             termsVersion: "2026-06",
           });
 
-        
         userRow = newUser;
       }
     }
 
-    const user = { ...userRow, _id: userRow.id };
+    const user = userRow.toObject ? userRow.toObject() : userRow;
+    user._id = user._id || user.id;
 
     res.status(200).json({
       success: true,
       message: "Google Authentication Successful",
       user: {
-        _id: user.id,
+        _id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -796,7 +802,7 @@ export const googleAuth = async (req, res) => {
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
       },
-      token: generateToken(user.id),
+      token: generateToken(user._id || user.id),
     });
 
   } catch (error) {
@@ -869,7 +875,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    const { data: user } = await User.findOne({ email: email.trim().toLowerCase() });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (!user) {
       return res.status(404).json({ success: false, message: "No account found with this email address." });
@@ -896,7 +902,7 @@ export const validateEmail = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    const { data: userExists } = await User.findOne({ email: email.trim().toLowerCase() });
+    const userExists = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (userExists) {
       return res.status(400).json({ success: false, message: "Email is already registered." });

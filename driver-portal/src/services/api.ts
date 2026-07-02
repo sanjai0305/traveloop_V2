@@ -1,8 +1,18 @@
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api'
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    const clean = envUrl.replace(/\/+$/, '');
+    return clean.endsWith('/api') ? clean : `${clean}/api`;
+  }
+  return 'https://traveloopv2.duckdns.org/api';
+};
 
-const api = axios.create({ baseURL: API_BASE })
+const api = axios.create({
+  baseURL: getApiBaseUrl(),
+  withCredentials: true,
+})
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('driver_token')

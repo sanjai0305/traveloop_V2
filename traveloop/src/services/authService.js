@@ -52,9 +52,13 @@ const apiRequest = async (endpoint, method, body) => {
     body: JSON.stringify(body),
   });
 
+  if (!response) {
+    throw new Error("Backend returned empty response");
+  }
+
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || "Something went wrong");
+    throw new Error(data?.message || "Something went wrong");
   }
   return data;
 };
