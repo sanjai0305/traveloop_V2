@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { supabase } from "../config/supabase.js";
+import User from "../models/User.js";
 
 const protect = async (req, res, next) => {
   let token;
@@ -23,27 +23,11 @@ const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      const { data: user, error } = await supabase
-        .from("users")
-        .select(`
-          id,
-          firstName,
-          lastName,
-          email,
-          phone,
-          city,
-          country,
-          avatar,
-          xp,
-          level,
-          streak,
-          acceptedTerms,
-          firebaseUid
-        `)
-        .eq("id", decoded.id)
-        .maybeSingle();
+      const user = await User.findById(decoded.id).select(
+        "firstName lastName email phone city country avatar xp level streak acceptedTerms firebaseUid"
+      );
 
-      if (error || !user) {
+      if (!user) {
         console.warn(`[Auth Middleware] User lookup failed for ID: ${decoded.id}`);
         return res.status(401).json({
           success: false,
@@ -52,11 +36,12 @@ const protect = async (req, res, next) => {
         });
       }
 
+      const userObj = user.toObject();
       // Maintain compatibility: set req.user to match expected properties
       req.user = {
-        _id: user.id,
-        id: user.id,
-        ...user
+        _id: user._id,
+        id: user._id.toString(),
+        ...userObj
       };
 
       next();

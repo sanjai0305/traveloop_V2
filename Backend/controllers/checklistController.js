@@ -1,4 +1,5 @@
-import { supabase } from "../config/supabase.js";
+import Trip from "../models/Trip.js";
+import Checklist from "../models/Checklist.js";
 import { logActivity } from "../utils/activityLogger.js";
 import { hasTripPermission } from "../utils/permissionHelper.js";
 
@@ -180,39 +181,36 @@ export const createChecklistItem = async (req, res) => {
       return res.status(400).json({ success: false, message: "tripId and item description are required" });
     }
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const tripRow = await Trip.findById(tripId);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "create")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
-    const { data: newChecklist, error } = await supabase
-      .from("checklists")
-      .insert([{
-        tripId,
-        userId: req.user.id,
-        itemName: item,
-        category: category || "General",
-        packed: false
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
+    const newChecklist = await Checklist.create({
+      tripId,
+      userId: req.user.id,
+      itemName: item,
+      item,
+      category: category || "General",
+      packed: false,
+      checked: false,
+    });
 
     const checklist = {
-      ...newChecklist,
-      _id: newChecklist.id,
+      ...newChecklist.toObject(),
+      _id: newChecklist._id,
       trip: newChecklist.tripId,
       item: newChecklist.itemName,
       checked: newChecklist.packed
@@ -239,34 +237,35 @@ export const getChecklist = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const tripRow = await Trip.findById(tripId);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "read")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view this checklist" });
     }
 
-    const { data: listRows } = await supabase
-      .from("checklists")
-      .select("*")
-      .eq("tripId", tripId);
+    const listRows = await Checklist.find({ tripId });
 
-    const checklist = (listRows || []).map(row => ({
-      ...row,
-      _id: row.id,
-      trip: row.tripId,
-      item: row.itemName,
-      checked: row.packed
-    }));
+    const checklist = (listRows || []).map(row => {
+      const obj = row.toObject ? row.toObject() : row;
+      return {
+        ...obj,
+        _id: row._id,
+        trip: row.tripId,
+        item: row.itemName,
+        checked: row.packed
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -287,35 +286,32 @@ export const toggleChecklistItem = async (req, res) => {
     const { id } = req.params;
     const { checked } = req.body;
 
-    const { data: row } = await supabase
-      .from("checklists")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const row = await Checklist.findById(id);
 
     if (!row) {
       return res.status(404).json({ success: false, message: "Checklist item not found" });
     }
 
     const checklistItem = {
-      ...row,
-      _id: row.id,
+      ...row.toObject(),
+      _id: row._id,
       trip: row.tripId,
       item: row.itemName,
       checked: row.packed
     };
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", checklistItem.trip)
-      .maybeSingle();
+    const tripRow = await Trip.findById(checklistItem.trip);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
@@ -323,10 +319,7 @@ export const toggleChecklistItem = async (req, res) => {
 
     checklistItem.checked = checked;
 
-    await supabase
-      .from("checklists")
-      .update({ packed: checked })
-      .eq("id", id);
+    await Checklist.findByIdAndUpdate(id, { packed: checked, checked: checked });
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(checklistItem.trip, req.user.id, `${userName} marked "${checklistItem.item}" as ${checked ? "packed" : "unpacked"}`);
@@ -350,35 +343,32 @@ export const updateChecklistItem = async (req, res) => {
     const { id } = req.params;
     const { item, category } = req.body;
 
-    const { data: row } = await supabase
-      .from("checklists")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const row = await Checklist.findById(id);
 
     if (!row) {
       return res.status(404).json({ success: false, message: "Checklist item not found" });
     }
 
     const checklistItem = {
-      ...row,
-      _id: row.id,
+      ...row.toObject(),
+      _id: row._id,
       trip: row.tripId,
       item: row.itemName,
       checked: row.packed
     };
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", checklistItem.trip)
-      .maybeSingle();
+    const tripRow = await Trip.findById(checklistItem.trip);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
@@ -388,13 +378,11 @@ export const updateChecklistItem = async (req, res) => {
     checklistItem.item = item || checklistItem.item;
     checklistItem.category = category || checklistItem.category;
 
-    await supabase
-      .from("checklists")
-      .update({
-        itemName: checklistItem.item,
-        category: checklistItem.category
-      })
-      .eq("id", id);
+    await Checklist.findByIdAndUpdate(id, {
+      itemName: checklistItem.item,
+      item: checklistItem.item,
+      category: checklistItem.category
+    });
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(checklistItem.trip, req.user.id, `${userName} updated packing item: "${oldItem}" to "${checklistItem.item}"`);
@@ -417,35 +405,32 @@ export const deleteChecklistItem = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { data: row } = await supabase
-      .from("checklists")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const row = await Checklist.findById(id);
 
     if (!row) {
       return res.status(404).json({ success: false, message: "Checklist item not found" });
     }
 
     const checklistItem = {
-      ...row,
-      _id: row.id,
+      ...row.toObject(),
+      _id: row._id,
       trip: row.tripId,
       item: row.itemName,
       checked: row.packed
     };
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", checklistItem.trip)
-      .maybeSingle();
+    const tripRow = await Trip.findById(checklistItem.trip);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Associated Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "delete")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
@@ -454,10 +439,7 @@ export const deleteChecklistItem = async (req, res) => {
     const userName = req.user.firstName || req.user.email;
     await logActivity(checklistItem.trip, req.user.id, `${userName} deleted packing item: "${checklistItem.item}"`);
 
-    await supabase
-      .from("checklists")
-      .delete()
-      .eq("id", id);
+    await Checklist.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
@@ -476,26 +458,24 @@ export const resetChecklist = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const tripRow = await Trip.findById(tripId);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "update")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
     }
 
-    await supabase
-      .from("checklists")
-      .update({ packed: false })
-      .eq("tripId", tripId);
+    await Checklist.updateMany({ tripId }, { packed: false, checked: false });
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(tripId, req.user.id, `${userName} reset the checklist`);
@@ -543,17 +523,18 @@ export const bulkCreateChecklist = async (req, res) => {
       return res.status(400).json({ success: false, message: "tripId and items array required" });
     }
 
-    const { data: tripRow } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const tripRow = await Trip.findById(tripId);
 
     if (!tripRow) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id, owner: tripRow.userId, user: tripRow.userId };
+    const trip = {
+      ...tripRow.toObject(),
+      _id: tripRow._id,
+      owner: tripRow.userId,
+      user: tripRow.userId
+    };
 
     if (!hasTripPermission(trip, req.user.id, "create")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this checklist" });
@@ -563,24 +544,24 @@ export const bulkCreateChecklist = async (req, res) => {
       tripId,
       userId: req.user.id,
       itemName: i.item,
+      item: i.item,
       category: i.category || "General",
       packed: false,
+      checked: false,
     }));
 
-    const { data: createdRows, error } = await supabase
-      .from("checklists")
-      .insert(inserts)
-      .select();
+    const createdRows = await Checklist.insertMany(inserts);
 
-    if (error) throw error;
-
-    const created = (createdRows || []).map(row => ({
-      ...row,
-      _id: row.id,
-      trip: row.tripId,
-      item: row.itemName,
-      checked: row.packed
-    }));
+    const created = (createdRows || []).map(row => {
+      const obj = row.toObject ? row.toObject() : row;
+      return {
+        ...obj,
+        _id: row._id,
+        trip: row.tripId,
+        item: row.itemName,
+        checked: row.packed
+      };
+    });
 
     const userName = req.user.firstName || req.user.email;
     await logActivity(tripId, req.user.id, `${userName} bulk-added ${created.length} packing suggestions`);
@@ -589,6 +570,7 @@ export const bulkCreateChecklist = async (req, res) => {
       success: true,
       message: `${created.length} items added to checklist`,
       checklist: created,
+      count: created.length
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

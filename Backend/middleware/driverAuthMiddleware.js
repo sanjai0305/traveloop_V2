@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { supabase } from "../config/supabase.js";
+import Driver from "../models/Driver.js";
 
 const protectDriver = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -16,13 +16,9 @@ const protectDriver = async (req, res, next) => {
       return res.status(403).json({ success: false, message: "Not a driver account" });
     }
 
-    const { data: driverRow, error } = await supabase
-      .from("drivers")
-      .select("id, name, email, phone, status, vehicleNumber, licenseNumber")
-      .eq("id", decoded.id)
-      .maybeSingle();
+    const driverRow = await Driver.findById(decoded.id).select("name email phone status vehicleNumber licenseNumber");
 
-    if (error || !driverRow) {
+    if (!driverRow) {
       return res.status(401).json({ success: false, message: "Driver account not found" });
     }
 
@@ -31,8 +27,8 @@ const protectDriver = async (req, res, next) => {
     }
 
     req.driver = {
-      ...driverRow,
-      _id: driverRow.id,
+      ...driverRow.toObject(),
+      _id: driverRow._id,
     };
     next();
   } catch (err) {

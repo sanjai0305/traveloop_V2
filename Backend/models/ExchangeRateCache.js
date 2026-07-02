@@ -1,4 +1,4 @@
-import mongoose from "../config/mongooseMock.js";
+import mongoose from "mongoose";
 
 const exchangeRateCacheSchema = new mongoose.Schema({
   baseCurrency: { type: String, required: true, unique: true },

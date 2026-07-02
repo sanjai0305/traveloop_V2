@@ -1,80 +1,117 @@
-import { supabase } from "../config/supabase.js";
-import { makeQueryChain } from "./queryHelper.js";
+import mongoose from "mongoose";
 
-const AgentTrip = {
-  find: (query = {}) => {
-    const promise = (async () => {
-      let q = supabase.from("agent_trips").select("*");
-      if (query.driver) {
-        q = q.eq("driverId", query.driver);
-      }
-      if (query.status) {
-        q = q.eq("status", query.status);
-      }
-      const { data } = await q;
-      return (data || []).map(r => ({ ...r, _id: r.id }));
-    })();
-    return makeQueryChain(promise);
+const agentTripSchema = new mongoose.Schema(
+  {
+    agentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
+      required: true,
+    },
+    driverId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      default: null,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    shortDescription: {
+      type: String,
+      default: "",
+    },
+    description: {
+      type: String,
+      default: "",
+    },
+    destinations: {
+      type: [String],
+      default: [],
+    },
+    duration: {
+      type: String,
+      default: "",
+    },
+    startDate: {
+      type: String,
+      required: true,
+    },
+    endDate: {
+      type: String,
+      required: true,
+    },
+    departureTime: {
+      type: String,
+      default: "",
+    },
+    arrivalTime: {
+      type: String,
+      default: "",
+    },
+    pickupLocation: {
+      type: String,
+      default: "",
+    },
+    busType: {
+      type: String,
+      default: "",
+    },
+    busNumber: {
+      type: String,
+      default: "",
+    },
+    busImages: {
+      type: [String],
+      default: [],
+    },
+    gallery: {
+      type: [String],
+      default: [],
+    },
+    coverImage: {
+      type: String,
+      default: "",
+    },
+    driverName: {
+      type: String,
+      default: "",
+    },
+    driverPhone: {
+      type: String,
+      default: "",
+    },
+    originalPrice: {
+      type: Number,
+      default: 0.00,
+    },
+    offerPrice: {
+      type: Number,
+      default: 0.00,
+    },
+    status: {
+      type: String,
+      default: "published",
+    },
+    boardingStatus: {
+      type: String,
+      default: "CLOSED",
+    },
+    boardingOpenedAt: {
+      type: Date,
+      default: null,
+    },
+    boardingClosesAt: {
+      type: Date,
+      default: null,
+    },
   },
-  findOne: (query = {}) => {
-    const promise = (async () => {
-      let q = supabase.from("agent_trips").select("*");
-      if (query._id) {
-        q = q.eq("id", query._id);
-      }
-      if (query.startDate) {
-        q = q.eq("startDate", query.startDate);
-      }
-      const { data } = await q.maybeSingle();
-      if (!data) return null;
-      return {
-        ...data,
-        _id: data.id,
-        save: async function() {
-          const { id, _id, ...fields } = this;
-          delete fields.save;
-          await supabase.from("agent_trips").update(fields).eq("id", id);
-        }
-      };
-    })();
-    return makeQueryChain(promise);
-  },
-  findById: async (id) => {
-    if (!id) return null;
-    const { data } = await supabase.from("agent_trips").select("*").eq("id", id).maybeSingle();
-    if (!data) return null;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id, _id, ...fields } = this;
-        delete fields.save;
-        await supabase.from("agent_trips").update(fields).eq("id", id);
-      }
-    };
-  },
-  create: async (payload) => {
-    const { data, error } = await supabase.from("agent_trips").insert([payload]).select().single();
-    if (error) throw error;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id, _id, ...fields } = this;
-        delete fields.save;
-        await supabase.from("agent_trips").update(fields).eq("id", id);
-      }
-    };
-  },
-  findByIdAndUpdate: async (id, updateFields, options) => {
-    const { data, error } = await supabase.from("agent_trips").update(updateFields).eq("id", id).select().single();
-    if (error) throw error;
-    return data ? { ...data, _id: data.id } : null;
-  },
-  findByIdAndDelete: async (id) => {
-    await supabase.from("agent_trips").delete().eq("id", id);
-    return true;
+  {
+    timestamps: true,
   }
-};
+);
 
+agentTripSchema.index({ agentId: 1 });
+agentTripSchema.index({ driverId: 1 });
+
+const AgentTrip = mongoose.model("AgentTrip", agentTripSchema);
 export default AgentTrip;

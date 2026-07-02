@@ -1,14 +1,15 @@
 import express from "express";
+import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import protectDriver from "../middleware/driverAuthMiddleware.js";
-import { supabase } from "../config/supabase.js";
+import Driver from "../models/Driver.js";
+import AgentTrip from "../models/AgentTrip.js";
+import Booking from "../models/Booking.js";
 import { sendOtpEmail } from "../services/emailService.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
-
-const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 
 // In-memory driver OTP store
 const driverOtps = new Map();
@@ -19,7 +20,7 @@ const genOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 // Helper: sign driver JWT
 const signToken = (driver) =>
   jwt.sign(
-    { id: driver.id, role: "driver", email: driver.email },
+    { id: driver._id.toString(), role: "driver", email: driver.email },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -31,13 +32,9 @@ router.post("/auth/send-otp", async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, message: "Email required" });
 
-    const { data: driver, error } = await supabase
-      .from("drivers")
-      .select("*")
-      .eq("email", email.toLowerCase().trim())
-      .maybeSingle();
+    const driver = await Driver.findOne({ email: email.toLowerCase().trim() });
 
-    if (error || !driver) {
+    if (!driver) {
       return res.status(404).json({
         success: false,
         message: "No driver account found. Please contact your travel agency.",
@@ -101,13 +98,9 @@ router.post("/auth/verify-otp", async (req, res) => {
     }
 
     // Load driver
-    const { data: driver, error } = await supabase
-      .from("drivers")
-      .select("*")
-      .eq("email", emailKey)
-      .maybeSingle();
+    const driver = await Driver.findOne({ email: emailKey });
 
-    if (error || !driver) {
+    if (!driver) {
       return res.status(404).json({ success: false, message: "Driver profile not found" });
     }
 
@@ -120,7 +113,7 @@ router.post("/auth/verify-otp", async (req, res) => {
       message: "Authentication successful",
       token,
       driver: {
-        id: driver.id,
+        id: driver._id.toString(),
         name: driver.name,
         email: driver.email,
         phone: driver.phone,
@@ -139,18 +132,17 @@ router.get("/me", protectDriver, async (req, res) => {
     const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
     // Find today's trip assigned to this driver
-    const { data: todayTrip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("driverId", req.driver.id)
-      .eq("startDate", today)
-      .in("status", ["published", "ongoing"])
-      .maybeSingle();
+    const driverId = req.driver._id || req.driver.id;
+    const todayTrip = await AgentTrip.findOne({
+      driverId,
+      startDate: today,
+      status: { $in: ["published", "ongoing"] }
+    });
 
     res.json({
       success: true,
       driver: {
-        id:     req.driver.id,
+        id:     driverId.toString(),
         name:   req.driver.name,
         email:  req.driver.email,
         phone:  req.driver.phone,
@@ -158,7 +150,7 @@ router.get("/me", protectDriver, async (req, res) => {
         licenseNumber: req.driver.licenseNumber,
         vehicleNumber: req.driver.vehicleNumber,
       },
-      todayTrip: todayTrip ? { ...todayTrip, _id: todayTrip.id } : null,
+      todayTrip: todayTrip ? { ...todayTrip.toObject(), _id: todayTrip._id } : null,
     });
   } catch (err) {
     console.error("[Driver me]", err);
@@ -170,24 +162,22 @@ router.get("/me", protectDriver, async (req, res) => {
 router.get("/dashboard", protectDriver, async (req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
+    const driverId = req.driver._id || req.driver.id;
 
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("driverId", req.driver.id)
-      .eq("startDate", today)
-      .maybeSingle();
+    const trip = await AgentTrip.findOne({
+      driverId,
+      startDate: today
+    });
 
     if (!trip) {
       return res.json({ success: true, trip: null, stats: null, boardingLog: [] });
     }
 
     // Get all bookings for this trip
-    const { data: bookingsList } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("tripId", trip.id)
-      .neq("paymentStatus", "Cancelled");
+    const bookingsList = await Booking.find({
+      tripId: trip._id,
+      paymentStatus: { $ne: "Cancelled" }
+    });
 
     const bookings = bookingsList || [];
 
@@ -209,7 +199,7 @@ router.get("/dashboard", protectDriver, async (req, res) => {
     res.json({
       success: true,
       trip: {
-        _id:           trip.id,
+        _id:           trip._id.toString(),
         title:         trip.title,
         destinations:  trip.destinations,
         startDate:     trip.startDate,
@@ -234,25 +224,20 @@ router.get("/dashboard", protectDriver, async (req, res) => {
 router.get("/trips/:tripId/manifest", protectDriver, async (req, res) => {
   try {
     const { tripId } = req.params;
-    if (!isUUID(tripId)) {
+    if (!mongoose.Types.ObjectId.isValid(tripId)) {
       return res.status(400).json({ success: false, message: "Invalid trip ID format" });
     }
 
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(tripId);
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const { data: bookingsList } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("tripId", tripId)
-      .neq("paymentStatus", "Cancelled");
+    const bookingsList = await Booking.find({
+      tripId,
+      paymentStatus: { $ne: "Cancelled" }
+    });
 
     const bookings = bookingsList || [];
 
@@ -277,36 +262,29 @@ router.get("/trips/:tripId/manifest", protectDriver, async (req, res) => {
 router.post("/trips/:tripId/open-boarding", protectDriver, async (req, res) => {
   try {
     const { tripId } = req.params;
-    if (!isUUID(tripId)) {
+    if (!mongoose.Types.ObjectId.isValid(tripId)) {
       return res.status(400).json({ success: false, message: "Invalid trip ID format" });
     }
 
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(tripId);
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
     const now = new Date();
-    // Closes 15 mins before departure time or default 2 hours from now
+    // Closes 2 hours from now
     const closesAt = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
-    const { data: updatedTrip, error } = await supabase
-      .from("agent_trips")
-      .update({
+    const updatedTrip = await AgentTrip.findByIdAndUpdate(
+      tripId,
+      {
         boardingStatus: "OPEN",
-        boardingOpenedAt: now.toISOString(),
-        boardingClosesAt: closesAt.toISOString(),
-      })
-      .eq("id", tripId)
-      .select()
-      .single();
-
-    if (error) throw error;
+        boardingOpenedAt: now,
+        boardingClosesAt: closesAt,
+      },
+      { new: true }
+    );
 
     const io = req.app.get("io");
     if (io) {
@@ -335,15 +313,11 @@ router.post("/trips/:tripId/open-boarding", protectDriver, async (req, res) => {
 router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => {
   try {
     const { tripId } = req.params;
-    if (!isUUID(tripId)) {
+    if (!mongoose.Types.ObjectId.isValid(tripId)) {
       return res.status(400).json({ success: false, message: "Invalid trip ID format" });
     }
 
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(tripId);
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
@@ -351,24 +325,23 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
 
     const now = new Date();
 
-    const { data: updatedTrip, error } = await supabase
-      .from("agent_trips")
-      .update({
+    const updatedTrip = await AgentTrip.findByIdAndUpdate(
+      tripId,
+      {
         boardingStatus: "CLOSED",
-        boardingClosesAt: now.toISOString(),
-      })
-      .eq("id", tripId)
-      .select()
-      .single();
+        boardingClosesAt: now,
+      },
+      { new: true }
+    );
 
-    if (error) throw error;
-
-    // Auto mark remaining Pending as No Show
-    await supabase
-      .from("bookings")
-      .update({ boardingStatus: "no_show" })
-      .eq("tripId", tripId)
-      .eq("boardingStatus", "Pending");
+    // Auto mark remaining Pending/not_boarded as No Show
+    await Booking.updateMany(
+      {
+        tripId,
+        boardingStatus: { $in: ["Pending", "not_boarded"] }
+      },
+      { boardingStatus: "no_show" }
+    );
 
     const io = req.app.get("io");
     if (io) {
@@ -408,14 +381,13 @@ router.post("/trips/:tripId/check-in", protectDriver, async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid token payload" });
     }
 
-    const { data: booking, error } = await supabase
-      .from("bookings")
-      .update({ boardingStatus: "boarded" })
-      .eq("id", decoded.bookingId)
-      .select()
-      .single();
+    const booking = await Booking.findByIdAndUpdate(
+      decoded.bookingId,
+      { boardingStatus: "boarded" },
+      { new: true }
+    );
 
-    if (error || !booking) {
+    if (!booking) {
       return res.status(400).json({ success: false, message: "Booking not found or update failed" });
     }
 
@@ -431,8 +403,8 @@ router.post("/trips/:tripId/check-in", protectDriver, async (req, res) => {
       success: true,
       message: "Passenger successfully checked-in and boarded.",
       booking: {
-        ...booking,
-        _id: booking.id,
+        ...booking.toObject(),
+        _id: booking._id,
       },
     });
   } catch (err) {

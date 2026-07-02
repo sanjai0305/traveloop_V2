@@ -1,4 +1,6 @@
-import { supabase } from "../config/supabase.js";
+import Budget from "../models/Budget.js";
+import Itinerary from "../models/Itinerary.js";
+import Trip from "../models/Trip.js";
 
 const mapCategory = (cat) => {
   if (!cat) return "misc";
@@ -12,31 +14,22 @@ const mapCategory = (cat) => {
 };
 
 /**
- * Recalculates planned and actual expenses for the active budget in Supabase.
+ * Recalculates planned and actual expenses for the active budget in MongoDB.
  * @param {string} tripId - The ID of the trip to sync.
  */
 export const recalculateBudget = async (tripId) => {
   try {
-    const { data: activeBudget } = await supabase
-      .from("budgets")
-      .select("*")
-      .eq("tripId", tripId)
-      .eq("isArchived", false)
-      .eq("isActive", true)
-      .maybeSingle();
+    const activeBudget = await Budget.findOne({
+      tripId,
+      isArchived: false,
+      isActive: true,
+    });
 
     if (!activeBudget) return;
 
-    const { data: itineraryItems } = await supabase
-      .from("itineraries")
-      .select("*")
-      .eq("tripId", tripId);
+    const itineraryItems = await Itinerary.find({ tripId });
 
-    const { data: trip } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const trip = await Trip.findById(tripId);
 
     if (!trip) return;
 
@@ -67,17 +60,15 @@ export const recalculateBudget = async (tripId) => {
 
     const remainingBudget = Number(activeBudget.totalBudget) - totalPlanned;
 
-    const { error } = await supabase
-      .from("budgets")
-      .update({
+    await Budget.updateOne(
+      { _id: activeBudget._id },
+      {
         plannedExpense: totalPlanned,
         actualExpense: totalActual,
         remainingBudget,
         categories
-      })
-      .eq("id", activeBudget.id);
-
-    if (error) throw error;
+      }
+    );
 
   } catch (err) {
     console.error("Error running recalculateBudget:", err);

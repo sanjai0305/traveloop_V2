@@ -1,107 +1,118 @@
-import { supabase } from "../config/supabase.js";
-import { makeQueryChain } from "./queryHelper.js";
+import mongoose from "mongoose";
 
-const User = {
-  find: (query = {}) => {
-    const promise = (async () => {
-      let q = supabase.from("users").select("*");
-      const { data, error } = await q;
-      if (error) throw error;
-      return (data || []).map(r => ({
-        ...r,
-        _id: r.id,
-        save: async function() {
-          const { id: _id, _id: __id, save: _save, ...fields } = this;
-          await supabase.from("users").update(fields).eq("id", _id);
-        }
-      }));
-    })();
-    return makeQueryChain(promise);
+const userSchema = new mongoose.Schema(
+  {
+    firstName: {
+      type: String,
+      required: true,
+    },
+    lastName: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    phone: {
+      type: String,
+      default: "",
+    },
+    city: {
+      type: String,
+      default: "",
+    },
+    country: {
+      type: String,
+      default: "",
+    },
+    additionalInfo: {
+      type: String,
+      default: "",
+    },
+    password: {
+      type: String,
+      default: "",
+    },
+    googleId: {
+      type: String,
+      default: null,
+    },
+    avatar: {
+      type: String,
+      default: "",
+    },
+    authProvider: {
+      type: String,
+      default: "email",
+    },
+    xp: {
+      type: Number,
+      default: 0,
+    },
+    level: {
+      type: Number,
+      default: 1,
+    },
+    streak: {
+      type: Number,
+      default: 0,
+    },
+    acceptedTerms: {
+      type: Boolean,
+      default: false,
+    },
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    termsVersion: {
+      type: String,
+      default: "",
+    },
+    lastLogin: {
+      type: Date,
+      default: null,
+    },
+    firebaseUid: {
+      type: String,
+      default: "",
+    },
+    pin: {
+      type: String,
+      default: "",
+    },
+    achievements: {
+      type: [String],
+      default: [],
+    },
+    lastActiveDate: {
+      type: String,
+      default: "",
+    },
+    upiId: {
+      type: String,
+      default: "",
+    },
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    twoFactorSecret: {
+      type: String,
+      default: "",
+    },
   },
-
-  findOne: (query) => {
-    const promise = (async () => {
-      let q = supabase.from("users").select("*");
-      if (query.email) {
-        q = q.eq("email", query.email);
-      }
-      if (query.googleId) {
-        q = q.eq("googleId", query.googleId);
-      }
-      if (query.firebaseUid) {
-        q = q.eq("firebaseUid", query.firebaseUid);
-      }
-      const { data } = await q.maybeSingle();
-      if (!data) return null;
-      return {
-        ...data,
-        _id: data.id,
-        save: async function() {
-          const { id, _id, ...fields } = this;
-          delete fields.save;
-          await supabase.from("users").update(fields).eq("id", id);
-        }
-      };
-    })();
-    return makeQueryChain(promise);
-  },
-
-  findById: async (id) => {
-    if (!id) return null;
-    const { data } = await supabase.from("users").select("*").eq("id", id).maybeSingle();
-    if (!data) return null;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id, _id, ...fields } = this;
-        delete fields.save;
-        await supabase.from("users").update(fields).eq("id", id);
-      }
-    };
-  },
-
-  create: async (payload) => {
-    const { data, error } = await supabase.from("users").insert([payload]).select().single();
-    if (error) throw error;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id, _id, ...fields } = this;
-        delete fields.save;
-        await supabase.from("users").update(fields).eq("id", id);
-      }
-    };
-  },
-  deleteMany: async (filter = {}) => {
-    let q = supabase.from("users").delete();
-    if (filter.email) {
-      if (filter.email.$in) {
-        q = q.in("email", filter.email.$in);
-      } else {
-        q = q.eq("email", filter.email);
-      }
-    } else {
-      q = q.not("id", "is", "null");
-    }
-    const { error } = await q;
-    if (error) throw error;
-    return { deletedCount: 1 };
-  },
-  deleteOne: async (filter = {}) => {
-    let q = supabase.from("users").delete();
-    if (filter._id) {
-      q = q.eq("id", filter._id);
-    } else if (filter.email) {
-      q = q.eq("email", filter.email);
-    } else {
-      q = q.not("id", "is", "null");
-    }
-    const { error } = await q;
-    if (error) throw error;
-    return { deletedCount: 1 };
+  {
+    timestamps: true,
   }
-};
+);
 
+// Index for fast lookups
+userSchema.index({ firebaseUid: 1 }, { sparse: true });
+
+const User = mongoose.model("User", userSchema);
 export default User;

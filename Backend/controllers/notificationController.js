@@ -1,22 +1,19 @@
-import { supabase } from "../config/supabase.js";
+import Notification from "../models/Notification.js";
 
 // GET ALL NOTIFICATIONS
 export const getNotifications = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("userId", req.user.id)
-      .order("createdAt", { ascending: false });
+    const data = await Notification.find({ userId: req.user.id }).sort({ createdAt: -1 });
 
-    if (error) throw error;
-
-    const notifications = (data || []).map(r => ({
-      ...r,
-      _id: r.id,
-      user: r.userId,
-      trip: r.tripId
-    }));
+    const notifications = (data || []).map(r => {
+      const obj = r.toObject ? r.toObject() : r;
+      return {
+        ...obj,
+        _id: r._id,
+        user: r.userId,
+        trip: r.tripId
+      };
+    });
 
     res.json({
       success: true,
@@ -30,20 +27,23 @@ export const getNotifications = async (req, res) => {
 // MARK NOTIFICATION AS READ
 export const markAsRead = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("id", req.params.id)
-      .eq("userId", req.user.id)
-      .select()
-      .maybeSingle();
+    const data = await Notification.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
+      { read: true },
+      { new: true }
+    );
 
-    if (error) throw error;
     if (!data) {
       return res.status(404).json({ success: false, message: "Notification not found" });
     }
 
-    const notification = { ...data, _id: data.id, user: data.userId, trip: data.tripId };
+    const notification = {
+      ...data.toObject(),
+      _id: data._id,
+      user: data.userId,
+      trip: data.tripId
+    };
+
     res.json({
       success: true,
       notification,
@@ -56,13 +56,10 @@ export const markAsRead = async (req, res) => {
 // MARK ALL AS READ
 export const markAllAsRead = async (req, res) => {
   try {
-    const { error } = await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("userId", req.user.id)
-      .eq("read", false);
-
-    if (error) throw error;
+    await Notification.updateMany(
+      { userId: req.user.id, read: false },
+      { read: true }
+    );
 
     res.json({
       success: true,
@@ -76,15 +73,11 @@ export const markAllAsRead = async (req, res) => {
 // DELETE NOTIFICATION
 export const deleteNotification = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("id", req.params.id)
-      .eq("userId", req.user.id)
-      .select()
-      .maybeSingle();
+    const data = await Notification.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.id,
+    });
 
-    if (error) throw error;
     if (!data) {
       return res.status(404).json({ success: false, message: "Notification not found" });
     }
@@ -101,12 +94,7 @@ export const deleteNotification = async (req, res) => {
 // CLEAR ALL NOTIFICATIONS
 export const clearAllNotifications = async (req, res) => {
   try {
-    const { error } = await supabase
-      .from("notifications")
-      .delete()
-      .eq("userId", req.user.id);
-
-    if (error) throw error;
+    await Notification.deleteMany({ userId: req.user.id });
 
     res.json({
       success: true,
@@ -121,32 +109,23 @@ export const clearAllNotifications = async (req, res) => {
 export const triggerNotification = async (userId, title, message, type = "info", tripId = null) => {
   try {
     // Deduplication: skip if identical notification was created in the last 60 seconds
-    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
-    const { data: existing, error: checkError } = await supabase
-      .from("notifications")
-      .select("id")
-      .eq("userId", userId)
-      .eq("title", title)
-      .eq("message", message)
-      .gte("createdAt", sixtySecondsAgo)
-      .maybeSingle();
+    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+    const existing = await Notification.findOne({
+      userId,
+      title,
+      message,
+      createdAt: { $gte: sixtySecondsAgo }
+    });
 
-    if (checkError) throw checkError;
     if (existing) return;
 
-    const payload = {
+    await Notification.create({
       userId,
       title,
       message,
       type,
       tripId: tripId || null
-    };
-
-    const { error: insertError } = await supabase
-      .from("notifications")
-      .insert([payload]);
-
-    if (insertError) throw insertError;
+    });
   } catch (err) {
     console.error("Failed to trigger notification:", err);
   }

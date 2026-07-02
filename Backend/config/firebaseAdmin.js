@@ -1,19 +1,17 @@
 import admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
-
-const serviceAccountPath = path.join(
-  process.cwd(),
-  "serviceAccountKey.json"
-);
-
-const serviceAccount = JSON.parse(
-  fs.readFileSync(serviceAccountPath, "utf8")
-);
 
 if (!admin.apps.length) {
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    : undefined;
+
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: privateKey,
+      clientId: process.env.FIREBASE_CLIENT_ID,
+    })
   });
 
   console.log("✅ Firebase Admin Initialized");

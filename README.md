@@ -531,7 +531,6 @@ Frontend
 
 Backend
 
-* Render
 * AWS ECS
 * DigitalOcean
 

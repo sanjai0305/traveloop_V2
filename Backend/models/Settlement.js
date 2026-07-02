@@ -1,56 +1,37 @@
-import { supabase } from "../config/supabase.js";
-import { makeQueryChain } from "./queryHelper.js";
+import mongoose from "mongoose";
 
-const Settlement = {
-  findById: async (id) => {
-    if (!id) return null;
-    const { data, error } = await supabase
-      .from("settlements")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return null;
-    return {
-      ...data,
-      _id: data.id,
-      save: async function() {
-        const { id: _id, _id: __id, save: _save, ...fields } = this;
-        await supabase.from("settlements").update(fields).eq("id", _id || id);
-      }
-    };
+const settlementSchema = new mongoose.Schema(
+  {
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+      required: true,
+    },
+    agentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
+      required: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    status: {
+      type: String,
+      default: "Pending", // e.g. Pending, Settled
+    },
+    settledAt: {
+      type: Date,
+      default: null,
+    },
   },
-  create: async (payload) => {
-    const { data, error } = await supabase
-      .from("settlements")
-      .insert([payload])
-      .select().single();
-    if (error) throw error;
-    return { ...data, _id: data.id };
-  },
-  findOne: (query = {}) => {
-    const promise = (async () => {
-      let q = supabase.from("settlements").select("*");
-      if (query.bookingId) {
-        q = q.eq("bookingId", query.bookingId);
-      }
-      if (query.agentId) {
-        q = q.eq("agentId", query.agentId);
-      }
-      const { data, error } = await q.maybeSingle();
-      if (error) throw error;
-      if (!data) return null;
-      return {
-        ...data,
-        _id: data.id,
-        save: async function() {
-          const { id: _id, _id: __id, save: _save, ...fields } = this;
-          await supabase.from("settlements").update(fields).eq("id", _id);
-        }
-      };
-    })();
-    return makeQueryChain(promise);
+  {
+    timestamps: true,
   }
-};
+);
 
+settlementSchema.index({ bookingId: 1 });
+settlementSchema.index({ agentId: 1 });
+
+const Settlement = mongoose.model("Settlement", settlementSchema);
 export default Settlement;

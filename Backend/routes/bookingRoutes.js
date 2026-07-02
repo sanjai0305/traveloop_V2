@@ -1,10 +1,14 @@
 import express from "express";
+import mongoose from "mongoose";
 import protect from "../middleware/authMiddleware.js";
-import { supabase } from "../config/supabase.js";
+import Booking from "../models/Booking.js";
+import AgentTrip from "../models/AgentTrip.js";
+import Trip from "../models/Trip.js";
+import Itinerary from "../models/Itinerary.js";
+import Budget from "../models/Budget.js";
+import Checklist from "../models/Checklist.js";
 
 const router = express.Router();
-
-const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -94,52 +98,35 @@ const parseItineraryDescription = (day, desc) => {
 const cloneAgentTripToUserTrip = async (booking, agentTrip, userId, totalAmount) => {
   const destination = (agentTrip.destinations || [])[0] || agentTrip.title || "Trip";
 
-  const { data: userTripRow, error: tripErr } = await supabase
-    .from("trips")
-    .select("*")
-    .eq("id", booking.id) // Mock link user trip ID
-    .maybeSingle();
+  const newTrip = await Trip.create({
+    userId,
+    image: agentTrip.coverImage || "",
+    title: agentTrip.title,
+    destination,
+    startDate: agentTrip.startDate || null,
+    endDate: agentTrip.endDate || null,
+    budget: totalAmount,
+    isPublic: false,
+    status: "planning",
+  });
 
-  const { data: newTrip, error: createTripErr } = await supabase
-    .from("trips")
-    .insert([{
-      userId,
-      image: agentTrip.coverImage || "",
-      title: agentTrip.title,
-      destination,
-      startDate: agentTrip.startDate || null,
-      endDate: agentTrip.endDate || null,
-      budget: totalAmount,
-      isPublic: false,
-      status: "planning",
-    }])
-    .select()
-    .single();
-
-  if (createTripErr) throw createTripErr;
-
-  const userTrip = { ...newTrip, _id: newTrip.id };
+  const userTrip = { ...newTrip.toObject(), _id: newTrip._id };
 
   // Clone itinerary
-  const { data: newItinerary } = await supabase
-    .from("itineraries")
-    .insert([{
-      tripId: userTrip._id,
-      day: 1,
-      title: `Departure to ${destination}`,
-      description: agentTrip.pickupLocation ? `Pickup from: ${agentTrip.pickupLocation}` : "",
-    }])
-    .select();
+  await Itinerary.create({
+    tripId: userTrip._id,
+    day: 1,
+    title: `Departure to ${destination}`,
+    description: agentTrip.pickupLocation ? `Pickup from: ${agentTrip.pickupLocation}` : "",
+  });
 
   // Seed Budget
-  await supabase
-    .from("budgets")
-    .insert([{
-      tripId: userTrip._id,
-      totalBudget: totalAmount,
-      isArchived: false,
-      isActive: true,
-    }]);
+  await Budget.create({
+    tripId: userTrip._id,
+    totalBudget: totalAmount,
+    isArchived: false,
+    isActive: true,
+  });
 
   // Seed Checklist
   const packingItems = generatePackingItems(agentTrip);
@@ -148,10 +135,12 @@ const cloneAgentTripToUserTrip = async (booking, agentTrip, userId, totalAmount)
       tripId: userTrip._id,
       userId,
       itemName: p.item,
+      item: p.item,
       category: p.category,
       packed: false,
+      checked: false,
     }));
-    await supabase.from("checklists").insert(checkListInserts);
+    await Checklist.insertMany(checkListInserts);
   }
 
   // Seed AI suggested activities
@@ -168,7 +157,7 @@ const cloneAgentTripToUserTrip = async (booking, agentTrip, userId, totalAmount)
         isAiSuggestion: true,
         aiSource: a.aiSource || "traveloop-destination-engine-v1",
       }));
-      await supabase.from("itineraries").insert(aiInserts);
+      await Itinerary.insertMany(aiInserts);
     }
   } catch (aiErr) {
     console.warn("[AI Activities] Failed to seed AI suggestions:", aiErr.message);
@@ -201,11 +190,7 @@ router.post("/", protect, async (req, res) => {
   }
 
   try {
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", tripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(tripId);
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
@@ -218,38 +203,35 @@ router.post("/", protect, async (req, res) => {
     const gatewayFee = totalAmount * 0.02;
     const agentAmount = totalAmount - commissionAmount - gatewayFee;
 
-    const { data: newBooking, error: bookingErr } = await supabase
-      .from("bookings")
-      .insert([{
-        bookingId,
-        userId: req.user.id,
-        tripId: trip.id,
-        seats: totalTravellers,
-        pricePaid: totalAmount,
-        paymentStatus: "Paid",
-        boardingStatus: "Pending",
-        assignedSeat: seatNumbers[0] || "",
-        token: "",
-      }])
-      .select()
-      .single();
+    const userId = req.user.id || req.user._id;
 
-    if (bookingErr) throw bookingErr;
+    const newBooking = await Booking.create({
+      bookingId,
+      userId,
+      tripId: trip._id,
+      seats: totalTravellers,
+      pricePaid: totalAmount,
+      paymentStatus: "Paid",
+      boardingStatus: "Pending",
+      assignedSeat: seatNumbers[0] || "",
+      token: "",
+    });
 
-    const booking = { ...newBooking, _id: newBooking.id, agentTrip: newBooking.tripId };
+    const booking = {
+      ...newBooking.toObject(),
+      _id: newBooking._id,
+      agentTrip: newBooking.tripId
+    };
 
-    // Update trip seats counters (simulated database updates on agent_trips)
-    await supabase
-      .from("agent_trips")
-      .update({
-        boardingStatus: trip.boardingStatus,
-      })
-      .eq("id", tripId);
+    // Update trip seats counters
+    await AgentTrip.findByIdAndUpdate(tripId, {
+      boardingStatus: trip.boardingStatus,
+    });
 
     // Clone agent trip to personal user planner trip workspace
     let userTrip = null;
     try {
-      userTrip = await cloneAgentTripToUserTrip(booking, trip, req.user.id, totalAmount);
+      userTrip = await cloneAgentTripToUserTrip(booking, trip, userId, totalAmount);
     } catch (cloneErr) {
       console.warn("[Create Booking] Personal trip clone warning:", cloneErr.message);
     }
@@ -269,20 +251,21 @@ router.post("/", protect, async (req, res) => {
 // GET /api/bookings/my-bookings
 router.get("/my-bookings", protect, async (req, res) => {
   try {
-    const { data: bookingsList } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("userId", req.user.id);
+    const userId = req.user.id || req.user._id;
+    const bookingsList = await Booking.find({ userId });
 
-    const bookings = (bookingsList || []).map(b => ({
-      ...b,
-      _id: b.id,
-      agentTrip: {
-        _id: b.tripId,
-        title: "Yercaud Trip",
-        boardingStatus: "CLOSED",
-      },
-    }));
+    const bookings = (bookingsList || []).map(b => {
+      const obj = b.toObject ? b.toObject() : b;
+      return {
+        ...obj,
+        _id: b._id,
+        agentTrip: {
+          _id: b.tripId,
+          title: "Yercaud Trip",
+          boardingStatus: "CLOSED",
+        },
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -299,24 +282,19 @@ router.put("/:bookingId/notes", protect, async (req, res) => {
   try {
     const { notes } = req.body;
     const { bookingId } = req.params;
+    const userId = req.user.id || req.user._id;
 
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .eq("userId", req.user.id)
-      .maybeSingle();
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
+    }
+
+    const bookingRow = await Booking.findOne({ _id: bookingId, userId });
 
     if (!bookingRow) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    const { data: updatedBooking } = await supabase
-      .from("bookings")
-      .update({ assignedSeat: notes || "" })
-      .eq("id", bookingId)
-      .select()
-      .single();
+    await Booking.findByIdAndUpdate(bookingId, { assignedSeat: notes || "" });
 
     res.status(200).json({
       success: true,
@@ -333,27 +311,24 @@ router.put("/:bookingId/notes", protect, async (req, res) => {
 router.get("/:bookingId/user-trip", protect, async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .eq("userId", req.user.id)
-      .maybeSingle();
+    const userId = req.user.id || req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
+    }
+
+    const bookingRow = await Booking.findOne({ _id: bookingId, userId });
 
     if (!bookingRow) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", bookingRow.tripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(bookingRow.tripId);
 
     const booking = {
-      ...bookingRow,
-      _id: bookingRow.id,
-      agentTrip: trip ? { ...trip, _id: trip.id } : null,
+      ...bookingRow.toObject(),
+      _id: bookingRow._id,
+      agentTrip: trip ? { ...trip.toObject(), _id: trip._id } : null,
     };
 
     res.status(200).json({
@@ -377,13 +352,13 @@ router.get("/:bookingId/user-trip", protect, async (req, res) => {
 router.post("/:bookingId/cancel", protect, async (req, res) => {
   try {
     const { bookingId } = req.params;
+    const userId = req.user.id || req.user._id;
 
-    const { data: booking } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .eq("userId", req.user.id)
-      .maybeSingle();
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
+    }
+
+    const booking = await Booking.findOne({ _id: bookingId, userId });
 
     if (!booking) {
       return res.status(404).json({ success: false, message: "Booking not found" });
@@ -393,19 +368,18 @@ router.post("/:bookingId/cancel", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "Booking is already cancelled" });
     }
 
-    const { data: updatedBooking } = await supabase
-      .from("bookings")
-      .update({ paymentStatus: "Cancelled" })
-      .eq("id", bookingId)
-      .select()
-      .single();
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      bookingId,
+      { paymentStatus: "Cancelled" },
+      { new: true }
+    );
 
     res.status(200).json({
       success: true,
       message: "Booking cancelled successfully",
       booking: {
-        ...updatedBooking,
-        _id: updatedBooking.id,
+        ...updatedBooking.toObject(),
+        _id: updatedBooking._id,
       },
     });
   } catch (error) {
@@ -417,21 +391,24 @@ router.post("/:bookingId/cancel", protect, async (req, res) => {
 // GET /api/bookings/my
 router.get("/my", protect, async (req, res) => {
   try {
-    const { data: bookingsList } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("userId", req.user.id)
-      .neq("paymentStatus", "Cancelled");
+    const userId = req.user.id || req.user._id;
+    const bookingsList = await Booking.find({
+      userId,
+      paymentStatus: { $ne: "Cancelled" }
+    });
 
-    const bookings = (bookingsList || []).map(b => ({
-      ...b,
-      _id: b.id,
-      agentTrip: {
-        _id: b.tripId,
-        title: "Yercaud Weekend Escapade",
-        boardingStatus: "CLOSED",
-      },
-    }));
+    const bookings = (bookingsList || []).map(b => {
+      const obj = b.toObject ? b.toObject() : b;
+      return {
+        ...obj,
+        _id: b._id,
+        agentTrip: {
+          _id: b.tripId,
+          title: "Yercaud Weekend Escapade",
+          boardingStatus: "CLOSED",
+        },
+      };
+    });
 
     res.status(200).json({
       success: true,

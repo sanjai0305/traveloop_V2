@@ -29,7 +29,7 @@ import {
 import protect from "../middleware/authMiddleware.js";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
-import { supabase } from "../config/supabase.js";
+import Agent from "../models/Agent.js";
 
 const router = express.Router();
 
@@ -38,27 +38,20 @@ const router = express.Router();
 // 1. Get all published trips
 router.get("/published", async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("agent_trips")
-      .select(`
-        *,
-        agent:agents(companyName, email)
-      `)
-      .neq("isDeleted", true)
-      .or("status.eq.published,publishStatus.eq.published")
-      .order("createdAt", { ascending: false });
-
-    if (error) throw error;
+    const data = await AgentTrip.find({
+      isDeleted: { $ne: true },
+      $or: [{ status: "published" }, { publishStatus: "published" }]
+    }).populate("agentId", "companyName email").sort({ createdAt: -1 });
 
     const trips = (data || []).map(t => {
-      const mapped = { ...t, _id: t.id };
-      if (mapped.agent) {
+      const mapped = { ...t.toObject(), _id: t._id };
+      if (mapped.agentId) {
         // Flatten companyName/email to match client assumptions if needed
         mapped.agent = {
-          _id: t.agentId,
-          displayName: t.agent.companyName,
-          companyName: t.agent.companyName,
-          email: t.agent.email,
+          _id: mapped.agentId._id,
+          displayName: mapped.agentId.companyName,
+          companyName: mapped.agentId.companyName,
+          email: mapped.agentId.email,
           logo: "",
           profileImage: "",
           phone: ""
@@ -103,27 +96,19 @@ router.put("/:id/publish", protect, async (req, res) => {
 // 2. Get specific published trip detail
 router.get("/published/:id", async (req, res) => {
   try {
-    const { data: tripData, error: tripError } = await supabase
-      .from("agent_trips")
-      .select(`
-        *,
-        agent:agents(companyName, email)
-      `)
-      .eq("id", req.params.id)
-      .maybeSingle();
+    const tripData = await AgentTrip.findById(req.params.id).populate("agentId", "companyName email");
 
-    if (tripError) throw tripError;
     if (!tripData) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripData, _id: tripData.id };
-    if (trip.agent) {
+    const trip = { ...tripData.toObject(), _id: tripData._id };
+    if (trip.agentId) {
       trip.agent = {
-        _id: tripData.agentId,
-        displayName: tripData.agent.companyName,
-        companyName: tripData.agent.companyName,
-        email: tripData.agent.email,
+        _id: trip.agentId._id,
+        displayName: trip.agentId.companyName,
+        companyName: trip.agentId.companyName,
+        email: trip.agentId.email,
         logo: "",
         profileImage: "",
         phone: ""
@@ -131,21 +116,19 @@ router.get("/published/:id", async (req, res) => {
     }
 
     // Fetch all bookings for this trip to extract booked seat numbers
-    const { data: bookingsData, error: bookingsError } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("tripId", trip._id)
-      .neq("paymentStatus", "Cancelled");
+    const bookingsData = await Booking.find({
+      tripId: trip._id,
+      paymentStatus: { $ne: "Cancelled" }
+    });
 
-    if (bookingsError) throw bookingsError;
-
-    const bookings = (bookingsData || []).map(b => ({ ...b, _id: b.id }));
+    const bookings = (bookingsData || []).map(b => ({ ...b.toObject(), _id: b._id }));
     const bookedSeatNumbers = bookings.reduce((seats, b) => {
       if (b.assignedSeat) {
         seats.push(b.assignedSeat);
       }
       return seats;
     }, []);
+
 
     res.status(200).json({
       success: true,

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "assert";
-import mongoose from "./config/mongooseMock.js";
+import mongoose from "mongoose";
 import User from "./models/User.js";
 import Trip from "./models/Trip.js";
 import Flight from "./models/Flight.js";
@@ -14,11 +14,8 @@ async function runTests() {
   console.log("=== TRAVELOOP FLIGHT TRACKER & TIMELINE INTEGRATION TEST SUITE ===\n");
 
   // Connect database
-  const mongoUri = process.env.MONGO_URI;
-  if (!mongoUri) {
-    throw new Error("❌ Please define the MONGO_URI environment variable.");
-  }
-  await mongoose.connect(mongoUri);
+  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/traveloop";
+  await mongoose.connect(mongoUri, { dbName: process.env.DATABASE_NAME || "traveloop" });
   console.log("Database connected successfully.\n");
 
   const emailOwner = `owner_flight_${Date.now()}@test.com`;

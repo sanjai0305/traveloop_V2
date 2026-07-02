@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { supabase } from "../config/supabase.js";
+import Agent from "../models/Agent.js";
 
 export const fallbackAgents = new Map();
 
@@ -24,17 +24,13 @@ const protectAgent = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      const { data: agent, error } = await supabase
-        .from("agents")
-        .select("id, companyName, email, status")
-        .eq("id", decoded.id)
-        .maybeSingle();
+      const agent = await Agent.findById(decoded.id).select("companyName email status");
 
       if (agent) {
         req.agent = {
-          _id: agent.id,
-          id: agent.id,
-          ...agent
+          _id: agent._id,
+          id: agent._id.toString(),
+          ...agent.toObject()
         };
       }
 

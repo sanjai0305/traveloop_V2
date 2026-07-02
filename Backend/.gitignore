@@ -23,3 +23,9 @@ Backend/uploads/
 # DATABASE FILES
 Backend/*.sqlite
 Backend/*.db
+
+# Firebase credentials
+serviceAccountKey.json
+*.json
+Backend/serviceAccountKey.json
+Backend/config/serviceAccountKey.json

@@ -11,7 +11,7 @@ import Settlement from "../models/Settlement.js";
 import Commission from "../models/Commission.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { supabase } from "../config/supabase.js";
+// Supabase client removed
 
 // Firebase imports for OTP sharing
 import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore";
@@ -257,28 +257,17 @@ export const getDashboardStats = async (req, res) => {
 
     const totalBookings = bookings.length;
 
-    // Helper to get count
-    const getCount = async (table, filterFn = null) => {
-      let q = supabase.from(table).select("*", { count: "exact", head: true });
-      if (filterFn) {
-        q = filterFn(q);
-      }
-      const { count, error } = await q;
-      if (error) throw error;
-      return count || 0;
-    };
-
-    const totalAgents = await getCount("agents");
-    const totalDrivers = await getCount("drivers");
-    const totalUsers = await getCount("users");
+    const totalAgents = await Agent.countDocuments();
+    const totalDrivers = await Driver.countDocuments();
+    const totalUsers = await User.countDocuments();
     
-    const totalAgentTrips = await getCount("agent_trips");
-    const totalPlannerTrips = await getCount("trips");
+    const totalAgentTrips = await AgentTrip.countDocuments();
+    const totalPlannerTrips = await Trip.countDocuments();
     const totalTrips = totalAgentTrips + totalPlannerTrips;
 
-    const activeTrips = await getCount("agent_trips", q => q.eq("approvalStatus", "approved").eq("status", "published"));
-    const cancelledTrips = await getCount("agent_trips", q => q.eq("status", "cancelled"));
-    const pendingRefunds = await getCount("bookings", q => q.eq("refundStatus", "requested"));
+    const activeTrips = await AgentTrip.countDocuments({ approvalStatus: "approved", status: "published" });
+    const cancelledTrips = await AgentTrip.countDocuments({ status: "cancelled" });
+    const pendingRefunds = await Booking.countDocuments({ refundStatus: "requested" });
 
     res.status(200).json({
       success: true,
@@ -319,44 +308,30 @@ export const getDashboardStats = async (req, res) => {
 
 export const getFinanceDetails = async (req, res) => {
   try {
-    const { data: bookingsData, error: bookingsError } = await supabase
-      .from("bookings")
-      .select(`
-        *,
-        agentTrip:tripId(*),
-        userId(*)
-      `);
-    if (bookingsError) throw bookingsError;
-
-    const { data: settlementsData, error: settlementsError } = await supabase
-      .from("settlements")
-      .select(`
-        *,
-        bookingId:bookings(*),
-        tripId:agent_trips(*),
-        agentId:agents(*)
-      `);
-    if (settlementsError) throw settlementsError;
+    const bookingsData = await Booking.find({}).populate("tripId").populate("userId");
+    const settlementsData = await Settlement.find({}).populate("bookingId").populate("tripId").populate("agentId");
 
     // Map fields to match mongoose object assumptions
     const bookings = (bookingsData || []).map(b => {
-      const mapped = { ...b, _id: b.id };
-      if (mapped.agentTrip) {
-        mapped.agentTrip = { ...mapped.agentTrip, _id: mapped.tripId };
-      }
-      if (mapped.userId) {
-        mapped.userId = { ...mapped.userId, _id: mapped.userId.id };
-      }
-      return mapped;
+      const obj = b.toObject ? b.toObject() : b;
+      return {
+        ...obj,
+        _id: b._id,
+        agentTrip: obj.tripId ? { ...obj.tripId, _id: obj.tripId._id } : null,
+        userId: obj.userId ? { ...obj.userId, _id: obj.userId._id } : null
+      };
     });
 
-    const settlements = (settlementsData || []).map(s => ({
-      ...s,
-      _id: s.id,
-      bookingId: s.bookingId ? { ...s.bookingId, _id: s.bookingId.id } : null,
-      tripId: s.tripId ? { ...s.tripId, _id: s.tripId.id } : null,
-      agentId: s.agentId ? { ...s.agentId, _id: s.agentId.id } : null
-    }));
+    const settlements = (settlementsData || []).map(s => {
+      const obj = s.toObject ? s.toObject() : s;
+      return {
+        ...obj,
+        _id: s._id,
+        bookingId: obj.bookingId ? { ...obj.bookingId, _id: obj.bookingId._id } : null,
+        tripId: obj.tripId ? { ...obj.tripId, _id: obj.tripId._id } : null,
+        agentId: obj.agentId ? { ...obj.agentId, _id: obj.agentId._id } : null
+      };
+    });
     
     res.status(200).json({
       success: true,
@@ -453,23 +428,20 @@ export const updateDefaultCommission = async (req, res) => {
 
 export const getPayoutsList = async (req, res) => {
   try {
-    const { data: bookingsData, error } = await supabase
-      .from("bookings")
-      .select(`
-        *,
-        agentTrip:tripId(*),
-        userId(*)
-      `)
-      .eq("paymentStatus", "Paid")
-      .order("createdAt", { ascending: false });
+    const bookingsData = await Booking.find({ paymentStatus: "Paid" })
+      .populate("tripId")
+      .populate("userId")
+      .sort({ createdAt: -1 });
 
-    if (error) throw error;
-    const pendingSettlements = (bookingsData || []).map(b => ({
-      ...b,
-      _id: b.id,
-      agentTrip: b.agentTrip ? { ...b.agentTrip, _id: b.tripId } : null,
-      userId: b.userId ? { ...b.userId, _id: b.userId.id } : null
-    }));
+    const pendingSettlements = (bookingsData || []).map(b => {
+      const obj = b.toObject ? b.toObject() : b;
+      return {
+        ...obj,
+        _id: b._id,
+        agentTrip: obj.tripId ? { ...obj.tripId, _id: obj.tripId._id } : null,
+        userId: obj.userId ? { ...obj.userId, _id: obj.userId._id } : null
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -586,36 +558,31 @@ export const deleteAgent = async (req, res) => {
 
 export const getTrips = async (req, res) => {
   try {
-    const { data: tripsData, error } = await supabase
-      .from("agent_trips")
-      .select(`
-        *,
-        agent:agentId(companyName, email),
-        driver:driverId(name, phone, vehicleNumber)
-      `)
-      .order("createdAt", { ascending: false });
+    const tripsData = await AgentTrip.find({})
+      .populate("agentId", "companyName email")
+      .populate("driverId", "name phone vehicleNumber")
+      .sort({ createdAt: -1 });
 
-    if (error) throw error;
     const trips = (tripsData || []).map(t => {
-      const mapped = { ...t, _id: t.id };
-      if (mapped.agent) {
-        mapped.agent = {
-          _id: t.agentId,
-          companyName: t.agent.companyName,
-          displayName: t.agent.companyName,
-          email: t.agent.email,
+      const obj = t.toObject ? t.toObject() : t;
+      const mapped = {
+        ...obj,
+        _id: t._id,
+        agent: obj.agentId ? {
+          _id: obj.agentId._id,
+          companyName: obj.agentId.companyName,
+          displayName: obj.agentId.companyName,
+          email: obj.agentId.email,
           logo: "",
           phone: ""
-        };
-      }
-      if (mapped.driver) {
-        mapped.driver = {
-          _id: t.driverId,
-          name: t.driver.name,
-          phone: t.driver.phone,
-          vehicleNumber: t.driver.vehicleNumber
-        };
-      }
+        } : null,
+        driver: obj.driverId ? {
+          _id: obj.driverId._id,
+          name: obj.driverId.name,
+          phone: obj.driverId.phone,
+          vehicleNumber: obj.driverId.vehicleNumber
+        } : null
+      };
       return mapped;
     });
 
@@ -667,23 +634,15 @@ export const updateTrip = async (req, res) => {
       trip.deletedBy = req.admin ? req.admin._id.toString() : "Admin";
       trip.status = "deleted";
       
-      await supabase
-        .from("agent_trips")
-        .update({
-          isDeleted: true,
-          deletedAt: trip.deletedAt,
-          deletedBy: trip.deletedBy,
-          status: "deleted"
-        })
-        .eq("id", id);
+      await AgentTrip.findByIdAndUpdate(id, {
+        isDeleted: true,
+        deletedAt: trip.deletedAt,
+        deletedBy: trip.deletedBy,
+        status: "deleted"
+      });
 
       // Cascade booking cancellations
-      await supabase
-        .from("bookings")
-        .update({
-          paymentStatus: "Cancelled"
-        })
-        .eq("tripId", id);
+      await Booking.updateMany({ tripId: id }, { paymentStatus: "Cancelled" });
 
       // Broadcast soft-delete event in real time via Socket.io
       const io = req.app.get("io");
@@ -694,36 +653,25 @@ export const updateTrip = async (req, res) => {
       return res.status(200).json({ success: true, message: "Trip soft-deleted successfully" });
     }
 
-    await supabase
-      .from("agent_trips")
-      .update({
-        approvalStatus: trip.approvalStatus,
-        publishStatus: trip.publishStatus,
-        status: trip.status,
-        publishedAt: trip.publishedAt,
-        isHidden: trip.isHidden,
-        isFeatured: trip.isFeatured
-      })
-      .eq("id", id);
+    await AgentTrip.findByIdAndUpdate(id, {
+      approvalStatus: trip.approvalStatus,
+      publishStatus: trip.publishStatus,
+      status: trip.status,
+      publishedAt: trip.publishedAt,
+      isHidden: trip.isHidden,
+      isFeatured: trip.isFeatured
+    });
 
-    const { data: updatedTripData, error: updateTripErr } = await supabase
-      .from("agent_trips")
-      .select(`
-        *,
-        agent:agentId(companyName, email)
-      `)
-      .eq("id", id)
-      .maybeSingle();
+    const updatedTripData = await AgentTrip.findById(id).populate("agentId", "companyName email");
 
-    if (updateTripErr) throw updateTripErr;
     const updatedTrip = updatedTripData ? {
-      ...updatedTripData,
-      _id: updatedTripData.id,
-      agent: updatedTripData.agent ? {
-        _id: updatedTripData.agentId,
-        companyName: updatedTripData.agent.companyName,
-        displayName: updatedTripData.agent.companyName,
-        email: updatedTripData.agent.email,
+      ...updatedTripData.toObject(),
+      _id: updatedTripData._id,
+      agent: updatedTripData.agentId ? {
+        _id: updatedTripData.agentId._id,
+        companyName: updatedTripData.agentId.companyName,
+        displayName: updatedTripData.agentId.companyName,
+        email: updatedTripData.agentId.email,
         logo: "",
         phone: ""
       } : null
@@ -851,30 +799,21 @@ export const purgeTrip = async (req, res) => {
 
 export const getBookingsLedger = async (req, res) => {
   try {
-    const { data: bookingsData, error } = await supabase
-      .from("bookings")
-      .select(`
-        *,
-        agentTrip:tripId(title, destinations, duration, startDate, endDate, coverImage, agentId),
-        userId(firstName, lastName, email, phone)
-      `)
-      .order("createdAt", { ascending: false });
-
-    if (error) throw error;
+    const bookingsData = await Booking.find({})
+      .populate("tripId")
+      .populate("userId", "firstName lastName email phone")
+      .sort({ createdAt: -1 });
 
     const bookings = await Promise.all((bookingsData || []).map(async (b) => {
-      const mapped = { ...b, _id: b.id };
-      if (mapped.agentTrip) {
-        mapped.agentTrip = { ...mapped.agentTrip, _id: mapped.tripId };
-        if (mapped.agentTrip.agentId) {
-          const { data: agentData } = await supabase
-            .from("agents")
-            .select("companyName, email")
-            .eq("id", mapped.agentTrip.agentId)
-            .maybeSingle();
+      const obj = b.toObject ? b.toObject() : b;
+      const mapped = { ...obj, _id: b._id };
+      if (obj.tripId) {
+        mapped.agentTrip = { ...obj.tripId, _id: obj.tripId._id };
+        if (obj.tripId.agentId) {
+          const agentData = await Agent.findById(obj.tripId.agentId).select("companyName email");
           if (agentData) {
             mapped.agent = {
-              _id: mapped.agentTrip.agentId,
+              _id: obj.tripId.agentId,
               companyName: agentData.companyName,
               displayName: agentData.companyName,
               email: agentData.email,
@@ -886,8 +825,8 @@ export const getBookingsLedger = async (req, res) => {
           }
         }
       }
-      if (mapped.userId) {
-        mapped.userId = { ...mapped.userId, _id: mapped.userId.id };
+      if (obj.userId) {
+        mapped.userId = { ...obj.userId, _id: obj.userId._id };
       }
       return mapped;
     }));
@@ -903,33 +842,22 @@ export const getBookingById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const { data: bookingData, error } = await supabase
-      .from("bookings")
-      .select(`
-        *,
-        agentTrip:tripId(*),
-        userId(*)
-      `)
-      .eq("id", id)
-      .maybeSingle();
+    const bookingData = await Booking.findById(id)
+      .populate("tripId")
+      .populate("userId");
 
-    if (error) throw error;
     if (!bookingData) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    const booking = { ...bookingData, _id: bookingData.id };
-    if (booking.agentTrip) {
-      booking.agentTrip = { ...booking.agentTrip, _id: booking.tripId };
-      if (booking.agentTrip.agentId) {
-        const { data: agentData } = await supabase
-          .from("agents")
-          .select("companyName, email")
-          .eq("id", booking.agentTrip.agentId)
-          .maybeSingle();
+    const booking = { ...bookingData.toObject(), _id: bookingData._id };
+    if (booking.tripId) {
+      booking.agentTrip = { ...booking.tripId, _id: booking.tripId._id };
+      if (booking.tripId.agentId) {
+        const agentData = await Agent.findById(booking.tripId.agentId).select("companyName email");
         if (agentData) {
           booking.agent = {
-            _id: booking.agentTrip.agentId,
+            _id: booking.tripId.agentId,
             companyName: agentData.companyName,
             displayName: agentData.companyName,
             email: agentData.email
@@ -938,7 +866,7 @@ export const getBookingById = async (req, res) => {
       }
     }
     if (booking.userId) {
-      booking.userId = { ...booking.userId, _id: booking.userId.id };
+      booking.userId = { ...booking.userId, _id: booking.userId._id };
     }
 
     res.status(200).json({ success: true, booking });
@@ -978,24 +906,22 @@ export const updateBooking = async (req, res) => {
 
 export const getSettlements = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("settlements")
-      .select(`
-        *,
-        bookingId:bookings(*),
-        tripId:agent_trips(*),
-        agentId:agents(*)
-      `)
-      .order("createdAt", { ascending: false });
+    const data = await Settlement.find({})
+      .populate("bookingId")
+      .populate("tripId")
+      .populate("agentId")
+      .sort({ createdAt: -1 });
 
-    if (error) throw error;
-    const settlements = (data || []).map(s => ({
-      ...s,
-      _id: s.id,
-      bookingId: s.bookingId ? { ...s.bookingId, _id: s.bookingId.id } : null,
-      tripId: s.tripId ? { ...s.tripId, _id: s.tripId.id } : null,
-      agentId: s.agentId ? { ...s.agentId, _id: s.agentId.id } : null
-    }));
+    const settlements = (data || []).map(s => {
+      const obj = s.toObject ? s.toObject() : s;
+      return {
+        ...obj,
+        _id: s._id,
+        bookingId: obj.bookingId ? { ...obj.bookingId, _id: obj.bookingId._id } : null,
+        tripId: obj.tripId ? { ...obj.tripId, _id: obj.tripId._id } : null,
+        agentId: obj.agentId ? { ...obj.agentId, _id: obj.agentId._id } : null
+      };
+    });
 
     res.status(200).json({ success: true, settlements });
   } catch (error) {

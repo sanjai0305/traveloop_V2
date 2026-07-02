@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "assert";
-import mongoose from "./config/mongooseMock.js";
+import mongoose from "mongoose";
 import { db, auth } from "./config/firebase.js";
 import { doc, getDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
@@ -12,11 +12,8 @@ const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${er
 
 async function runTests() {
   console.log("=== TRAVELOOP PRODUCTION API TEST SUITE ===\n");
-  const mongoUri = process.env.MONGO_URI;
-  if (!mongoUri) {
-    throw new Error("❌ Please define the MONGO_URI environment variable.");
-  }
-  await mongoose.connect(mongoUri);
+  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/traveloop";
+  await mongoose.connect(mongoUri, { dbName: process.env.DATABASE_NAME || "traveloop" });
 
   let token = null;
   let testTripId = null;

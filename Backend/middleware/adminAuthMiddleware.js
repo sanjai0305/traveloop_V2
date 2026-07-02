@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { supabase } from "../config/supabase.js";
+import Admin from "../models/Admin.js";
 
 export const verifyAdmin = async (req, res, next) => {
   let token;
@@ -22,13 +22,9 @@ export const verifyAdmin = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      const { data: admin, error } = await supabase
-        .from("admins")
-        .select("id, name, email, role, twoFactorEnabled, googleId, lastLogin")
-        .eq("id", decoded.id)
-        .maybeSingle();
+      const admin = await Admin.findById(decoded.id).select("name email role twoFactorEnabled googleId lastLogin");
 
-      if (error || !admin) {
+      if (!admin) {
         console.warn(`[Admin Auth] Admin lookup failed for ID: ${decoded.id}`);
         return res.status(401).json({
           success: false,
@@ -37,9 +33,9 @@ export const verifyAdmin = async (req, res, next) => {
       }
 
       req.admin = {
-        _id: admin.id,
-        id: admin.id,
-        ...admin
+        _id: admin._id,
+        id: admin._id.toString(),
+        ...admin.toObject()
       };
 
       next();

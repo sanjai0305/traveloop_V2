@@ -1,36 +1,33 @@
 import express from "express";
+import mongoose from "mongoose";
 import protect from "../middleware/authMiddleware.js";
-import { supabase } from "../config/supabase.js";
+import AgentTrip from "../models/AgentTrip.js";
+import Booking from "../models/Booking.js";
+import User from "../models/User.js";
+import Driver from "../models/Driver.js";
 
 const router = express.Router();
-
-const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 
 // GET /api/trip-members/:agentTripId
 router.get("/:agentTripId", protect, async (req, res) => {
   try {
     const { agentTripId } = req.params;
-    if (!isUUID(agentTripId)) {
+    if (!mongoose.Types.ObjectId.isValid(agentTripId)) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
     // Verify trip exists
-    const { data: trip } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", agentTripId)
-      .maybeSingle();
+    const trip = await AgentTrip.findById(agentTripId);
 
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
     // Fetch all confirmed bookings for this trip (paid status)
-    const { data: bookingsList } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("tripId", agentTripId)
-      .in("paymentStatus", ["paid", "Paid"]);
+    const bookingsList = await Booking.find({
+      tripId: agentTripId,
+      paymentStatus: { $in: ["paid", "Paid"] }
+    });
 
     const bookings = bookingsList || [];
 
@@ -38,28 +35,27 @@ router.get("/:agentTripId", protect, async (req, res) => {
     const userIds = bookings.map(b => b.userId).filter(Boolean);
     let usersMap = new Map();
     if (userIds.length > 0) {
-      const { data: usersList } = await supabase
-        .from("users")
-        .select("id, firstName, lastName, email, avatar")
-        .in("id", userIds);
+      const usersList = await User.find({
+        _id: { $in: userIds }
+      }).select("firstName lastName email avatar");
       
       if (usersList) {
-        usersList.forEach(u => usersMap.set(u.id, u));
+        usersList.forEach(u => usersMap.set(u._id.toString(), u));
       }
     }
 
     // Build normalized member list
     const members = bookings.map((b, index) => {
-      const user = usersMap.get(b.userId) || {};
+      const user = usersMap.get(b.userId?.toString()) || {};
       const name = (user.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : null)
         || `Traveler ${index + 1}`;
 
       const avatar = user.avatar || null;
 
       return {
-        _id: b.id,
+        _id: b._id,
         bookingId: b.bookingId,
-        userId: user.id || null,
+        userId: user._id || null,
         name,
         gender: "unknown",
         age: null,
@@ -77,15 +73,11 @@ router.get("/:agentTripId", protect, async (req, res) => {
     // Driver info
     let driverInfo = null;
     if (trip.driverId) {
-      const { data: d } = await supabase
-        .from("drivers")
-        .select("*")
-        .eq("id", trip.driverId)
-        .maybeSingle();
+      const d = await Driver.findById(trip.driverId);
 
       if (d) {
         driverInfo = {
-          _id: d.id,
+          _id: d._id,
           name: d.name || trip.driverName || "Driver",
           phone: d.phone || trip.driverPhone || "",
           photo: null,

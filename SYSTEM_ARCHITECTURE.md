@@ -97,6 +97,6 @@ sequenceDiagram
 The production architecture separates stateless servers from storage clusters to optimize scalability:
 
 * **Frontend Portals**: Managed and served globally via Vercel Edge networks.
-* **Backend API Server**: Node.js app instance hosted on AWS ECS / Render with PM2 process monitors.
+* **Backend API Server**: Node.js app instance hosted on AWS ECS with PM2 process monitors.
 * **MongoDB**: Multi-region MongoDB Atlas cluster.
 * **Realtime Services**: Google Firebase Firestore and Realtime Database cloud nodes.

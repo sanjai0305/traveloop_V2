@@ -8,7 +8,7 @@ This guide outlines deployment procedures for staging and production environment
 * Active **MongoDB Atlas** account.
 * Active **Firebase Console** project.
 * Active **Vercel** account (for frontend hosting).
-* Deploy target for Node.js API (e.g. Render, Heroku, AWS ECS, or DigitalOcean droplet).
+* Deploy target for Node.js API (e.g. AWS ECS, Heroku, or DigitalOcean droplet).
 
 ---
 
@@ -42,17 +42,20 @@ This guide outlines deployment procedures for staging and production environment
 
 ---
 
-## 4. Backend Deployment (Render Example)
-1. Link your GitHub repository to [Render](https://render.com/).
-2. Create a new **Web Service**.
+## 4. Backend Deployment Example
+1. Link your GitHub repository to your Node.js hosting provider.
+2. Create a new **Web Service / App**.
 3. Set the build parameters:
    * Root Directory: `Backend`
    * Build Command: `npm install`
    * Start Command: `node server.js`
 4. Inject Environment variables:
-   * `MONGO_URI`
+   * `MONGODB_URI`
+   * `DATABASE_NAME`
    * `JWT_SECRET`
-   * `PORT = 10000` (or leave default)
+   * `FIREBASE_PROJECT_ID`
+   * `FIREBASE_CLIENT_EMAIL`
+   * `FIREBASE_PRIVATE_KEY`
 
 ---
 
@@ -63,7 +66,7 @@ Each micro-frontend can be deployed as an independent Vercel project:
 2. For the **Traveler App**:
    * Root Directory: `traveloop`
    * Framework Preset: `Vite`
-   * Environment Variable: Set `VITE_API_BASE_URL` to your Backend URL (e.g. `https://traveloop-api.onrender.com/api`).
+   * Environment Variable: Set `VITE_API_BASE_URL` to your Backend URL (e.g. `https://api.traveloop.com/api`).
 3. For the **Agent Portal**:
    * Root Directory: `agent-portal`
    * Framework Preset: `Vite`

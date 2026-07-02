@@ -1,4 +1,4 @@
-import mongoose from "../config/mongooseMock.js";
+import mongoose from "mongoose";
 
 const seatSchema = new mongoose.Schema(
   {

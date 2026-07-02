@@ -1,5 +1,5 @@
 import express from "express";
-import mongoose from "../config/mongooseMock.js";
+import mongoose from "mongoose";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
 import protectAgent from "../middleware/agentAuthMiddleware.js";

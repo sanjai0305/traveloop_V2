@@ -1,4 +1,4 @@
-import mongoose from "../config/mongooseMock.js";
+import mongoose from "mongoose";
 
 const chatMessageSchema = new mongoose.Schema(
   {
@@ -7,9 +7,12 @@ const chatMessageSchema = new mongoose.Schema(
       ref: "Trip",
       required: true,
     },
-    sender: {
+    trip: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Trip",
+    },
+    sender: {
+      type: String, // Stored as String representing user/driver/agent/admin ID
       required: true,
     },
     senderName: {
@@ -26,7 +29,6 @@ const chatMessageSchema = new mongoose.Schema(
     },
     messageType: {
       type: String,
-      enum: ["text", "image", "system"],
       default: "text",
     },
     replyTo: {
@@ -34,19 +36,10 @@ const chatMessageSchema = new mongoose.Schema(
       ref: "ChatMessage",
       default: null,
     },
-    reactions: [
-      {
-        userId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        emoji: {
-          type: String,
-          required: true,
-        },
-      },
-    ],
+    reactions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: [],
+    },
     fileUrl: {
       type: String,
       default: "",
@@ -59,25 +52,25 @@ const chatMessageSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    editedAt: {
-      type: Date,
-      default: null,
-    },
-    deletedAt: {
-      type: Date,
-      default: null,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-// Define requested indexes
+// Keep trip and tripId in sync before saving
+chatMessageSchema.pre("save", function (next) {
+  const targetTripId = this.tripId || this.trip;
+  if (targetTripId) {
+    this.tripId = targetTripId;
+    this.trip = targetTripId;
+  }
+  next();
+});
+
 chatMessageSchema.index({ tripId: 1 });
-chatMessageSchema.index({ createdAt: 1 });
-chatMessageSchema.index({ tripId: 1, createdAt: 1 });
 
 const ChatMessage = mongoose.model("ChatMessage", chatMessageSchema);
 export default ChatMessage;

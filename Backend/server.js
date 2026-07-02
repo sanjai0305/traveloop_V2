@@ -11,8 +11,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
+import { connectDB } from "./config/db.js";
+import mongoose from "mongoose";
 import sanitizeInput from "./middleware/sanitize.js";
-// Removed connectDB import
 
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
@@ -170,17 +171,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check endpoint — useful for Render deployment verification
-app.get("/api/health", (req, res) => {
-  const supabaseConnected = !!process.env.SUPABASE_URL;
-  res.status(supabaseConnected ? 200 : 503).json({
-    success: supabaseConnected,
-    status: supabaseConnected ? "healthy" : "degraded",
-    db: supabaseConnected ? "connected" : "disconnected — set SUPABASE_URL in Render env vars",
-    env: process.env.NODE_ENV || "development",
-    timestamp: new Date().toISOString(),
-  });
-});
 
 /* -----------------------------
    ROUTES
@@ -243,15 +233,16 @@ app.use((err, req, res, next) => {
    SERVER STARTUP
 ------------------------------ */
 
+await connectDB();
+
 let port = parseInt(process.env.PORT || "5000", 10);
 
 if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    console.log(`✅ Supabase Connected`);
+    console.log(`✅ MongoDB Connected`);
     console.log(`✅ Socket.io enabled`);
     console.log(`✅ Routes loaded successfully`);
-    console.log(`✅ Render deployment healthy`);
   });
 } else {
   const maxPort = port + 2;
@@ -259,10 +250,9 @@ if (process.env.NODE_ENV === "production") {
   const startServer = (p) => {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
-      console.log(`✅ Supabase Connected`);
+      console.log(`✅ MongoDB Connected`);
       console.log(`✅ Socket.io enabled`);
       console.log(`✅ Routes loaded successfully`);
-      console.log(`✅ Render deployment healthy`);
     });
   };
 

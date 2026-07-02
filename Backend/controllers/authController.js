@@ -1,4 +1,6 @@
-import { supabase } from "../config/supabase.js";
+import User from "../models/User.js";
+import Trip from "../models/Trip.js";
+import Payment from "../models/Payment.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
@@ -69,11 +71,7 @@ export const sendOtp = async (req, res) => {
     // CHECK EXISTING USER (Traveler registration constraint only)
     const emailKey = email.trim().toLowerCase();
     if (!isAgent) {
-      const { data: userExists } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", emailKey)
-        .maybeSingle();
+      const { data: userExists } = await User.findOne({ email: emailKey });
 
       if (userExists) {
         return res.status(400).json({
@@ -222,12 +220,8 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    // Double check email uniqueness in Supabase
-    const { data: userExists } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", emailKey)
-      .maybeSingle();
+    // Double check email uniqueness in MongoDB
+    const { data: userExists } = await User.findOne({ email: emailKey });
 
     if (userExists) {
       return res.status(400).json({
@@ -275,9 +269,7 @@ export const verifyOtp = async (req, res) => {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
-      const { data: newUser, error: createError } = await supabase
-        .from("users")
-        .insert([{
+      const newUser = await User.create({
           firstName,
           lastName,
           email: emailKey,
@@ -290,11 +282,9 @@ export const verifyOtp = async (req, res) => {
           termsAcceptedAt: new Date().toISOString(),
           termsVersion: "2026-06",
           firebaseUid: uid,
-        }])
-        .select()
-        .single();
+        });
 
-      if (createError) throw createError;
+      
       user = { ...newUser, _id: newUser.id };
 
       // Send welcome email (async)
@@ -304,7 +294,7 @@ export const verifyOtp = async (req, res) => {
         console.error("Failed to send welcome email:", emailErr);
       }
     } catch (dbError) {
-      console.error("[verifyOtp] Supabase profile creation failed:", dbError);
+      console.error("[verifyOtp] User profile creation failed:", dbError);
       try {
         await firebaseUser.delete();
       } catch (deleteError) {
@@ -370,11 +360,7 @@ export const registerUser = async (req, res) => {
     }
 
     // CHECK EXISTING USER
-    const { data: userExists } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email.trim().toLowerCase())
-      .maybeSingle();
+    const { data: userExists } = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (userExists) {
       return res.status(400).json({
@@ -420,10 +406,8 @@ export const registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // CREATE USER IN SUPABASE
-    const { data: newUser, error: createError } = await supabase
-      .from("users")
-      .insert([{
+    // CREATE USER IN MONGODB
+    const newUser = await User.create({
         firstName,
         lastName,
         email: email.trim().toLowerCase(),
@@ -436,11 +420,9 @@ export const registerUser = async (req, res) => {
         termsAcceptedAt: new Date().toISOString(),
         termsVersion: "2026-06",
         firebaseUid: uid,
-      }])
-      .select()
-      .single();
+      });
 
-    if (createError) throw createError;
+    
     const user = { ...newUser, _id: newUser.id };
 
     // Send welcome email (async)
@@ -485,12 +467,8 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // FIND USER IN SUPABASE
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email.trim().toLowerCase())
-      .maybeSingle();
+    // FIND USER IN MONGODB
+    const { data: userRow } = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (!userRow) {
       return res.status(400).json({
@@ -518,10 +496,7 @@ export const loginUser = async (req, res) => {
     }
     user.lastLogin = updateData.lastLogin;
 
-    await supabase
-      .from("users")
-      .update(updateData)
-      .eq("id", user.id);
+    await User.findByIdAndUpdate(user.id, updateData, { new: true })
 
     // Sync state to Firestore
     try {
@@ -567,11 +542,7 @@ export const loginUser = async (req, res) => {
 // GET CURRENT USER PROFILE
 export const getMe = async (req, res) => {
   try {
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", req.user.id)
-      .maybeSingle();
+    const userRow = await User.findById(req.user.id);
 
     if (!userRow) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -602,32 +573,20 @@ export const getMe = async (req, res) => {
 
     if (Object.keys(updateData).length > 0) {
       Object.assign(user, updateData);
-      await supabase
-        .from("users")
-        .update(updateData)
-        .eq("id", user.id);
+      await User.findByIdAndUpdate(user.id || user._id, updateData);
     }
 
     // Fetch user planner trips from "trips" table
-    const { data: userTripsData } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("userId", user.id);
+    const userTripsData = await Trip.find({ userId: user.id || user._id });
 
     const userTrips = (userTripsData || []).map(t => ({ ...t, _id: t.id }));
     const tripCount = userTrips.length;
 
-    const { count: hasCollaboratorsCount } = await supabase
-      .from("trips")
-      .select("id", { count: "exact", head: true })
-      .eq("userId", user.id);
+    const hasCollaboratorsCount = await Trip.countDocuments({ userId: user.id || user._id });
 
     const hasCollaborators = (hasCollaboratorsCount || 0) > 0;
 
-    const { count: hasExpensesCount } = await supabase
-      .from("payments")
-      .select("id", { count: "exact", head: true })
-      .eq("bookingId", user.id);
+    const hasExpensesCount = await Payment.countDocuments({ bookingId: user.id || user._id });
 
     const hasExpenses = (hasExpensesCount || 0) > 0;
     const hasJournal = false;
@@ -655,10 +614,7 @@ export const getMe = async (req, res) => {
     }
     if (modified) {
       user.achievements = updatedAchievements;
-      await supabase
-        .from("users")
-        .update({ achievements: updatedAchievements })
-        .eq("id", user.id);
+      await User.findByIdAndUpdate(user.id || user._id, { achievements: updatedAchievements });
     }
 
     const achievements = [
@@ -785,18 +741,10 @@ export const googleAuth = async (req, res) => {
     }
 
     // Search user by googleId
-    let { data: userRow } = await supabase
-      .from("users")
-      .select("*")
-      .eq("googleId", sub)
-      .maybeSingle();
+    let { data: userRow } = await User.findOne({ googleId: sub });
     
     if (!userRow) {
-      const { data: emailUser } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", email)
-        .maybeSingle();
+      const { data: emailUser } = await User.findOne({ email });
       userRow = emailUser;
 
       if (userRow) {
@@ -806,18 +754,13 @@ export const googleAuth = async (req, res) => {
           authProvider: "google",
         };
         Object.assign(userRow, updateData);
-        await supabase
-          .from("users")
-          .update(updateData)
-          .eq("id", userRow.id);
+        await User.findByIdAndUpdate(userRow.id, updateData, { new: true })
       } else {
         const nameParts = name ? name.split(" ") : ["Google", "User"];
         const firstName = nameParts[0] || "Google";
         const lastName = nameParts.slice(1).join(" ") || "User";
 
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert([{
+        const newUser = await User.create({
             firstName,
             lastName,
             email,
@@ -827,11 +770,9 @@ export const googleAuth = async (req, res) => {
             acceptedTerms: true,
             termsAcceptedAt: new Date().toISOString(),
             termsVersion: "2026-06",
-          }])
-          .select()
-          .single();
+          });
 
-        if (createError) throw createError;
+        
         userRow = newUser;
       }
     }
@@ -875,11 +816,7 @@ export const acceptTerms = async (req, res) => {
       });
     }
 
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", req.user.id)
-      .maybeSingle();
+    const userRow = await User.findById(req.user.id);
 
     if (!userRow) {
       return res.status(404).json({
@@ -894,10 +831,7 @@ export const acceptTerms = async (req, res) => {
       termsVersion,
     };
 
-    await supabase
-      .from("users")
-      .update(updateData)
-      .eq("id", userRow.id);
+    await User.findByIdAndUpdate(userRow.id, updateData, { new: true })
 
     res.status(200).json({
       success: true,
@@ -935,11 +869,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    const { data: user } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email.trim().toLowerCase())
-      .maybeSingle();
+    const { data: user } = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (!user) {
       return res.status(404).json({ success: false, message: "No account found with this email address." });
@@ -966,11 +896,7 @@ export const validateEmail = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    const { data: userExists } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email.trim().toLowerCase())
-      .maybeSingle();
+    const { data: userExists } = await User.findOne({ email: email.trim().toLowerCase() });
 
     if (userExists) {
       return res.status(400).json({ success: false, message: "Email is already registered." });

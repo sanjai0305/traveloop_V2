@@ -1,7 +1,6 @@
 import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
 import Checklist from "../models/Checklist.js";
-import { supabase } from "../config/supabase.js";
 import Note from "../models/Note.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
@@ -165,24 +164,26 @@ export const getTrips =
   async (req, res) => {
 
     try {
-      const { data: tripsData, error: tripsError } = await supabase
-        .from("trips")
-        .select("*");
-      
-      if (tripsError) throw tripsError;
+      const tripsData = await Trip.find({
+        $or: [
+          { userId: req.user.id },
+          { "collaborators.userId": req.user.id, "collaborators.acceptedAt": { $ne: null } }
+        ]
+      });
 
-      const trips = (tripsData || []).filter(t => {
-        const isOwner = t.userId === req.user.id;
-        const isCollaborator = t.collaborators?.some(c => c.userId === req.user.id && c.acceptedAt !== null);
-        return isOwner || isCollaborator;
-      }).map(t => ({ ...t, _id: t.id, user: t.userId, owner: t.userId }));
+      const trips = (tripsData || []).map(t => {
+        const obj = t.toObject ? t.toObject() : t;
+        return {
+          ...obj,
+          _id: t._id,
+          id: t._id.toString(),
+          user: t.userId,
+          owner: t.userId
+        };
+      });
 
       const tripsWithCounts = await Promise.all(trips.map(async (trip) => {
-        const { count, error: countError } = await supabase
-          .from("itineraries")
-          .select("*", { count: "exact", head: true })
-          .eq("tripId", trip.id);
-        const activitiesCount = count || 0;
+        const activitiesCount = await Itinerary.countDocuments({ tripId: trip._id });
 
         let role = "owner";
         const isOwner = trip.userId === req.user.id;
@@ -194,7 +195,16 @@ export const getTrips =
         }
         const acceptedCollaborators = trip.collaborators?.filter(c => c.acceptedAt !== null) || [];
 
-        const unreadCount = 0;
+        const readStatus = await ChatReadStatus.findOne({ tripId: trip._id, userId: req.user.id });
+        const chatFilter = {
+          tripId: trip._id,
+          sender: { $ne: req.user.id },
+          deletedAt: null
+        };
+        if (readStatus && readStatus.lastSeenAt) {
+          chatFilter.createdAt = { $gt: new Date(readStatus.lastSeenAt) };
+        }
+        const unreadCount = await ChatMessage.countDocuments(chatFilter);
 
         return {
           ...trip,
@@ -237,13 +247,9 @@ export const getTripById = async (req, res) => {
 
     // Populate owner
     if (trip.userId) {
-      const { data: ownerData } = await supabase
-        .from("users")
-        .select("id, firstName, lastName, avatar, upiId")
-        .eq("id", trip.userId)
-        .maybeSingle();
+      const ownerData = await User.findById(trip.userId).select("firstName lastName avatar upiId");
       if (ownerData) {
-        trip.owner = { ...ownerData, _id: ownerData.id };
+        trip.owner = { ...ownerData.toObject(), _id: ownerData._id };
       }
     }
 
@@ -251,17 +257,17 @@ export const getTripById = async (req, res) => {
     if (trip.collaborators && trip.collaborators.length > 0) {
       const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
       if (userIds.length > 0) {
-        const { data: usersList } = await supabase
-          .from("users")
-          .select("id, firstName, lastName, avatar, upiId, email")
-          .in("id", userIds);
+        const usersList = await User.find({ _id: { $in: userIds } }).select("firstName lastName avatar upiId email");
         
         if (usersList) {
-          const usersMap = new Map(usersList.map(u => [u.id, u]));
-          trip.collaborators = trip.collaborators.map(c => ({
-            ...c,
-            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
-          }));
+          const usersMap = new Map(usersList.map(u => [u._id.toString(), u.toObject()]));
+          trip.collaborators = trip.collaborators.map(c => {
+            const mappedUser = usersMap.get(c.userId?.toString());
+            return {
+              ...c,
+              userId: mappedUser ? { ...mappedUser, _id: mappedUser._id } : c.userId
+            };
+          });
         }
       }
     }
@@ -326,7 +332,7 @@ export const getTripById = async (req, res) => {
         }
       }
       
-      await supabase.from("trips").update({
+      await Trip.findByIdAndUpdate(trip._id, {
         latitude: trip.latitude,
         longitude: trip.longitude,
         placeId: trip.placeId,
@@ -335,7 +341,7 @@ export const getTripById = async (req, res) => {
         state: trip.state,
         destinationName: trip.destinationName,
         image: trip.image
-      }).eq("id", trip.id);
+      });
     }
 
     const acceptedCollaborators = trip.collaborators?.filter(c => c.acceptedAt !== null) || [];
@@ -625,13 +631,9 @@ export const getSharedTrip = async (req, res) => {
 
     // Populate owner
     if (trip.userId) {
-      const { data: ownerData } = await supabase
-        .from("users")
-        .select("id, firstName, lastName, avatar")
-        .eq("id", trip.userId)
-        .maybeSingle();
+      const ownerData = await User.findById(trip.userId).select("firstName lastName avatar");
       if (ownerData) {
-        trip.owner = { ...ownerData, _id: ownerData.id };
+        trip.owner = { ...ownerData.toObject(), _id: ownerData._id };
       }
     }
 
@@ -639,17 +641,17 @@ export const getSharedTrip = async (req, res) => {
     if (trip.collaborators && trip.collaborators.length > 0) {
       const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
       if (userIds.length > 0) {
-        const { data: usersList } = await supabase
-          .from("users")
-          .select("id, firstName, lastName, avatar")
-          .in("id", userIds);
+        const usersList = await User.find({ _id: { $in: userIds } }).select("firstName lastName avatar");
         
         if (usersList) {
-          const usersMap = new Map(usersList.map(u => [u.id, u]));
-          trip.collaborators = trip.collaborators.map(c => ({
-            ...c,
-            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
-          }));
+          const usersMap = new Map(usersList.map(u => [u._id.toString(), u.toObject()]));
+          trip.collaborators = trip.collaborators.map(c => {
+            const mappedUser = usersMap.get(c.userId?.toString());
+            return {
+              ...c,
+              userId: mappedUser ? { ...mappedUser, _id: mappedUser._id } : c.userId
+            };
+          });
         }
       }
     }
@@ -682,10 +684,7 @@ export const getSharedTrip = async (req, res) => {
       trip.shareAnalytics.visitorCountries.push({ country, count: 1 });
     }
 
-    await supabase
-      .from("trips")
-      .update({ shareAnalytics: trip.shareAnalytics })
-      .eq("id", trip.id);
+    await Trip.findByIdAndUpdate(trip._id, { shareAnalytics: trip.shareAnalytics });
 
     // Get itinerary, flights, and journals
     const itinerary = await Itinerary.find({ trip: trip._id }).sort({ day: 1, time: 1 });
@@ -1104,17 +1103,17 @@ export const getCollaborators = async (req, res) => {
     if (trip.collaborators && trip.collaborators.length > 0) {
       const userIds = trip.collaborators.map(c => c.userId).filter(Boolean);
       if (userIds.length > 0) {
-        const { data: usersList } = await supabase
-          .from("users")
-          .select("id, firstName, lastName, email")
-          .in("id", userIds);
+        const usersList = await User.find({ _id: { $in: userIds } }).select("firstName lastName email");
         
         if (usersList) {
-          const usersMap = new Map(usersList.map(u => [u.id, u]));
-          trip.collaborators = trip.collaborators.map(c => ({
-            ...c,
-            userId: usersMap.get(c.userId) ? { ...usersMap.get(c.userId), _id: usersMap.get(c.userId).id } : c.userId
-          }));
+          const usersMap = new Map(usersList.map(u => [u._id.toString(), u.toObject()]));
+          trip.collaborators = trip.collaborators.map(c => {
+            const mappedUser = usersMap.get(c.userId?.toString());
+            return {
+              ...c,
+              userId: mappedUser ? { ...mappedUser, _id: mappedUser._id } : c.userId
+            };
+          });
         }
       }
     }
@@ -1317,12 +1316,9 @@ export const getActivityLogs = async (req, res) => {
     const userIds = [...new Set(sortedLogs.map(l => l.userId || l.user).filter(Boolean))];
     let usersMap = new Map();
     if (userIds.length > 0) {
-      const { data: usersData } = await supabase
-        .from("users")
-        .select("id, firstName, lastName, email")
-        .in("id", userIds);
+      const usersData = await User.find({ _id: { $in: userIds } }).select("firstName lastName email");
       if (usersData) {
-        usersMap = new Map(usersData.map(u => [u.id, { ...u, _id: u.id }]));
+        usersMap = new Map(usersData.map(u => [u._id.toString(), { ...u.toObject(), _id: u._id }]));
       }
     }
 

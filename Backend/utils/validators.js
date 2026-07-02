@@ -64,8 +64,8 @@ export const sanitizeString = (str) => {
   if (!str || typeof str !== "string") return "";
   return str
     .trim()
-    .replace(/[<>'"`;]/g, "") // strip common injection chars
-    .replace(/\0/g, "");       // strip null bytes
+    .replace(/[<>]/g, "") // strip html tags
+    .replace(/\0/g, "");  // strip null bytes
 };
 
 /**

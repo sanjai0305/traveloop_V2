@@ -1,4 +1,4 @@
-import mongoose from "../config/mongooseMock.js";
+import mongoose from "mongoose";
 
 /**
  * DriverUpdate — stores driver announcements for a specific trip.

@@ -1,13 +1,13 @@
 import express from "express";
+import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import protect from "../middleware/authMiddleware.js";
-import { supabase } from "../config/supabase.js";
+import Booking from "../models/Booking.js";
+import AgentTrip from "../models/AgentTrip.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
-
-const isUUID = (str) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
 
 // POST /api/boarding/generate-qr
 router.post("/generate-qr", protect, async (req, res) => {
@@ -19,22 +19,22 @@ router.post("/generate-qr", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "bookingId required" });
     }
 
-    if (!isUUID(bookingId)) {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
       return res.status(400).json({ success: false, message: "Invalid booking ID format" });
     }
 
     // Load booking
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .maybeSingle();
+    const bookingRow = await Booking.findById(bookingId);
 
     if (!bookingRow) {
       return res.status(400).json({ success: false, message: "Booking not found" });
     }
 
-    const booking = { ...bookingRow, _id: bookingRow.id, agentTrip: bookingRow.tripId };
+    const booking = {
+      ...bookingRow.toObject(),
+      _id: bookingRow._id,
+      agentTrip: bookingRow.tripId
+    };
 
     // Verify ownership
     if (booking.userId.toString() !== req.user._id.toString()) {
@@ -50,17 +50,13 @@ router.post("/generate-qr", protect, async (req, res) => {
     }
 
     // Load trip
-    const { data: tripRow } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", booking.agentTrip)
-      .maybeSingle();
+    const tripRow = await AgentTrip.findById(booking.agentTrip);
 
     if (!tripRow) {
       return res.status(400).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripRow, _id: tripRow.id };
+    const trip = { ...tripRow.toObject(), _id: tripRow._id };
 
     if (trip.status === "cancelled" || trip.status === "Cancelled" || trip.status === "deleted") {
       return res.status(400).json({ success: false, message: "Trip is not active or has been cancelled" });
@@ -108,22 +104,21 @@ router.post("/generate-qr", protect, async (req, res) => {
 
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrToken)}`;
 
-    // Update Booking fields in PostgreSQL
+    // Update Booking fields in MongoDB
     const updatePayload = {
       token: qrToken,
       boardingStatus: "not_boarded",
     };
 
-    const { data: updatedBooking } = await supabase
-      .from("bookings")
-      .update(updatePayload)
-      .eq("id", bookingId)
-      .select()
-      .single();
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      bookingId,
+      updatePayload,
+      { new: true }
+    );
 
     const resultBooking = {
-      ...updatedBooking,
-      _id: updatedBooking.id,
+      ...updatedBooking.toObject(),
+      _id: updatedBooking._id,
       agentTrip: updatedBooking.tripId,
       qrCode: qrImage,
       boardingPassGenerated: true,
@@ -155,28 +150,20 @@ router.post("/generate-qr", protect, async (req, res) => {
 router.get("/:bookingId", protect, async (req, res) => {
   try {
     const { bookingId } = req.params;
-    if (!isUUID(bookingId)) {
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .maybeSingle();
+    const bookingRow = await Booking.findById(bookingId);
 
     if (!bookingRow) return res.status(404).json({ success: false, message: "Booking not found" });
 
-    const { data: tripRow } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", bookingRow.tripId)
-      .maybeSingle();
+    const tripRow = await AgentTrip.findById(bookingRow.tripId);
 
     const booking = {
-      ...bookingRow,
-      _id: bookingRow.id,
-      agentTrip: tripRow ? { ...tripRow, _id: tripRow.id } : null,
+      ...bookingRow.toObject(),
+      _id: bookingRow._id,
+      agentTrip: tripRow ? { ...tripRow.toObject(), _id: tripRow._id } : null,
     };
 
     if (booking.userId.toString() !== req.user._id.toString()) {
@@ -206,24 +193,16 @@ router.post("/verify", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid token payload" });
     }
 
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", decoded.bookingId)
-      .maybeSingle();
+    const bookingRow = await Booking.findById(decoded.bookingId);
 
     if (!bookingRow) return res.status(404).json({ success: false, message: "Booking not found" });
 
-    const { data: tripRow } = await supabase
-      .from("agent_trips")
-      .select("*")
-      .eq("id", bookingRow.tripId)
-      .maybeSingle();
+    const tripRow = await AgentTrip.findById(bookingRow.tripId);
 
     const booking = {
-      ...bookingRow,
-      _id: bookingRow.id,
-      agentTrip: tripRow ? { ...tripRow, _id: tripRow.id } : null,
+      ...bookingRow.toObject(),
+      _id: bookingRow._id,
+      agentTrip: tripRow ? { ...tripRow.toObject(), _id: tripRow._id } : null,
     };
 
     res.json({

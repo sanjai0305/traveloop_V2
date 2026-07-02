@@ -1,41 +1,36 @@
-import { supabase } from "../config/supabase.js";
+import mongoose from "mongoose";
 
-const Payment = {
-  create: async (payload) => {
-    const mapped = {
-      bookingId: payload.bookingId,
-      amount: payload.amount,
-      paymentMethod: payload.gateway || payload.paymentMethod || 'Razorpay',
-      status: payload.status || 'Paid',
-      transactionId: payload.transactionId || payload.paymentId || '',
-    };
-    const { data, error } = await supabase.from("payments").insert([mapped]).select().single();
-    if (error) throw error;
-    return {
-      ...data,
-      _id: data.id,
-    };
+const paymentSchema = new mongoose.Schema(
+  {
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+      required: true,
+    },
+    amount: {
+      type: Number,
+      required: true,
+    },
+    paymentMethod: {
+      type: String,
+      default: "Razorpay",
+    },
+    status: {
+      type: String,
+      default: "Paid",
+    },
+    transactionId: {
+      type: String,
+      default: "",
+    },
   },
-  find: async (query = {}) => {
-    let q = supabase.from("payments").select("*");
-    if (query.bookingId) {
-      q = q.eq("bookingId", query.bookingId);
-    }
-    const { data } = await q;
-    return (data || []).map(r => ({ ...r, _id: r.id }));
-  },
-  findOne: async (query = {}) => {
-    let q = supabase.from("payments").select("*");
-    if (query.bookingId) {
-      q = q.eq("bookingId", query.bookingId);
-    }
-    const { data } = await q.maybeSingle();
-    if (!data) return null;
-    return {
-      ...data,
-      _id: data.id,
-    };
+  {
+    timestamps: true,
   }
-};
+);
 
+paymentSchema.index({ bookingId: 1 });
+paymentSchema.index({ transactionId: 1 });
+
+const Payment = mongoose.model("Payment", paymentSchema);
 export default Payment;
