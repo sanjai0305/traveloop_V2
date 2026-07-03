@@ -524,8 +524,8 @@ export const TripDetails = () => {
             <div className="space-y-2">
               <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Inclusions</h3>
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-2 min-h-[120px]">
-                {trip.includedServices?.length > 0 ? (
-                  trip.includedServices.map((service, i) => (
+                {(trip.includedServices || []).length > 0 ? (
+                  (trip.includedServices || []).map((service, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                       {service}
@@ -540,8 +540,8 @@ export const TripDetails = () => {
             <div className="space-y-2">
               <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Exclusions</h3>
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-2 min-h-[120px]">
-                {trip.excludedServices?.length > 0 ? (
-                  trip.excludedServices.map((service, i) => (
+                {(trip.excludedServices || []).length > 0 ? (
+                  (trip.excludedServices || []).map((service, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs font-semibold text-slate-500">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-400 flex-shrink-0" />
                       {service}
@@ -557,17 +557,17 @@ export const TripDetails = () => {
           </div>
 
           {/* Itinerary */}
-          {trip.itinerary?.length > 0 && (
+          {(trip.itinerary || []).length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Daily Travel Plan</h3>
               <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-4">
-                {trip.itinerary.map((day, idx) => (
+                {(trip.itinerary || []).map((day, idx) => (
                   <div key={idx} className="flex gap-4">
                     <div className="flex flex-col items-center">
                       <div className="w-7 h-7 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-600 font-bold text-[11px] flex items-center justify-center flex-shrink-0 shadow-xs border border-teal-200/50">
                         D{day.day}
                       </div>
-                      {idx < trip.itinerary.length - 1 && (
+                      {idx < (trip.itinerary || []).length - 1 && (
                         <div className="w-0.5 bg-slate-100 dark:bg-slate-850 flex-1 my-1" />
                       )}
                     </div>
