@@ -739,7 +739,12 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
       
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
       }
 
@@ -766,7 +771,12 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
 
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
       }
 
@@ -801,7 +811,12 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, async (req
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
 
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized publish request" });
       }
 
@@ -815,7 +830,12 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, async (req
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
 
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized publish request" });
       }
 
@@ -848,7 +868,12 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
 
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
@@ -877,7 +902,12 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
 
-      if (trip.agent.toString() !== req.agent._id.toString()) {
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
