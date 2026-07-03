@@ -532,9 +532,9 @@ router.post("/trips/create", protectAgent, async (req, res) => {
     });
   }
 
-  console.log("[CreateTrip] Authenticated Agent:", req.agent);
+  console.log("Authenticated Agent:", req.agent);
 
-  if (!req.agent?._id) {
+  if (!req.agent || !req.agent._id) {
     return res.status(401).json({
       success: false,
       message: "Authenticated agent not found"
@@ -563,9 +563,6 @@ router.post("/trips/create", protectAgent, async (req, res) => {
 
     const tripData = {
       ...bodyData,
-      agentId: req.agent._id,
-      firebaseUid: req.agent.firebaseUid || req.agent.uid || "",
-      createdBy: req.agent.displayName || req.agent.email || "Agent",
       shortDescription,            // resolved above
       pricePerPerson: Number(pricePerPerson),  // resolved above
       destinations: Array.isArray(destinations) ? destinations : [destinations],
@@ -575,25 +572,37 @@ router.post("/trips/create", protectAgent, async (req, res) => {
     };
 
     if (isDbConnected()) {
-      trip = await AgentTrip.create(tripData);
+      trip = new AgentTrip({
+        ...tripData,
+        agentId: req.agent._id
+      });
+      await trip.save();
     } else {
       // In-Memory Fallback
       const tripId = new mongoose.Types.ObjectId().toString();
       trip = {
         _id: tripId,
         ...tripData,
+        agentId: req.agent._id,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       fallbackTrips.set(tripId, trip);
     }
 
+    const responseTrip = {
+      ...(isDbConnected() ? trip.toObject() : trip),
+      agentId: req.agent._id,
+      firebaseUid: req.agent.firebaseUid || req.agent.uid || "",
+      createdBy: req.agent.displayName || req.agent.email || "Agent",
+    };
+
     console.log("[CreateTrip] ✅ Trip created successfully. ID:", trip._id);
     res.status(201).json({
       success: true,
       tripId: trip._id,
       message: "Trip created successfully",
-      trip,
+      trip: responseTrip,
     });
   } catch (error) {
     console.error("[CreateTrip] ❌ Server error:", error.message);

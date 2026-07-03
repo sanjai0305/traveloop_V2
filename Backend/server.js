@@ -241,6 +241,10 @@ app.use((err, req, res, next) => {
 
 await connectDB();
 
+if (!process.env.RAZORPAY_KEY_ID) {
+  console.warn("Missing Razorpay Key");
+}
+
 let port = parseInt(process.env.PORT || "5000", 10);
 
 if (process.env.NODE_ENV === "production") {

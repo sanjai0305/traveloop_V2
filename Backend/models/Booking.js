@@ -61,7 +61,9 @@ bookingSchema.pre("save", function (next) {
     this.tripId = targetTripId;
     this.agentTrip = targetTripId;
   }
-  next();
+  if (typeof next === "function") {
+    next();
+  }
 });
 
 bookingSchema.index({ userId: 1 });

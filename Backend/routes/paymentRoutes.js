@@ -15,10 +15,10 @@ const router = express.Router();
 // Initialize Razorpay
 const getRazorpayInstance = () => {
   const key_id = process.env.RAZORPAY_KEY_ID;
-  const key_secret = process.env.RAZORPAY_SECRET;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
 
   if (!key_id || !key_secret) {
-    console.warn("[Razorpay] WARNING: RAZORPAY_KEY_ID or RAZORPAY_SECRET missing in env. Using dummy defaults.");
+    console.warn("[Razorpay] WARNING: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET / RAZORPAY_SECRET missing in env. Using dummy defaults.");
   }
   return new Razorpay({
     key_id: key_id || "rzp_test_dummykeyid",
