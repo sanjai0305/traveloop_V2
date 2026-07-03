@@ -69,7 +69,7 @@ const budgetSchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId and user/userId in sync before saving
-budgetSchema.pre("save", function (next) {
+budgetSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -80,7 +80,6 @@ budgetSchema.pre("save", function (next) {
     this.userId = targetUserId;
     this.user = targetUserId;
   }
-  next();
 });
 
 budgetSchema.index({ tripId: 1 });

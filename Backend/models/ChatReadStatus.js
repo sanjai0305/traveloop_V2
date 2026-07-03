@@ -33,7 +33,7 @@ const chatReadStatusSchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId and user/userId in sync
-chatReadStatusSchema.pre("save", function (next) {
+chatReadStatusSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -44,7 +44,6 @@ chatReadStatusSchema.pre("save", function (next) {
     this.userId = targetUserId;
     this.user = targetUserId;
   }
-  next();
 });
 
 chatReadStatusSchema.index({ tripId: 1, userId: 1 }, { unique: true });

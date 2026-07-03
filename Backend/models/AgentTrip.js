@@ -324,7 +324,7 @@ const agentTripSchema = new mongoose.Schema(
 );
 
 // Keep driver/driverId and destination synced; recalculate occupancy
-agentTripSchema.pre("save", function (next) {
+agentTripSchema.pre("save", function () {
   if (this.driver && !this.driverId) {
     this.driverId = this.driver;
   }
@@ -339,8 +339,6 @@ agentTripSchema.pre("save", function (next) {
   const total = this.totalSeats || 0;
   const booked = this.bookedSeats || 0;
   this.occupancy = total > 0 ? Math.round((booked / total) * 100) : 0;
-  
-  next();
 });
 
 agentTripSchema.index({ agentId: 1 });

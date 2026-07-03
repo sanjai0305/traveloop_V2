@@ -61,7 +61,7 @@ const itinerarySchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId and description/note in sync before saving
-itinerarySchema.pre("save", function (next) {
+itinerarySchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -72,7 +72,6 @@ itinerarySchema.pre("save", function (next) {
     this.description = desc;
     this.note = desc;
   }
-  next();
 });
 
 itinerarySchema.index({ tripId: 1 });

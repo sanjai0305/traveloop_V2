@@ -37,7 +37,7 @@ const noteSchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId and user/userId in sync
-noteSchema.pre("save", function (next) {
+noteSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -48,7 +48,6 @@ noteSchema.pre("save", function (next) {
     this.userId = targetUserId;
     this.user = targetUserId;
   }
-  next();
 });
 
 noteSchema.index({ tripId: 1 });

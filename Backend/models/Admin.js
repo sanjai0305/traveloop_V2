@@ -57,7 +57,7 @@ adminSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 // Hook to hash password before saving if it is new/modified
-adminSchema.pre("save", async function (next) {
+adminSchema.pre("save", async function () {
   if (!this.isModified("passwordHash")) {
     // If the caller sets a plain text 'password' field, hash it and set passwordHash
     if (this.password) {
@@ -66,7 +66,6 @@ adminSchema.pre("save", async function (next) {
       this.password = undefined;
     }
   }
-  next();
 });
 
 const Admin = mongoose.model("Admin", adminSchema);

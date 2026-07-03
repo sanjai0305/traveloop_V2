@@ -33,7 +33,7 @@ const activityLogSchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId and user/userId in sync
-activityLogSchema.pre("save", function (next) {
+activityLogSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -44,7 +44,6 @@ activityLogSchema.pre("save", function (next) {
     this.userId = targetUserId;
     this.user = targetUserId;
   }
-  next();
 });
 
 activityLogSchema.index({ tripId: 1 });

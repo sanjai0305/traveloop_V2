@@ -60,13 +60,12 @@ const flightSchema = new mongoose.Schema(
 );
 
 // Keep trip and tripId in sync before saving
-flightSchema.pre("save", function (next) {
+flightSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
     this.trip = targetTripId;
   }
-  next();
 });
 
 flightSchema.index({ tripId: 1 });

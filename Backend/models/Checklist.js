@@ -44,7 +44,7 @@ const checklistSchema = new mongoose.Schema(
 );
 
 // Keep trip/tripId, item/itemName, and checked/packed in sync
-checklistSchema.pre("save", function (next) {
+checklistSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
@@ -60,7 +60,6 @@ checklistSchema.pre("save", function (next) {
     this.packed = status;
     this.checked = status;
   }
-  next();
 });
 
 checklistSchema.index({ tripId: 1 });

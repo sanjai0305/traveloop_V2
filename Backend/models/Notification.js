@@ -54,14 +54,14 @@ const notificationSchema = new mongoose.Schema(
 );
 
 // Keep user/userId and trip/tripId in sync before saving
-notificationSchema.pre("save", function (next) {
+// Mongoose 8: use async function with no `next` parameter — return value is awaited
+notificationSchema.pre("save", async function () {
   if (this.userId) {
     this.user = this.userId;
   }
   if (this.tripId) {
     this.trip = this.tripId;
   }
-  next();
 });
 
 notificationSchema.index({ userId: 1 });

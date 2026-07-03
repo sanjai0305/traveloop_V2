@@ -61,13 +61,12 @@ const chatMessageSchema = new mongoose.Schema(
 );
 
 // Keep trip and tripId in sync before saving
-chatMessageSchema.pre("save", function (next) {
+chatMessageSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;
   if (targetTripId) {
     this.tripId = targetTripId;
     this.trip = targetTripId;
   }
-  next();
 });
 
 chatMessageSchema.index({ tripId: 1 });
