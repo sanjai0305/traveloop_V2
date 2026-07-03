@@ -40,7 +40,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
 
-          echo "${{ secrets.EC2_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_rsa
+          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
 
           chmod 700 ~/.ssh
           chmod 600 ~/.ssh/id_rsa
@@ -49,8 +49,7 @@ jobs:
 
       - name: Validate SSH Key
         run: |
-          head -1 ~/.ssh/id_rsa
-          tail -1 ~/.ssh/id_rsa
+          ssh-keygen -lf ~/.ssh/id_rsa
 
       - name: Test SSH
         run: |
