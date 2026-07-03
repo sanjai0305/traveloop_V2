@@ -959,16 +959,24 @@ router.get("/bookings", protectAgent, async (req, res) => {
     let bookings = [];
 
     if (isDbConnected()) {
-      const agentTripIds = await AgentTrip.find({ agentId: req.agent.id }).distinct("_id");
-      const bookingsData = await Booking.find({ tripId: { $in: agentTripIds } }).populate("tripId").sort({ createdAt: -1 });
+      const agentId = req.agent._id || req.agent.id;
+      const agentTripIds = await AgentTrip.find({ agentId }).distinct("_id");
+      const bookingsData = await Booking.find({
+        $or: [
+          { tripId: { $in: agentTripIds } },
+          { agentTrip: { $in: agentTripIds } }
+        ]
+      }).populate("tripId").populate("agentTrip").sort({ createdAt: -1 });
+
       bookings = (bookingsData || []).map(b => {
         const obj = b.toObject ? b.toObject() : b;
+        const trip = obj.tripId || obj.agentTrip;
         return {
           ...obj,
           _id: b._id,
-          tripId: b.tripId?._id || b.tripId,
-          agentTrip: obj.tripId,
-          tripName: obj.tripId ? obj.tripId.title : "Deleted Trip"
+          tripId: trip?._id || trip,
+          agentTrip: trip,
+          tripName: trip ? trip.title : "Deleted Trip"
         };
       });
     } else {
@@ -1016,7 +1024,8 @@ router.put("/bookings/:id/status", protectAgent, async (req, res) => {
       const bookingObj = data.toObject();
       const tripDoc = data.tripId;
 
-      if (!tripDoc || tripDoc.agentId?.toString() !== req.agent.id) {
+      const agentId = req.agent._id || req.agent.id;
+      if (!tripDoc || tripDoc.agentId?.toString() !== agentId?.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized booking update" });
       }
 
@@ -1091,13 +1100,16 @@ router.put("/bookings/:id/update-details", protectAgent, async (req, res) => {
   try {
     let booking;
     if (isDbConnected()) {
-      booking = await Booking.findById(req.params.id);
-      if (!booking) {
+      const bookingData = await Booking.findById(req.params.id).populate("tripId");
+      if (!bookingData) {
         return res.status(404).json({ success: false, message: "Booking not found" });
       }
-      if (booking.agent.toString() !== req.agent._id.toString()) {
+      const tripDoc = bookingData.tripId;
+      const agentId = req.agent._id || req.agent.id;
+      if (!tripDoc || tripDoc.agentId?.toString() !== agentId?.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized booking update" });
       }
+      booking = bookingData;
       if (seatNumbers !== undefined) {
         booking.seatNumbers = Array.isArray(seatNumbers) ? seatNumbers : [seatNumbers];
         booking.assignedSeat = booking.seatNumbers[0] || "";
@@ -1171,17 +1183,23 @@ router.get("/analytics", protectAgent, async (req, res) => {
     let bookings = [];
 
     if (isDbConnected()) {
-      const agentTripsData = await AgentTrip.find({ agentId: req.agent.id });
+      const agentId = req.agent._id || req.agent.id;
+      const agentTripsData = await AgentTrip.find({ agentId });
       trips = (agentTripsData || []).map(t => t.toObject ? t.toObject() : t);
 
       const agentTripIds = trips.map(t => t._id);
-      const bookingsData = await Booking.find({ tripId: { $in: agentTripIds } }).populate("tripId");
+      const bookingsData = await Booking.find({
+        $or: [
+          { tripId: { $in: agentTripIds } },
+          { agentTrip: { $in: agentTripIds } }
+        ]
+      }).populate("tripId").populate("agentTrip");
       bookings = (bookingsData || []).map(b => {
         const obj = b.toObject ? b.toObject() : b;
         return {
           ...obj,
           _id: b._id,
-          agentTrip: obj.tripId
+          agentTrip: obj.tripId || obj.agentTrip
         };
       });
     } else {

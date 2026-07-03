@@ -217,6 +217,11 @@ router.post("/", protect, async (req, res) => {
       token: "",
     });
 
+    console.log("Created booking");
+    console.log(newBooking);
+    console.log("Trip");
+    console.log(trip);
+
     const booking = {
       ...newBooking.toObject(),
       _id: newBooking._id,
