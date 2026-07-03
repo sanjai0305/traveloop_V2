@@ -32,73 +32,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 700 ~/.ssh
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Validate SSH Key
-        run: |
-          ssh-keygen -lf ~/.ssh/id_rsa
-
-      - name: Test SSH Connection
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH Connected Successfully"
-
-      - name: Deploy to AWS EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+      - name: Deploy to AWS EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
             set -e
-
             echo "=== Starting Backend Deployment ==="
-
-            # Navigate to project directory
-            echo "Navigating to /home/ubuntu/traveloop_V2/Backend..."
             cd /home/ubuntu/traveloop_V2/Backend
-
-            # Pull latest code from GitHub
-            echo "Pulling latest changes from main branch..."
             git pull origin main
-
-            # Install dependencies
-            echo "Installing dependencies..."
             npm install
-
-            # PM2 process management check
-            if ! command -v pm2 &> /dev/null; then
-              echo "Error: PM2 is not installed on the server."
-              exit 1
-            fi
-
-            # Restart the application
-            if pm2 describe traveloop-backend > /dev/null 2>&1; then
-              echo "Process 'traveloop-backend' exists. Restarting..."
-              pm2 restart traveloop-backend
-            else
-              echo "Process 'traveloop-backend' does not exist. Starting..."
-              pm2 start server.js --name traveloop-backend
-            fi
-
-            # Save PM2 configuration
-            echo "Saving PM2 configuration..."
+            pm2 restart traveloop-backend || pm2 start server.js --name traveloop-backend
             pm2 save
-
-            # Verify deployment status
-            echo "Verifying deployment status..."
-            sleep 3
-            if pm2 list | grep "traveloop-backend" | grep -q "online"; then
-              echo "Verification successful: Process 'traveloop-backend' is online."
-            else
-              echo "Error: Process 'traveloop-backend' is not online!"
-              pm2 list
-              exit 1
-            fi
-
             echo "=== Deployment Finished Successfully ==="
-          EOF
