@@ -45,7 +45,7 @@ router.get("/", protectAgent, async (req, res) => {
     }
 
     // 1. Fetch Agent's Trips
-    const agentTrips = await AgentTrip.find({ agent: agentId });
+    const agentTrips = await AgentTrip.find({ agentId: agentId });
     const tripIds = agentTrips.map((t) => t._id);
     
     analyticsData.metrics.totalTrips = agentTrips.length;
@@ -148,7 +148,7 @@ router.get("/", protectAgent, async (req, res) => {
 
     // 7. Today's active boarding stats
     const todayStr = new Date().toISOString().split("T")[0];
-    const todayTrips = await AgentTrip.find({ agent: agentId, startDate: todayStr });
+    const todayTrips = await AgentTrip.find({ agentId: agentId, startDate: todayStr });
     const liveBoarding = [];
     for (const trip of todayTrips) {
       const tripBookings = await Booking.find({ agentTrip: trip._id, paymentStatus: "Paid" });

@@ -623,16 +623,19 @@ router.post("/trips/create", protectAgent, async (req, res) => {
 // @route   GET /api/trips/my-trips
 // @desc    Get all trips managed by logged-in agent
 router.get("/trips/my-trips", protectAgent, async (req, res) => {
+  console.log("Authenticated Agent:", req.agent);
   try {
     let trips = [];
 
     if (isDbConnected()) {
-      trips = await AgentTrip.find({ agent: req.agent._id, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
+      trips = await AgentTrip.find({ agentId: req.agent._id, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
     } else {
       trips = Array.from(fallbackTrips.values())
-        .filter(t => t.agent.toString() === req.agent._id.toString() && t.isDeleted !== true)
+        .filter(t => (t.agentId || t.agent || "").toString() === req.agent._id.toString() && t.isDeleted !== true)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
+
+    console.log("Trips found:", trips.length);
 
     res.status(200).json({
       success: true,
