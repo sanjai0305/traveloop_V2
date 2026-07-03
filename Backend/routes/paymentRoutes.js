@@ -246,8 +246,17 @@ router.post("/verify", protect, async (req, res) => {
     }
 
     // 4. Create/Store Payment Record
+    const paymentBookingId = booking._id;
+    if (!mongoose.Types.ObjectId.isValid(paymentBookingId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking ObjectId"
+      });
+    }
+
     await Payment.create({
-      bookingId: generatedBookingId,
+      bookingId: paymentBookingId,
+      bookingRef: booking.bookingId || generatedBookingId,
       tripId: trip._id,
       agentId: trip.agent,
       travelerId: req.user._id,
