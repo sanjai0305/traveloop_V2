@@ -32,11 +32,10 @@ const protectAgent = async (req, res, next) => {
 
       if (agent) {
         req.agent = {
+          ...agent.toObject(),
           _id: agent._id,
-          id: agent._id.toString(),
           firebaseUid: agent.uid || "",
-          email: agent.email || "",
-          ...agent.toObject()
+          email: agent.email || ""
         };
       }
 
