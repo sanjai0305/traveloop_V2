@@ -77,6 +77,19 @@ const fetchDestinationImage = async (destination, placeId = null) => {
 
 export const createTrip = async (req, res) => {
   try {
+    // ── Auth guards ──────────────────────────────────────────────────────────
+    console.log("[createTrip] req.user:", req.user);
+
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized: no authenticated user" });
+    }
+
+    const userId = req.user._id || req.user.id;
+    if (!userId) {
+      console.error("[createTrip] req.user exists but _id/id missing:", req.user);
+      return res.status(400).json({ success: false, message: "User ID could not be resolved from token" });
+    }
+
     const {
       title,
       destination,
@@ -100,8 +113,8 @@ export const createTrip = async (req, res) => {
       finalImage = await fetchDestinationImage(destination || destinationName, placeId);
     }
 
-    const trip = await Trip.create({
-      user: req.user.id,
+    const tripData = {
+      userId,
       title,
       destination: destination || destinationName,
       startDate,
@@ -117,7 +130,12 @@ export const createTrip = async (req, res) => {
       latitude,
       longitude,
       image: finalImage,
-    });
+    };
+
+    console.log("[createTrip] userId:", userId);
+    console.log("[createTrip] tripData:", tripData);
+
+    const trip = await Trip.create(tripData);
 
     // Trigger Notification
     if (req.user && req.user.id) {
