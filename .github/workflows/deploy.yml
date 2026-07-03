@@ -24,7 +24,6 @@ jobs:
       - name: Install dependencies (local check)
         working-directory: Backend
         run: |
-          echo "Installing dependencies inside Backend/ locally to verify builds..."
           npm install
 
   deploy:
@@ -39,23 +38,18 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-
           printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-
           chmod 700 ~/.ssh
           chmod 600 ~/.ssh/id_rsa
-
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
       - name: Validate SSH Key
         run: |
           ssh-keygen -lf ~/.ssh/id_rsa
 
-      - name: Test SSH
+      - name: Test SSH Connection
         run: |
-          ssh -o StrictHostKeyChecking=no \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-          "echo SSH Connected Successfully"
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH Connected Successfully"
 
       - name: Deploy to AWS EC2
         run: |
@@ -64,59 +58,47 @@ jobs:
 
             echo "=== Starting Backend Deployment ==="
 
-            # Navigate to deployment directory
-            echo "Navigating to /home/ubuntu/traveloop_V2..."
-            cd /home/ubuntu/traveloop_V2
+            # Navigate to project directory
+            echo "Navigating to /home/ubuntu/traveloop_V2/Backend..."
+            cd /home/ubuntu/traveloop_V2/Backend
 
             # Pull latest code from GitHub
             echo "Pulling latest changes from main branch..."
             git pull origin main
 
-            # Navigate to Backend/
-            echo "Navigating to Backend..."
-            cd Backend
+            # Install dependencies
+            echo "Installing dependencies..."
+            npm install
 
-            # Run npm install
-            echo "Running npm install (production)..."
-            npm install --production
-
-            # PM2 process management
-            # Check if PM2 is installed on the server first
+            # PM2 process management check
             if ! command -v pm2 &> /dev/null; then
-              echo "Error: PM2 is not installed on the server. Please install it with 'npm install -g pm2'."
+              echo "Error: PM2 is not installed on the server."
               exit 1
             fi
 
-            # Check if process exists and start/restart accordingly
-            if pm2 describe traveloop-v2 > /dev/null 2>&1; then
-              echo "Process 'traveloop-v2' exists. Restarting..."
-              pm2 restart traveloop-v2
+            # Restart the application
+            if pm2 describe traveloop-backend > /dev/null 2>&1; then
+              echo "Process 'traveloop-backend' exists. Restarting..."
+              pm2 restart traveloop-backend
             else
-              echo "Process 'traveloop-v2' does not exist. Starting..."
-              pm2 start server.js --name traveloop-v2
+              echo "Process 'traveloop-backend' does not exist. Starting..."
+              pm2 start server.js --name traveloop-backend
             fi
 
-            # Save PM2 processes
-            echo "Saving PM2 process list..."
+            # Save PM2 configuration
+            echo "Saving PM2 configuration..."
             pm2 save
 
             # Verify deployment status
             echo "Verifying deployment status..."
-            sleep 3 # Give it a few seconds to boot up completely
-            
-            # Verify if status is online
-            if pm2 list | grep "traveloop-v2" | grep -q "online"; then
-              echo "Verification successful: Process 'traveloop-v2' is online."
+            sleep 3
+            if pm2 list | grep "traveloop-backend" | grep -q "online"; then
+              echo "Verification successful: Process 'traveloop-backend' is online."
             else
-              echo "Error: Process 'traveloop-v2' is not online!"
+              echo "Error: Process 'traveloop-backend' is not online!"
               pm2 list
               exit 1
             fi
-
-            # Print deployment logs
-            echo "=== Printing latest 50 lines of logs ==="
-            tail -n 50 ~/.pm2/logs/traveloop-v2-out.log || echo "No output log file found."
-            tail -n 50 ~/.pm2/logs/traveloop-v2-error.log || echo "No error log file found."
 
             echo "=== Deployment Finished Successfully ==="
           EOF
