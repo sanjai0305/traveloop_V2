@@ -227,9 +227,9 @@ const TripNotes = () => {
   const filtered = useMemo(() => {
     return notes.filter(n => {
       const matchSearch =
-        n.title?.toLowerCase().includes(search.toLowerCase()) ||
-        n.content?.toLowerCase().includes(search.toLowerCase()) ||
-        n.tags?.some(t => t.toLowerCase().includes(search.toLowerCase()));
+        (n.title || "").toLowerCase().includes(search.toLowerCase()) ||
+        (n.content || "").toLowerCase().includes(search.toLowerCase()) ||
+        (n.tags || []).some(t => t && t.toLowerCase().includes(search.toLowerCase()));
 
       const matchDay =
         filterDay === "all" ||

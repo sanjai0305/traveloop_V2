@@ -510,7 +510,8 @@ const Dashboard = () => {
                   <div key={i} className="h-20 w-full rounded-[20px] skeleton" />
                 ))
               ) : (
-                recentTrips.map((trip, i) => {
+                (recentTrips || []).map((trip, i) => {
+                  if (!trip) return null;
                   const days = trip.startDate && trip.endDate
                     ? Math.max(1, Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / 86400000))
                     : null;

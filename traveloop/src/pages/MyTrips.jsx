@@ -676,6 +676,10 @@ const MyTrips = () => {
       const trips = personalData?.trips || [];
       const bookings = bookedData?.bookings || bookedData?.data || [];
 
+      console.log("Trips", trips);
+      console.log("Bookings", bookings);
+      console.log("Response", { personalData, bookedData });
+
       setPersonalTrips((trips || []).filter(t => t && (!t.tripType || t.tripType === "manual")));
       setBookedTripPlans((trips || []).filter(t => t && t.tripType === "booked"));
       setBookedPackages(bookings || []);
@@ -718,8 +722,8 @@ const MyTrips = () => {
   const filterPersonal = (trips) => trips.filter(t => {
     if (!t) return false;
     const matchSearch =
-      t.title?.toLowerCase().includes(search.toLowerCase()) ||
-      t.destination?.toLowerCase().includes(search.toLowerCase());
+      (t.title || "").toLowerCase().includes(search.toLowerCase()) ||
+      (t.destination || "").toLowerCase().includes(search.toLowerCase());
 
     if (!matchSearch) return false;
 
@@ -764,8 +768,8 @@ const MyTrips = () => {
   const filterBookedPlans = (trips) => trips.filter(t => {
     if (!t) return false;
     const matchSearch =
-      t.title?.toLowerCase().includes(search.toLowerCase()) ||
-      t.destination?.toLowerCase().includes(search.toLowerCase());
+      (t.title || "").toLowerCase().includes(search.toLowerCase()) ||
+      (t.destination || "").toLowerCase().includes(search.toLowerCase());
 
     if (!matchSearch) return false;
 
