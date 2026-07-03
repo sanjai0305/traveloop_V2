@@ -635,8 +635,10 @@ router.get("/trips/my-trips", protectAgent, async (req, res) => {
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
 
+    console.log(trips.map(t => t._id));
     console.log("Trips found:", trips.length);
 
+    res.set('Cache-Control', 'no-store');
     res.status(200).json({
       success: true,
       trips,
@@ -877,12 +879,16 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
-      // Soft delete
-      trip.isDeleted = true;
-      trip.deletedAt = new Date();
-      trip.deletedBy = req.agent._id.toString();
-      trip.status = "deleted";
-      await trip.save();
+      console.log("Trip exists:", trip);
+
+      const deletedTrip = await AgentTrip.findByIdAndDelete(req.params.id);
+      console.log("Deleted:", deletedTrip?._id);
+
+      const check = await AgentTrip.findById(req.params.id);
+      console.log("Still exists:", check);
+
+      const count = await AgentTrip.countDocuments();
+      console.log("Trip Count:", count);
 
       // Cascade booking cancellations
       await Booking.updateMany(
@@ -911,11 +917,7 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
-      trip.isDeleted = true;
-      trip.deletedAt = new Date();
-      trip.deletedBy = req.agent._id.toString();
-      trip.status = "deleted";
-      fallbackTrips.set(req.params.id, trip);
+      fallbackTrips.delete(req.params.id);
 
       for (const [id, booking] of fallbackBookings.entries()) {
         if (booking.agentTrip.toString() === req.params.id) {
