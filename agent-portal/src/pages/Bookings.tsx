@@ -218,29 +218,63 @@ export const Bookings: React.FC = () => {
     );
 
     // Calculations for the selected trip
-    const activeBookings = tripBookings.filter((b) => b.paymentStatus !== "Cancelled");
-    const totalBookedSeats = activeBookings.reduce((sum, b) => sum + b.seats, 0);
-    const occupancyPercent = selectedTrip
-      ? Math.round((totalBookedSeats / selectedTrip.totalSeats) * 100)
+    const activeBookings = tripBookings.filter((b) => 
+      b.paymentStatus !== "Cancelled" && 
+      (b as any).status !== "Cancelled" && 
+      (b as any).status !== "cancelled"
+    );
+
+    const totalBookedSeats = activeBookings.reduce((sum, b) => {
+      const count = (b.seats && typeof b.seats === 'number') 
+        ? b.seats 
+        : (Array.isArray(b.seats) ? b.seats.length : (((b as any).seats as any)?.length || b.seatNumbers?.length || 1));
+      return sum + count;
+    }, 0);
+
+    const occupancyPercent = selectedTrip && selectedTrip.totalSeats > 0
+      ? ((totalBookedSeats / selectedTrip.totalSeats) * 100).toFixed(1)
       : 0;
 
     const totalRevenue = activeBookings
-      .filter((b) => b.paymentStatus === "Paid")
-      .reduce((sum, b) => sum + b.pricePaid, 0);
+      .filter((b) => b.paymentStatus === "Paid" || (b as any).status === "Paid")
+      .reduce((sum, b) => sum + ((b as any).amountPaid || b.pricePaid || (b as any).price || 0), 0);
 
     const totalRefund = tripBookings
-      .filter((b) => b.paymentStatus === "Cancelled")
-      .reduce((sum, b) => sum + b.pricePaid, 0);
+      .filter((b) => b.paymentStatus === "Cancelled" || (b as any).status === "Cancelled" || (b as any).status === "cancelled")
+      .reduce((sum, b) => sum + ((b as any).amountPaid || b.pricePaid || (b as any).price || 0), 0);
 
     const totalCommission = activeBookings
-      .filter((b) => b.paymentStatus === "Paid")
-      .reduce((sum, b) => sum + (b.pricePaid * 0.1), 0); // 10% Agent Commission
+      .filter((b) => b.paymentStatus === "Paid" || (b as any).status === "Paid")
+      .reduce((sum, b) => sum + (((b as any).amountPaid || b.pricePaid || (b as any).price || 0) * 0.1), 0); // 10% Agent Commission
 
     const netPayout = totalRevenue - totalCommission;
 
+    const passengers = tripBookings.filter((b) => 
+      (b as any).status !== "cancelled" && 
+      (b as any).status !== "Cancelled" && 
+      b.paymentStatus !== "Cancelled"
+    ).length;
+
     const boardedCount = activeBookings.filter((b) => b.boardingStatus === "boarded").length;
-    const pendingBoardingCount = activeBookings.filter((b) => b.boardingStatus !== "boarded").length;
-    const cancelledCount = tripBookings.filter((b) => b.paymentStatus === "Cancelled").length;
+    const pendingBoardingCount = tripBookings.filter((b) => 
+      (b as any).status === "pending" || 
+      (b as any).status === "Pending" ||
+      b.paymentStatus === "Pending"
+    ).length;
+
+    const cancelledCount = tripBookings.filter((b) => 
+      b.paymentStatus === "Cancelled" || 
+      (b as any).status === "Cancelled" || 
+      (b as any).status === "cancelled"
+    ).length;
+
+    console.log("Trip:", selectedTrip);
+    console.log("Bookings:", tripBookings.length);
+    if (selectedTrip) {
+      console.log("Seats:", selectedTrip.totalSeats);
+    }
+    console.log("Booked Seats:", totalBookedSeats);
+    console.log("Revenue:", totalRevenue);
 
     // Apply Filter & Search
     const filteredTripBookings = tripBookings.filter((b) => {
@@ -448,7 +482,7 @@ export const Bookings: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Passengers</span>
-            <span className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1">{totalBookedSeats}</span>
+            <span className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1">{passengers}</span>
           </GlassCard>
           <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Boarded</span>
