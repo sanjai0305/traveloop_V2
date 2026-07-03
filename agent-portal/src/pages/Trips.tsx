@@ -367,7 +367,16 @@ export const Trips: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: deleteTrip,
     onSuccess: (_, id) => {
+      // Optimistically remove the deleted trip from cache to trigger immediate UI re-render
+      queryClient.setQueryData(["my-trips"], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          trips: (oldData.trips || []).filter((t: any) => t._id !== id),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      alert("Trip deleted successfully");
       try {
         socket.emit("trip_deleted", id);
         console.log("[Socket.io] Emitted trip_deleted for ID:", id);
