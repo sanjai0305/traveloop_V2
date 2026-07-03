@@ -42,10 +42,12 @@ export const loginAdmin = async (req, res) => {
 
     // Seed default Super Admin on first login if no admin exists
     if (!adminUser && email.toLowerCase() === "admin@traveloop.com" && password === "adminpassword") {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash("adminpassword", salt);
       adminUser = await Admin.create({
         name: "Traveloop Super Admin",
         email: "admin@traveloop.com",
-        password: "adminpassword", // Will be hashed to passwordHash via pre-save hook
+        passwordHash,
         role: "Super Admin",
         twoFactorEnabled: true,
       });
