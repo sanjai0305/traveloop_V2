@@ -180,6 +180,7 @@ const getTripLifeCycleState = (booking) => {
 
 // ─── BOOKED PACKAGE CARD ──────────────────────────────────────
 const BookedPackageCard = ({ booking, index }) => {
+  if (!booking) return null;
   const navigate = useNavigate();
   const trip     = booking.agentTrip || {};
   const dest     = (trip.destinations || [])[0] || "Trip";
@@ -437,6 +438,7 @@ const BookedPackageCard = ({ booking, index }) => {
 
 // ─── PERSONAL TRIP CARD ───────────────────────────────────────
 const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) => {
+  if (!trip) return null;
   const navigate = useNavigate();
   const status   = STATUS_CONFIG[trip.status] || STATUS_CONFIG.planning;
   const cover    = COVERS[index % COVERS.length];
@@ -667,20 +669,24 @@ const MyTrips = () => {
       ]);
 
       const [personalData, bookedData] = await Promise.all([
-        personalRes.json(),
-        bookedRes.json(),
+        personalRes.json().catch(() => ({})),
+        bookedRes.json().catch(() => ({})),
       ]);
 
-      if (personalData.success) {
-        const all = personalData.trips || [];
-        // Manual trips: no tripType or tripType === "manual"
-        setPersonalTrips(all.filter(t => !t.tripType || t.tripType === "manual"));
-        // Booked-type trips: cloned from agent packages
-        setBookedTripPlans(all.filter(t => t.tripType === "booked"));
-      }
-      if (bookedData.success)   setBookedPackages(bookedData.bookings || []);
-    } catch (_) {}
-    finally { setLoading(false); }
+      const trips = personalData?.trips || [];
+      const bookings = bookedData?.bookings || bookedData?.data || [];
+
+      setPersonalTrips((trips || []).filter(t => t && (!t.tripType || t.tripType === "manual")));
+      setBookedTripPlans((trips || []).filter(t => t && t.tripType === "booked"));
+      setBookedPackages(bookings || []);
+    } catch (err) {
+      console.error("[MyTrips fetchAll] Error loading trips/bookings:", err);
+      setPersonalTrips([]);
+      setBookedTripPlans([]);
+      setBookedPackages([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
 
@@ -710,6 +716,7 @@ const MyTrips = () => {
 
   // ── Filter logic per tab
   const filterPersonal = (trips) => trips.filter(t => {
+    if (!t) return false;
     const matchSearch =
       t.title?.toLowerCase().includes(search.toLowerCase()) ||
       t.destination?.toLowerCase().includes(search.toLowerCase());
@@ -721,12 +728,13 @@ const MyTrips = () => {
     if (activeTab === "personal") return true;
     if (activeTab === "today") return isTripToday(t.startDate);
     if (activeTab === "upcoming") return isTripUpcoming(t.startDate);
-    if (activeTab === "completed") return t.status === "completed";
-    if (activeTab === "cancelled") return t.status === "cancelled";
+    if (activeTab === "completed") return (t.status || "").includes("completed");
+    if (activeTab === "cancelled") return (t.status || "").includes("cancelled");
     return false;
   });
 
   const filterBooked = (bookings) => bookings.filter(b => {
+    if (!b) return false;
     const trip = b.agentTrip || {};
     const dest = (trip.destinations || [])[0] || "";
     const matchSearch =
@@ -747,13 +755,14 @@ const MyTrips = () => {
     if (activeTab === "booked") return !isCancelled;
     if (activeTab === "today") return !isCancelled && isTripToday(trip.startDate);
     if (activeTab === "upcoming") return !isCancelled && isTripUpcoming(trip.startDate);
-    if (activeTab === "completed") return !isCancelled && trip.status === "completed";
+    if (activeTab === "completed") return !isCancelled && (trip.status || "").includes("completed");
     if (activeTab === "cancelled") return isCancelled;
     return false;
   });
 
   // Filter booked-type Trip plans (cloned from agent packages)
   const filterBookedPlans = (trips) => trips.filter(t => {
+    if (!t) return false;
     const matchSearch =
       t.title?.toLowerCase().includes(search.toLowerCase()) ||
       t.destination?.toLowerCase().includes(search.toLowerCase());
@@ -761,7 +770,7 @@ const MyTrips = () => {
     if (!matchSearch) return false;
 
     // Ensure it belongs to a booking that is currently visible in the active tab (or confirmed in general)
-    const linkedBooking = bookedPackages.find(b => (b.userTripId?._id || b.userTripId) === t._id || b._id === t.bookingId);
+    const linkedBooking = bookedPackages.find(b => b && ((b.userTripId?._id || b.userTripId) === t._id || b._id === t.bookingId));
     if (!linkedBooking) return false;
 
     const isCancelled = linkedBooking.status === "cancelled" || linkedBooking.paymentStatus === "Cancelled";
@@ -770,7 +779,7 @@ const MyTrips = () => {
     if (activeTab === "booked") return !isCancelled;
     if (activeTab === "today") return !isCancelled && isTripToday(t.startDate);
     if (activeTab === "upcoming") return !isCancelled && isTripUpcoming(t.startDate);
-    if (activeTab === "completed") return !isCancelled && t.status === "completed";
+    if (activeTab === "completed") return !isCancelled && (t.status || "").includes("completed");
     if (activeTab === "cancelled") return isCancelled;
     return false;
   });

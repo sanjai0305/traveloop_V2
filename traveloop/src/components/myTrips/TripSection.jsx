@@ -5,8 +5,9 @@ import SectionHeader from "../dashboard/SectionHeader";
 import MyTripCard from "./MyTripCard";
 
 const TripSection = ({
-  trips,
+  trips = [],
 }) => {
+  if (!trips) return null;
 
   return (
     <section>

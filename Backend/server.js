@@ -46,10 +46,25 @@ import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 
 let dbConnected = true;
 
-const allowedOrigins =
-  process.env.ALLOWED_ORIGINS?.split(",")
-    .map(origin => origin.trim())
-    .filter(Boolean) || [];
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://localhost:5174",
+  "https://traveloop-v2.vercel.app",
+  "https://traveloop-v2-x92b.vercel.app",
+  "https://traveloop-v2-yj2k.vercel.app",
+  "https://agent-traveloop.vercel.app",
+  "https://traveloopv2.duckdns.org"
+];
+
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(",").forEach(origin => {
+    const trimmed = origin.trim();
+    if (trimmed && !allowedOrigins.includes(trimmed)) {
+      allowedOrigins.push(trimmed);
+    }
+  });
+}
 
 console.log("Allowed Origins:");
 allowedOrigins.forEach(origin =>
@@ -60,7 +75,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      const isAllowed = !origin || 
+                        allowedOrigins.includes(origin) || 
+                        origin.endsWith(".vercel.app") || 
+                        origin.startsWith("http://localhost:") || 
+                        origin.startsWith("http://127.0.0.1:");
+      callback(null, isAllowed);
+    },
     credentials: true
   }
 });
@@ -126,16 +148,22 @@ const authLimiter = rateLimit({
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    
+    const isAllowed = allowedOrigins.includes(origin) || 
+                      origin.endsWith(".vercel.app") || 
+                      origin.startsWith("http://localhost:") || 
+                      origin.startsWith("http://127.0.0.1:");
+                      
+    if (isAllowed) {
       return callback(null, true);
     }
     console.error("Blocked CORS Origin:", origin);
-    return callback(new Error("CORS not allowed"));
+    return callback(null, false);
   },
   credentials: true
 }));
 
-app.options("*all", cors());
+app.options("*", cors());
 
 /* -----------------------------
    SECURITY
