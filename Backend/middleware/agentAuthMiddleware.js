@@ -8,19 +8,19 @@ const protectAgent = async (req, res, next) => {
 
   console.log(`\n[Agent Auth Middleware] Checking authorization for ${req.method} ${req.originalUrl}`);
 
+  if (!process.env.JWT_SECRET) {
+    console.error("[Agent Auth Middleware] JWT_SECRET is missing.");
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error: Auth configuration missing",
+    });
+  }
+
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
     try {
-      if (!process.env.JWT_SECRET) {
-        console.error("[Agent Auth Middleware] JWT_SECRET is missing.");
-        return res.status(500).json({
-          success: false,
-          message: "Internal Server Error: Auth configuration missing",
-        });
-      }
-
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -34,6 +34,8 @@ const protectAgent = async (req, res, next) => {
         req.agent = {
           _id: agent._id,
           id: agent._id.toString(),
+          firebaseUid: agent.uid || "",
+          email: agent.email || "",
           ...agent.toObject()
         };
       }
@@ -56,10 +58,10 @@ const protectAgent = async (req, res, next) => {
       next();
     } catch (error) {
       console.error("[Agent Auth Error]:", error);
-      if (error.name === "TokenExpiredError") {
+      if (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError") {
         return res.status(401).json({
           success: false,
-          message: "Session expired. Please log in again.",
+          message: "Session expired or invalid token. Please log in again.",
           code: "TOKEN_EXPIRED",
         });
       }

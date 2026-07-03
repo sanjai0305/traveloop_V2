@@ -532,6 +532,15 @@ router.post("/trips/create", protectAgent, async (req, res) => {
     });
   }
 
+  console.log("[CreateTrip] Authenticated Agent:", req.agent);
+
+  if (!req.agent?._id) {
+    return res.status(401).json({
+      success: false,
+      message: "Authenticated agent not found"
+    });
+  }
+
   try {
     let trip;
     let driverId = null;
@@ -548,9 +557,15 @@ router.post("/trips/create", protectAgent, async (req, res) => {
       }, req.agent._id);
     }
 
+    // Base trip body data excluding any injected agentId
+    const bodyData = { ...req.body };
+    delete bodyData.agentId;
+
     const tripData = {
-      ...req.body,
-      agent: req.agent._id,
+      ...bodyData,
+      agentId: req.agent._id,
+      firebaseUid: req.agent.firebaseUid || req.agent.uid || "",
+      createdBy: req.agent.displayName || req.agent.email || "Agent",
       shortDescription,            // resolved above
       pricePerPerson: Number(pricePerPerson),  // resolved above
       destinations: Array.isArray(destinations) ? destinations : [destinations],

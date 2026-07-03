@@ -7,6 +7,14 @@ const agentTripSchema = new mongoose.Schema(
       ref: "Agent",
       required: true,
     },
+    firebaseUid: {
+      type: String,
+      default: "",
+    },
+    createdBy: {
+      type: String,
+      default: "",
+    },
     driverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
