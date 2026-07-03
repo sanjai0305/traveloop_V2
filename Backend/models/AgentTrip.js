@@ -7,7 +7,13 @@ const agentTripSchema = new mongoose.Schema(
       ref: "Agent",
       required: true,
     },
+
     driverId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+      default: null,
+    },
+    driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Driver",
       default: null,
@@ -15,6 +21,14 @@ const agentTripSchema = new mongoose.Schema(
     title: {
       type: String,
       required: true,
+    },
+    subtitle: {
+      type: String,
+      default: "",
+    },
+    tagline: {
+      type: String,
+      default: "",
     },
     shortDescription: {
       type: String,
@@ -24,9 +38,49 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    category: {
+      type: String,
+      default: "",
+    },
+    tripType: {
+      type: String,
+      default: "",
+    },
     destinations: {
       type: [String],
       default: [],
+    },
+    destination: {
+      type: String,
+      default: "",
+    },
+    originCity: {
+      type: String,
+      default: "",
+    },
+    pickupLocation: {
+      type: String,
+      default: "",
+    },
+    pickupPoint: {
+      type: String,
+      default: "",
+    },
+    meetingPoint: {
+      type: String,
+      default: "",
+    },
+    dropPoint: {
+      type: String,
+      default: "",
+    },
+    intermediateStops: {
+      type: [String],
+      default: [],
+    },
+    googleMapsUrl: {
+      type: String,
+      default: "",
     },
     duration: {
       type: String,
@@ -48,7 +102,23 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    pickupLocation: {
+    reportingTime: {
+      type: String,
+      default: "",
+    },
+    bookingDeadline: {
+      type: String,
+      default: "",
+    },
+    cancellationDeadline: {
+      type: String,
+      default: "",
+    },
+    cancellationUntilDate: {
+      type: String,
+      default: "",
+    },
+    cancellationUntilTime: {
       type: String,
       default: "",
     },
@@ -60,17 +130,17 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    busImages: {
-      type: [String],
-      default: [],
+    totalSeats: {
+      type: Number,
+      default: 40,
     },
-    gallery: {
-      type: [String],
-      default: [],
+    availableSeats: {
+      type: Number,
+      default: 40,
     },
-    coverImage: {
-      type: String,
-      default: "",
+    bookedSeats: {
+      type: Number,
+      default: 0,
     },
     driverName: {
       type: String,
@@ -80,6 +150,26 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    driverGmail: {
+      type: String,
+      default: "",
+    },
+    driverPhoto: {
+      type: String,
+      default: "",
+    },
+    driverLicenseNumber: {
+      type: String,
+      default: "",
+    },
+    emergencyContact: {
+      type: String,
+      default: "",
+    },
+    pricePerPerson: {
+      type: Number,
+      default: 0,
+    },
     originalPrice: {
       type: Number,
       default: 0.00,
@@ -88,9 +178,78 @@ const agentTripSchema = new mongoose.Schema(
       type: Number,
       default: 0.00,
     },
+    discountPercentage: {
+      type: Number,
+      default: 0,
+    },
+    gstPercentage: {
+      type: Number,
+      default: 5,
+    },
+    convenienceFee: {
+      type: Number,
+      default: 0,
+    },
+    mealsIncluded: {
+      type: [String],
+      default: [],
+    },
+    includedServices: {
+      type: [String],
+      default: [],
+    },
+    hotelName: {
+      type: String,
+      default: "",
+    },
+    hotelRating: {
+      type: Number,
+      default: 0,
+    },
+    roomType: {
+      type: String,
+      default: "",
+    },
+    itinerary: [
+      {
+        day: { type: Number },
+        title: { type: String },
+        description: { type: String },
+        hotel: { type: String, default: "" },
+        images: { type: [String], default: [] },
+      }
+    ],
+    allowCancellation: {
+      type: Boolean,
+      default: true,
+    },
+    refundPolicy: {
+      type: String,
+      default: "",
+    },
+    cancellationPolicy: {
+      type: String,
+      default: "",
+    },
+    termsConditions: {
+      type: String,
+      default: "",
+    },
+    exclusions: {
+      type: String,
+      default: "",
+    },
     status: {
       type: String,
       default: "published",
+    },
+    publishStatus: {
+      type: String,
+      default: "published",
+    },
+    publishedAt: {
+      type: Date,
+      default: Date.now,
     },
     boardingStatus: {
       type: String,
@@ -100,18 +259,93 @@ const agentTripSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    boardingClosedAt: {
+      type: Date,
+      default: null,
+    },
     boardingClosesAt: {
       type: Date,
       default: null,
     },
+    approvalStatus: {
+      type: String,
+      default: "approved",
+    },
+    maleCount: {
+      type: Number,
+      default: 0,
+    },
+    femaleCount: {
+      type: Number,
+      default: 0,
+    },
+    childrenCount: {
+      type: Number,
+      default: 0,
+    },
+    boardedCount: {
+      type: Number,
+      default: 0,
+    },
+    noShowCount: {
+      type: Number,
+      default: 0,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+    },
+    coverImage: {
+      type: String,
+      default: "",
+    },
+    busImages: {
+      type: [String],
+      default: [],
+    },
+    gallery: {
+      type: [String],
+      default: [],
+    },
+    occupancy: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+// Keep driver/driverId and destination synced; recalculate occupancy
+agentTripSchema.pre("save", function (next) {
+  if (this.driver && !this.driverId) {
+    this.driverId = this.driver;
+  }
+  if (this.driverId && !this.driver) {
+    this.driver = this.driverId;
+  }
+  if (Array.isArray(this.destinations) && this.destinations.length > 0 && !this.destination) {
+    this.destination = this.destinations[0];
+  }
+  
+  // occupancy rate calculation
+  const total = this.totalSeats || 0;
+  const booked = this.bookedSeats || 0;
+  this.occupancy = total > 0 ? Math.round((booked / total) * 100) : 0;
+  
+  next();
+});
 
 agentTripSchema.index({ agentId: 1 });
 agentTripSchema.index({ driverId: 1 });
 
 const AgentTrip = mongoose.model("AgentTrip", agentTripSchema);
 export default AgentTrip;
+

@@ -64,7 +64,7 @@ router.get("/", protectAgent, async (req, res) => {
     // 2. Fetch Bookings for Agent's Trips
     let bookings = [];
     if (tripIds.length > 0) {
-      bookings = await Booking.find({ agentTrip: { $in: tripIds } });
+      bookings = await Booking.find({ tripId: { $in: tripIds } });
     }
 
     // 3. Compute Booking Metrics
@@ -123,8 +123,8 @@ router.get("/", protectAgent, async (req, res) => {
     }
 
     bookings.forEach((booking) => {
-      if (booking.bookingDate && booking.paymentStatus === "Paid") {
-        const bDate = new Date(booking.bookingDate);
+      if (booking.createdAt && booking.paymentStatus === "Paid") {
+        const bDate = new Date(booking.createdAt);
         const mName = monthNames[bDate.getMonth()];
         if (graphMap[mName]) {
           graphMap[mName].Bookings += booking.seats || 1;
@@ -143,7 +143,7 @@ router.get("/", protectAgent, async (req, res) => {
         type: b.paymentStatus.toLowerCase(),
         travelerName: b.travelerName || "Guest Traveler",
         description: `Reserved ${b.seats} seat(s) for Trip`,
-        timestamp: b.bookingDate || new Date().toISOString(),
+        timestamp: b.createdAt || new Date().toISOString(),
       }));
 
     // 7. Today's active boarding stats
@@ -151,7 +151,7 @@ router.get("/", protectAgent, async (req, res) => {
     const todayTrips = await AgentTrip.find({ agentId: agentId, startDate: todayStr });
     const liveBoarding = [];
     for (const trip of todayTrips) {
-      const tripBookings = await Booking.find({ agentTrip: trip._id, paymentStatus: "Paid" });
+      const tripBookings = await Booking.find({ tripId: trip._id, paymentStatus: "Paid" });
       const total = tripBookings.reduce((s, b) => s + (b.seats || 1), 0);
       const boarded = tripBookings.filter(b => b.boardingStatus === "boarded").length;
       const pending = tripBookings.filter(b => b.boardingStatus === "not_boarded").length;

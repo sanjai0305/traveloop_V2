@@ -892,7 +892,7 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
       // Cascade booking cancellations
       await Booking.updateMany(
-        { agentTrip: req.params.id },
+        { tripId: req.params.id },
         {
           $set: {
             status: "cancelled",
@@ -966,23 +966,23 @@ router.get("/bookings", protectAgent, async (req, res) => {
           { tripId: { $in: agentTripIds } },
           { agentTrip: { $in: agentTripIds } }
         ]
-      }).populate("tripId").populate("agentTrip").sort({ createdAt: -1 });
+      }).populate("tripId").sort({ createdAt: -1 });
 
       bookings = (bookingsData || []).map(b => {
         const obj = b.toObject ? b.toObject() : b;
-        const trip = obj.tripId || obj.agentTrip;
+        // TODO: remove agentTrip fallback after migration (scripts/migrateIds.js)
+        const trip = obj.tripId;
         return {
           ...obj,
           _id: b._id,
           tripId: trip?._id || trip,
-          agentTrip: trip,
           tripName: trip ? trip.title : "Deleted Trip"
         };
       });
     } else {
       bookings = Array.from(fallbackBookings.values())
         .filter(b => b.agent.toString() === req.agent._id.toString())
-        .sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate));
+        .sort((a, b) => new Date(b.createdAt || b.bookingDate) - new Date(a.createdAt || a.bookingDate));
 
       bookings = bookings.map(b => {
         const trip = fallbackTrips.get(b.agentTrip.toString());
@@ -1193,13 +1193,14 @@ router.get("/analytics", protectAgent, async (req, res) => {
           { tripId: { $in: agentTripIds } },
           { agentTrip: { $in: agentTripIds } }
         ]
-      }).populate("tripId").populate("agentTrip");
+      }).populate("tripId");
       bookings = (bookingsData || []).map(b => {
         const obj = b.toObject ? b.toObject() : b;
+        // TODO: remove agentTrip fallback after migration (scripts/migrateIds.js)
         return {
           ...obj,
           _id: b._id,
-          agentTrip: obj.tripId || obj.agentTrip
+          tripId: (obj.tripId?._id || obj.tripId) || null
         };
       });
     } else {
@@ -1247,7 +1248,7 @@ router.get("/analytics", protectAgent, async (req, res) => {
         type: b.paymentStatus.toLowerCase(),
         travelerName: b.travelerName,
         description: desc,
-        timestamp: b.bookingDate,
+        timestamp: b.createdAt,
       };
     }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 10);
 
@@ -1262,7 +1263,7 @@ router.get("/analytics", protectAgent, async (req, res) => {
     }
 
     bookings.forEach(b => {
-      const bDate = new Date(b.bookingDate);
+      const bDate = new Date(b.createdAt);
       const mName = monthNames[bDate.getMonth()];
       if (monthlyDataMap[mName]) {
         monthlyDataMap[mName].Bookings += b.seats;

@@ -33,7 +33,6 @@ router.post("/generate-qr", protect, async (req, res) => {
     const booking = {
       ...bookingRow.toObject(),
       _id: bookingRow._id,
-      agentTrip: bookingRow.tripId
     };
 
     // Verify ownership
@@ -50,7 +49,7 @@ router.post("/generate-qr", protect, async (req, res) => {
     }
 
     // Load trip
-    const tripRow = await AgentTrip.findById(booking.agentTrip);
+    const tripRow = await AgentTrip.findById(booking.tripId);
 
     if (!tripRow) {
       return res.status(400).json({ success: false, message: "Trip not found" });

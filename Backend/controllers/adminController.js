@@ -372,7 +372,7 @@ export const getCommissionAnalytics = async (req, res) => {
     let yearCommission = 0;
 
     bookings.forEach(b => {
-      const bDate = new Date(b.createdAt || b.bookingDate);
+      const bDate = new Date(b.createdAt);
       const commission = b.commissionAmount || 0;
 
       if (bDate >= startOfToday) todayCommission += commission;

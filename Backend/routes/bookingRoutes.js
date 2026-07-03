@@ -7,6 +7,7 @@ import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
 import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
+import BookingService from "../services/BookingService.js";
 
 const router = express.Router();
 
@@ -179,6 +180,7 @@ router.post("/", protect, async (req, res) => {
     travellers = [],
     totalAmount = 0,
     seatNumbers = [],
+    pickupLocation = "",
   } = req.body;
 
   if (!tripId) {
@@ -190,66 +192,35 @@ router.post("/", protect, async (req, res) => {
   }
 
   try {
-    const trip = await AgentTrip.findById(tripId);
-
-    if (!trip) {
-      return res.status(404).json({ success: false, message: "Trip not found" });
-    }
-
-    const totalTravellers = travellers.length;
-    const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
-
-    const commissionAmount = totalAmount * 0.10;
-    const gatewayFee = totalAmount * 0.02;
-    const agentAmount = totalAmount - commissionAmount - gatewayFee;
-
-    const userId = req.user.id || req.user._id;
-
-    const newBooking = await Booking.create({
-      bookingId,
+    const userId = req.user._id || req.user.id;
+    const { booking, userTrip } = await BookingService.createBooking({
+      tripId,
       userId,
-      tripId: trip._id,
-      seats: totalTravellers,
-      pricePaid: totalAmount,
+      travellers,
+      seats: travellers.length,
+      seatNumbers,
+      totalAmount,
       paymentStatus: "Paid",
-      boardingStatus: "Pending",
-      assignedSeat: seatNumbers[0] || "",
-      token: "",
+      bookingStatus: "confirmed",
+      paymentVerified: true,
+      paymentDate: new Date(),
+      maleCount,
+      femaleCount,
+      adults,
+      children,
+      pickupLocation,
+      contactNumber: travellers[0]?.phone || req.user.phone || req.user.email,
     });
-
-    console.log("Created booking");
-    console.log(newBooking);
-    console.log("Trip");
-    console.log(trip);
-
-    const booking = {
-      ...newBooking.toObject(),
-      _id: newBooking._id,
-      agentTrip: newBooking.tripId
-    };
-
-    // Update trip seats counters
-    await AgentTrip.findByIdAndUpdate(tripId, {
-      boardingStatus: trip.boardingStatus,
-    });
-
-    // Clone agent trip to personal user planner trip workspace
-    let userTrip = null;
-    try {
-      userTrip = await cloneAgentTripToUserTrip(booking, trip, userId, totalAmount);
-    } catch (cloneErr) {
-      console.warn("[Create Booking] Personal trip clone warning:", cloneErr.message);
-    }
 
     res.status(201).json({
       success: true,
-      bookingId,
+      bookingId: booking.bookingId,
       booking,
       userTripId: userTrip ? userTrip._id : null,
     });
   } catch (error) {
     console.error("[Create Booking] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error processing trip booking" });
+    res.status(500).json({ success: false, message: error.message || "Server Error processing trip booking" });
   }
 });
 
@@ -257,17 +228,18 @@ router.post("/", protect, async (req, res) => {
 router.get("/my-bookings", protect, async (req, res) => {
   try {
     const userId = req.user.id || req.user._id;
-    const bookingsList = await Booking.find({ userId });
+    const bookingsList = await Booking.find({ userId }).populate("tripId");
 
     const bookings = (bookingsList || []).map(b => {
       const obj = b.toObject ? b.toObject() : b;
+      const tripDoc = obj.tripId;
       return {
         ...obj,
         _id: b._id,
         agentTrip: {
-          _id: b.tripId,
-          title: "Yercaud Trip",
-          boardingStatus: "CLOSED",
+          _id: tripDoc?._id || b.tripId,
+          title: tripDoc?.title || "Yercaud Trip",
+          boardingStatus: tripDoc?.boardingStatus || "CLOSED",
         },
       };
     });
@@ -400,17 +372,18 @@ router.get("/my", protect, async (req, res) => {
     const bookingsList = await Booking.find({
       userId,
       paymentStatus: { $ne: "Cancelled" }
-    });
+    }).populate("tripId");
 
     const bookings = (bookingsList || []).map(b => {
       const obj = b.toObject ? b.toObject() : b;
+      const tripDoc = obj.tripId;
       return {
         ...obj,
         _id: b._id,
         agentTrip: {
-          _id: b.tripId,
-          title: "Yercaud Weekend Escapade",
-          boardingStatus: "CLOSED",
+          _id: tripDoc?._id || b.tripId,
+          title: tripDoc?.title || "Yercaud Weekend Escapade",
+          boardingStatus: tripDoc?.boardingStatus || "CLOSED",
         },
       };
     });

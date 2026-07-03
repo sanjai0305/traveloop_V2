@@ -9,6 +9,7 @@ import Payment from "../models/Payment.js";
 import Agent from "../models/Agent.js";
 import AdminNotification from "../models/AdminNotification.js";
 import SystemSetting from "../models/SystemSetting.js";
+import BookingService from "../services/BookingService.js";
 
 const router = express.Router();
 
@@ -88,15 +89,13 @@ router.post("/verify", protect, async (req, res) => {
   console.log("razorpay_payment_id:", req.body.razorpay_payment_id);
   console.log("razorpay_signature:", req.body.razorpay_signature);
   console.log("bookingId:", req.body.bookingId);
-  console.log("status:", req.body.status);
 
   const {
     razorpay_order_id,
     razorpay_payment_id,
     razorpay_signature,
     bookingPayload,
-    bookingId,
-    status
+    bookingId
   } = req.body;
 
   // Verify credentials exist. If missing, return 400 instead of 500.
@@ -108,17 +107,31 @@ router.post("/verify", protect, async (req, res) => {
     return res.status(400).json({ success: false, message: "Razorpay credentials missing" });
   }
 
-  // 1. Resolve or Load Booking
+  // 1. Enforce strict signature verification
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return res.status(400).json({ success: false, message: "Missing Razorpay payment verification fields" });
+  }
+
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  const expectedSignature = crypto
+    .createHmac("sha256", key_secret)
+    .update(body.toString())
+    .digest("hex");
+
+  if (expectedSignature !== razorpay_signature) {
+    console.error("[Razorpay Verification] Signature mismatch.");
+    return res.status(400).json({ success: false, message: "Payment verification failed" });
+  }
+
+  // 2. Resolve or Load Booking
   let booking = null;
   let trip = null;
   let finalAmount = 0;
   let totalTravellers = 0;
-  let isSandbox = status === "success" || 
-                  razorpay_signature === "mock_signature" || 
-                  (razorpay_order_id && razorpay_order_id.startsWith("order_mock_"));
 
   try {
-    // If bookingId is passed directly, try to find the existing booking
+    const userId = req.user._id || req.user.id;
+
     if (bookingId) {
       booking = await Booking.findOne({
         $or: [
@@ -130,12 +143,52 @@ router.post("/verify", protect, async (req, res) => {
 
     if (booking) {
       // SCENARIO A: Existing booking update
-      trip = await AgentTrip.findById(booking.agentTrip || booking.tripId);
+      trip = await AgentTrip.findById(booking.tripId);
       if (!trip) {
         return res.status(400).json({ success: false, message: "Trip not found" });
       }
       finalAmount = booking.pricePaid || booking.amount || 0;
       totalTravellers = booking.seats || 1;
+
+      // Verify seats availability (if not already counted)
+      if (booking.paymentStatus !== "Paid" && (trip.availableSeats || 0) < totalTravellers) {
+        return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
+      }
+
+      if (booking.paymentStatus !== "Paid") {
+        booking.paymentStatus = "Paid";
+        booking.status = "Paid";
+        booking.bookingStatus = "confirmed";
+        booking.paymentVerified = true;
+        booking.paymentDate = new Date();
+        await booking.save();
+
+        // Update trip counters
+        trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
+        trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - totalTravellers);
+        
+        const totalS = trip.totalSeats || 40;
+        trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+        await trip.save();
+
+        // Update Agent statistics
+        const agent = await Agent.findById(trip.agentId || trip.agent);
+        if (agent) {
+          const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
+          const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
+          const commissionRate = agent.commissionRate !== undefined ? agent.commissionRate : defaultRate;
+
+          const commissionAmount = finalAmount * (commissionRate / 100);
+          const gatewayFee = finalAmount * 0.02;
+          const agentAmount = finalAmount - commissionAmount - gatewayFee;
+
+          agent.revenue = (agent.revenue || 0) + finalAmount;
+          agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
+          agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
+          agent.totalBookings = (agent.totalBookings || 0) + 1;
+          await agent.save();
+        }
+      }
     } else if (bookingPayload) {
       // SCENARIO B: Create new booking from payload
       const { tripId } = bookingPayload;
@@ -145,176 +198,57 @@ router.post("/verify", protect, async (req, res) => {
       }
       totalTravellers = (bookingPayload.travellers || []).length || 1;
       finalAmount = bookingPayload.totalAmount || (trip.offerPrice || trip.pricePerPerson || 0) * totalTravellers;
+
+      const result = await BookingService.createBooking({
+        tripId,
+        userId,
+        travellers: bookingPayload.travellers,
+        seats: totalTravellers,
+        seatNumbers: bookingPayload.seatNumbers,
+        totalAmount: finalAmount,
+        paymentStatus: "Paid",
+        bookingStatus: "confirmed",
+        paymentVerified: true,
+        paymentDate: new Date(),
+        maleCount: bookingPayload.maleCount,
+        femaleCount: bookingPayload.femaleCount,
+        adults: bookingPayload.adults,
+        children: bookingPayload.children,
+        pickupLocation: bookingPayload.pickupLocation,
+        contactNumber: bookingPayload.travellers?.[0]?.phone || req.user.phone || req.user.email,
+      });
+      booking = result.booking;
     } else {
       return res.status(400).json({ success: false, message: "Missing bookingId or bookingPayload" });
     }
 
-    // 2. Signature verification if NOT sandbox mode
-    if (!isSandbox) {
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return res.status(400).json({ success: false, message: "Missing Razorpay payment verification fields" });
-      }
-      const body = razorpay_order_id + "|" + razorpay_payment_id;
-      const expectedSignature = crypto
-        .createHmac("sha256", key_secret)
-        .update(body.toString())
-        .digest("hex");
-
-      if (expectedSignature !== razorpay_signature) {
-        console.error("[Razorpay Verification] Signature mismatch.");
-        return res.status(400).json({ success: false, message: "Payment verification failed" });
-      }
-    } else {
-      console.log("[Razorpay Verification] Bypassing verification for mock/local development payment.");
-    }
-
-    // Verify seats availability (skip if booking already exists and was already counted)
-    if (!booking && trip.availableSeats < totalTravellers) {
-      return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
-    }
-
-    // Calculate commission
-    const agent = await Agent.findById(trip.agent);
-    const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
-    const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
-    const commissionRate = agent ? (agent.commissionRate !== undefined ? agent.commissionRate : defaultRate) : defaultRate;
-
-    const commissionAmount = finalAmount * (commissionRate / 100);
-    const gatewayFee = finalAmount * 0.02; 
-    const agentAmount = finalAmount - commissionAmount - gatewayFee;
-
-    // Normalization helper for traveler genders to match case-sensitive Mongoose schema
-    const normalizeGender = (g) => {
-      if (!g) return "Other";
-      const lower = g.toLowerCase();
-      if (lower === "male") return "Male";
-      if (lower === "female") return "Female";
-      return "Other";
-    };
-
-    // Generate custom IDs if needed
-    const generatedBookingId = booking ? booking.bookingId : `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
-    const transactionId = razorpay_payment_id || `txn_${Math.random().toString(36).substring(2, 11)}`;
-
-    if (!booking) {
-      // Create new booking record
-      const travelersNormalized = (bookingPayload.travellers || []).map(t => ({
-        name: t.name,
-        age: Number(t.age || 0),
-        gender: normalizeGender(t.gender),
-        phone: t.phone || "",
-      }));
-
-      booking = await Booking.create({
-        bookingId: generatedBookingId,
-        travelerName: travelersNormalized[0]?.name || "",
-        gender: normalizeGender(travelersNormalized[0]?.gender || ""),
-        contactNumber: travelersNormalized[0]?.phone || req.user.phone || req.user.email,
-        age: travelersNormalized[0]?.age || 0,
-        seats: totalTravellers,
-        seatNumbers: bookingPayload.seatNumbers || [],
-        paymentStatus: "Paid",
-        status: "Paid", // For backward compat
-        bookingStatus: "confirmed",
-        paymentVerified: true,
-        paymentDate: new Date(),
-        agentTrip: trip._id,
-        tripId: trip._id,
-        agent: trip.agent,
-        userId: req.user._id,
-        travellers: travelersNormalized,
-        maleCount: Number(bookingPayload.maleCount || 0),
-        femaleCount: Number(bookingPayload.femaleCount || 0),
-        adults: Number(bookingPayload.adults || 1),
-        children: Number(bookingPayload.children || 0),
-        pricePaid: finalAmount,
-        amount: finalAmount,
-        amountPaid: finalAmount,
-        commissionAmount,
-        gatewayFee,
-        agentAmount,
-        pickupLocation: bookingPayload.pickupLocation || "",
-      });
-    } else {
-      // Update existing booking record
-      booking.paymentStatus = "Paid";
-      booking.status = "Paid";
-      booking.bookingStatus = "confirmed";
-      booking.paymentVerified = true;
-      booking.paymentDate = new Date();
-      await booking.save();
-    }
-
     // 4. Create/Store Payment Record
-    const paymentBookingId = booking._id;
-    if (!mongoose.Types.ObjectId.isValid(paymentBookingId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid booking ObjectId"
-      });
-    }
-
     await Payment.create({
-      bookingId: paymentBookingId,
-      bookingRef: booking.bookingId || generatedBookingId,
+      bookingId: booking._id,
+      bookingRef: booking.bookingId,
       tripId: trip._id,
-      agentId: trip.agent,
-      travelerId: req.user._id,
-      userId: req.user._id,
+      agentId: trip.agentId || trip.agent,
+      travelerId: userId,
+      userId: userId,
       amount: finalAmount,
       status: "Paid",
-      gateway: isSandbox ? "sandbox" : "razorpay",
-      orderId: razorpay_order_id || `order_${Math.random().toString(36).substring(2, 11)}`,
-      paymentId: transactionId,
-      transactionId: transactionId,
-      signature: razorpay_signature || "mock_signature",
+      gateway: "razorpay",
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      transactionId: razorpay_payment_id,
+      signature: razorpay_signature,
     });
-
-    // 5. Update Trip seat counts
-    trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
-    trip.availableSeats = Math.max(0, trip.availableSeats - totalTravellers);
-    if (bookingPayload) {
-      trip.maleCount = (trip.maleCount || 0) + Number(bookingPayload.maleCount || 0);
-      trip.femaleCount = (trip.femaleCount || 0) + Number(bookingPayload.femaleCount || 0);
-      trip.childrenCount = (trip.childrenCount || 0) + Number(bookingPayload.children || 0);
-    } else if (booking) {
-      trip.maleCount = (trip.maleCount || 0) + Number(booking.maleCount || 0);
-      trip.femaleCount = (trip.femaleCount || 0) + Number(booking.femaleCount || 0);
-      trip.childrenCount = (trip.childrenCount || 0) + Number(booking.children || 0);
-    }
-    await trip.save();
-
-    // 6. Update Agent aggregated statistics
-    if (agent) {
-      agent.revenue = (agent.revenue || 0) + finalAmount;
-      agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
-      agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
-      agent.totalBookings = (agent.totalBookings || 0) + 1;
-      await agent.save();
-    }
-
-    // 7. Create Admin Notification
-    try {
-      const passengerName = bookingPayload?.travellers?.[0]?.name || booking?.travelerName || req.user.firstName;
-      await AdminNotification.create({
-        title: "New Booking Confirmed",
-        message: `Traveler ${passengerName} booked trip '${trip.title}' for ₹${finalAmount}`,
-        type: "booking",
-      });
-    } catch (notifErr) {
-      console.warn("Failed to create admin notification:", notifErr.message);
-    }
 
     res.status(200).json({
       success: true,
-      bookingId: generatedBookingId,
-      paymentId: transactionId,
+      bookingId: booking.bookingId,
+      paymentId: razorpay_payment_id,
       status: "paid",
       booking
     });
   } catch (error) {
     console.error("[Razorpay Verify & Record] Error:", error);
-    res.status(400).json({ success: false, message: "Payment Verification Failed" });
+    res.status(400).json({ success: false, message: error.message || "Payment Verification Failed" });
   }
 });
 

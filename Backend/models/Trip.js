@@ -7,14 +7,6 @@ const tripSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    owner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
     image: {
       type: String,
       default: "",
@@ -91,17 +83,6 @@ const tripSchema = new mongoose.Schema(
     toObject: { virtuals: true },
   }
 );
-
-// Keep userId, user, and owner in sync before saving
-tripSchema.pre("save", function (next) {
-  const targetId = this.userId || this.user || this.owner;
-  if (targetId) {
-    this.userId = targetId;
-    this.user = targetId;
-    this.owner = targetId;
-  }
-  next();
-});
 
 tripSchema.index({ userId: 1 });
 tripSchema.index({ shareToken: 1 }, { sparse: true });
