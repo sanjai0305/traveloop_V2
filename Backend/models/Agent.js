@@ -72,7 +72,15 @@ const agentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      default: "active",
+      default: "approved",
+    },
+    role: {
+      type: String,
+      default: "agent",
+    },
+    isVerified: {
+      type: Boolean,
+      default: true,
     },
     emailVerified: {
       type: Boolean,

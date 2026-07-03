@@ -24,7 +24,11 @@ const protectAgent = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      const agent = await Agent.findById(decoded.id).select("companyName email status");
+      const agent = await Agent.findById(decoded.id).select(
+        "uid displayName companyName email phone gstNumber businessCategory " +
+        "address city state country website instagram facebook logo profileImage " +
+        "status role isVerified emailVerified profileCompleted"
+      );
 
       if (agent) {
         req.agent = {

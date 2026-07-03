@@ -300,6 +300,9 @@ router.post("/login", async (req, res) => {
           profileImage: "",
           profileCompleted: false,
           emailVerified,
+          role: "agent",
+          status: "approved",
+          isVerified: true,
         };
         fallbackAgents.set(mockId, agent);
       }
@@ -328,6 +331,16 @@ router.post("/signup", async (req, res) => {
 // @route   GET /api/agent/profile
 // @desc    Get current agent profile
 router.get("/profile", protectAgent, async (req, res) => {
+  res.status(200).json({
+    success: true,
+    agent: req.agent,
+  });
+});
+
+// @route   GET /api/agent/me
+// @desc    Validate token and return current agent (used for session restore on app startup)
+router.get("/me", protectAgent, async (req, res) => {
+  console.log("[Agent Auth] /me called — token valid, returning agent profile");
   res.status(200).json({
     success: true,
     agent: req.agent,

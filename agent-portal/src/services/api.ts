@@ -19,9 +19,11 @@ const api = axios.create({
 // ── Request interceptor: attach Bearer token ───────────────────────────────
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("agent_token");
+    const token = localStorage.getItem("agentToken");
+    console.log("[AgentAPI] Agent Token:", token ? `${token.slice(0, 20)}...` : null);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log("[AgentAPI] Authorization Header: Bearer", `${token.slice(0, 20)}...`);
     }
     return config;
   },
@@ -44,7 +46,7 @@ api.interceptors.response.use(
     if (status === 401) {
       // Only logout if the failure is from a core agent auth route
       // OR if there is no token at all (unauthenticated request)
-      const token = localStorage.getItem("agent_token");
+      const token = localStorage.getItem("agentToken");
       const isAuthRoute =
         requestUrl.includes("/agent/login") ||
         requestUrl.includes("/agent/me") ||
@@ -59,8 +61,8 @@ api.interceptors.response.use(
           useAuthStore.getState().logout();
         } catch {
           // Fallback: clear localStorage manually
-          localStorage.removeItem("agent_token");
-          localStorage.removeItem("agent_profile");
+          localStorage.removeItem("agentToken");
+          localStorage.removeItem("agentUser");
         }
 
         // Navigate without a hard reload
