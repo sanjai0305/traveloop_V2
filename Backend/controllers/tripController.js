@@ -139,13 +139,17 @@ export const createTrip = async (req, res) => {
 
     // Trigger Notification
     if (req.user && req.user.id) {
-      await triggerNotification(
-        req.user.id,
-        "Trip Created ✈️",
-        `Your trip to ${destination || destinationName} ("${title}") has been created! Start planning your itinerary.`,
-        "trip",
-        trip._id
-      );
+      try {
+        await triggerNotification(
+          req.user.id,
+          "Trip Created ✈️",
+          `Your trip to ${destination || destinationName} ("${title}") has been created! Start planning your itinerary.`,
+          "trip",
+          trip._id
+        );
+      } catch (notifErr) {
+        console.error("Failed to trigger trip creation notification:", notifErr);
+      }
 
       // Reward +10 XP and unlock First Trip Created achievement
       const userObj = await User.findById(req.user.id);

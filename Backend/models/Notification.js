@@ -55,15 +55,11 @@ const notificationSchema = new mongoose.Schema(
 
 // Keep user/userId and trip/tripId in sync before saving
 notificationSchema.pre("save", function (next) {
-  const targetUserId = this.userId || this.user;
-  if (targetUserId) {
-    this.userId = targetUserId;
-    this.user = targetUserId;
+  if (this.userId) {
+    this.user = this.userId;
   }
-  const targetTripId = this.tripId || this.trip;
-  if (targetTripId) {
-    this.tripId = targetTripId;
-    this.trip = targetTripId;
+  if (this.tripId) {
+    this.trip = this.tripId;
   }
   next();
 });
