@@ -43,22 +43,35 @@ router.get("/published", async (req, res) => {
       $or: [{ status: "published" }, { publishStatus: "published" }]
     }).populate("agentId", "companyName email").sort({ createdAt: -1 });
 
-    const trips = (data || []).map(t => {
-      const mapped = { ...t.toObject(), _id: t._id };
-      if (mapped.agentId) {
-        // Flatten companyName/email to match client assumptions if needed
-        mapped.agent = {
-          _id: mapped.agentId._id,
-          displayName: mapped.agentId.companyName,
-          companyName: mapped.agentId.companyName,
-          email: mapped.agentId.email,
-          logo: "",
-          profileImage: "",
-          phone: ""
-        };
-      }
-      return mapped;
-    });
+    const now = new Date();
+    const trips = (data || [])
+      .map(t => {
+        const mapped = { ...t.toObject(), _id: t._id };
+        if (mapped.agentId) {
+          // Flatten companyName/email to match client assumptions if needed
+          mapped.agent = {
+            _id: mapped.agentId._id,
+            displayName: mapped.agentId.companyName,
+            companyName: mapped.agentId.companyName,
+            email: mapped.agentId.email,
+            logo: "",
+            profileImage: "",
+            phone: ""
+          };
+        }
+        return mapped;
+      })
+      .filter(t => {
+        if (t.bookingDeadline) {
+          const deadline = new Date(t.bookingDeadline);
+          if (!isNaN(deadline.getTime()) && deadline < now) return false;
+        }
+        if (t.startDate) {
+          const start = new Date(t.startDate);
+          if (!isNaN(start.getTime()) && start < now) return false;
+        }
+        return true;
+      });
 
     res.status(200).json({
       success: true,

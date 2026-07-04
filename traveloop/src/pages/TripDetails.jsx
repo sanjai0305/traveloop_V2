@@ -20,6 +20,15 @@ export const TripDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const isDeadlinePassed = trip && trip.bookingDeadline ? new Date() > new Date(trip.bookingDeadline) : false;
+  const bookingDeadlineFormatted = trip && trip.bookingDeadline ? new Date(trip.bookingDeadline).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }) : "";
+
   // Booking Flow States
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingStage, setBookingStage] = useState("form"); // "form" | "seats" | "confirm" | "payment" | "success"
@@ -415,6 +424,27 @@ export const TripDetails = () => {
         {/* Contents Grid */}
         <div className="px-4 mt-6 space-y-6">
           
+          {/* Booking Deadline Warning Banner */}
+          {trip.bookingDeadline && (
+            <div className={`p-4 rounded-2xl flex items-center gap-3 border ${
+              isDeadlinePassed
+                ? "bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/50 text-rose-600 dark:text-rose-400"
+                : "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200/50 text-amber-600 dark:text-amber-400"
+            }`}>
+              <AlertTriangle size={18} className="flex-shrink-0" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide">
+                  {isDeadlinePassed ? "Bookings Closed" : "Limited Time Booking"}
+                </p>
+                <p className="text-[11px] font-bold mt-0.5 opacity-90">
+                  {isDeadlinePassed
+                    ? "The booking deadline for this trip has passed. You can no longer book slots."
+                    : `Booking Closes in: ${bookingDeadlineFormatted}`}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs">
             <div className="text-center">
@@ -631,7 +661,14 @@ export const TripDetails = () => {
             )}
           </div>
 
-          {trip.availableSeats <= 0 ? (
+          {isDeadlinePassed ? (
+            <button
+              disabled
+              className="px-8 py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/20 text-rose-500 dark:text-rose-450 font-extrabold text-xs cursor-not-allowed border border-rose-100 dark:border-rose-900/30"
+            >
+              Bookings Closed
+            </button>
+          ) : trip.availableSeats <= 0 ? (
             <button
               disabled
               className="px-8 py-3 rounded-2xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-extrabold text-xs cursor-not-allowed"

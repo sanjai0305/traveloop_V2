@@ -43,6 +43,13 @@ router.post("/create-order", protect, async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
+    if (trip.bookingDeadline) {
+      const deadline = new Date(trip.bookingDeadline);
+      if (!isNaN(deadline.getTime()) && new Date() > deadline) {
+        return res.status(400).json({ success: false, message: "Bookings closed for this trip" });
+      }
+    }
+
     const price = trip.offerPrice || trip.pricePerPerson || 0;
     const amount = price * Number(seats);
 

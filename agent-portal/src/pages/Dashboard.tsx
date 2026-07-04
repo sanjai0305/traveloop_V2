@@ -18,6 +18,7 @@ import {
 import { GlassCard, Button, Modal } from "../components/ui";
 import { BookingGraph, GenderDistributionChart } from "../components/charts";
 import { getAnalytics } from "../services/analyticsService";
+import { getAgentMetrics } from "../services/tripService";
 import { formatCurrency, formatDate } from "../utils";
 import { useAuthStore } from "../store/authStore";
 import { OnboardingWizard } from "../features/auth/components/OnboardingWizard";
@@ -30,6 +31,13 @@ export const Dashboard: React.FC = () => {
     queryKey: ["analytics"],
     queryFn: getAnalytics,
     enabled: !!agent?.profileCompleted, // Disable query fetching if profile is not completed
+    refetchInterval: 10000,
+  });
+
+  const { data: agentMetricsData } = useQuery({
+    queryKey: ["agent-metrics"],
+    queryFn: getAgentMetrics,
+    enabled: !!agent?.profileCompleted,
     refetchInterval: 10000,
   });
 
@@ -193,36 +201,44 @@ export const Dashboard: React.FC = () => {
 
   const { metrics, recentActivities, bookingsGraph, popularDestinations, liveBoarding } = data as any;
 
+  const m = agentMetricsData?.metrics || {
+    publishedTrips: 0,
+    draftTrips: 0,
+    cancelledTrips: 0,
+    upcomingTrips: 0,
+    completedTrips: 0,
+    occupancy: 0,
+    revenue: 0,
+  };
+
   const statCards = [
     {
       label: "Total Revenue",
-      value: formatCurrency(metrics.revenue),
-      sub: "Active tours & paid seats",
+      value: formatCurrency(agentMetricsData ? m.revenue : metrics.revenue),
+      sub: `Draft: ${m.draftTrips} | Cancelled: ${m.cancelledTrips}`,
       icon: IndianRupee,
       color: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/25",
     },
     {
-      label: "Total Travelers",
-      value: metrics.totalTravelers,
-      sub: `${metrics.occupancyRate}% Occupancy Rate`,
+      label: "Occupancy Rate",
+      value: `${agentMetricsData ? m.occupancy : (metrics.occupancyRate || 0)}%`,
+      sub: `Based on filled seats`,
       icon: Users,
       color: "text-primary bg-primary/10",
     },
     {
-      label: "Active & Upcoming",
-      value: `${metrics.activeTrips} / ${metrics.upcomingTrips}`,
-      sub: `Out of ${metrics.totalTrips} Total Trips`,
+      label: "Published Trips",
+      value: agentMetricsData ? m.publishedTrips : metrics.totalTrips,
+      sub: `Total hosting trips`,
       icon: Compass,
       color: "text-sky-500 bg-sky-50 dark:bg-sky-950/25",
     },
     {
-      label: "Pending Bookings",
-      value: metrics.pendingBookings,
-      sub: "Requires approval action",
+      label: "Upcoming & Completed",
+      value: `${m.upcomingTrips} / ${m.completedTrips}`,
+      sub: "Trip status metrics",
       icon: Clock,
-      color: metrics.pendingBookings > 0 
-        ? "text-amber-500 bg-amber-50 dark:bg-amber-950/25 animate-pulse"
-        : "text-slate-400 bg-slate-50 dark:bg-slate-850",
+      color: "text-amber-500 bg-amber-50 dark:bg-amber-950/25",
     },
   ];
 

@@ -184,6 +184,13 @@ export class BookingService {
       throw new Error("Trip not found");
     }
 
+    if (trip.bookingDeadline) {
+      const deadline = new Date(trip.bookingDeadline);
+      if (!isNaN(deadline.getTime()) && new Date() > deadline) {
+        throw new Error("Bookings closed for this trip");
+      }
+    }
+
     const totalTravellers = seats || travellers.length || 1;
 
     // 2. Validate seat availability

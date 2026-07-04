@@ -241,16 +241,42 @@ const agentTripSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      default: "published",
+      default: "draft",
     },
     publishStatus: {
       type: String,
-      default: "published",
+      default: "draft",
     },
     publishedAt: {
       type: Date,
-      default: Date.now,
+      default: null,
     },
+    activeStep: {
+      type: Number,
+      default: 1,
+    },
+    progressPercentage: {
+      type: Number,
+      default: 10,
+    },
+    customActivities: {
+      type: [String],
+      default: [],
+    },
+    customHotelAmenities: {
+      type: [String],
+      default: [],
+    },
+    customBusAmenities: {
+      type: [String],
+      default: [],
+    },
+    cancellationConfirmations: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        confirmedAt: { type: Date, default: Date.now }
+      }
+    ],
     boardingStatus: {
       type: String,
       default: "CLOSED",

@@ -43,6 +43,7 @@ import boardingRoutes from "./routes/boardingRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
+import masterRoutes from "./routes/masterRoutes.js";
 
 
 let dbConnected = true;
@@ -258,6 +259,7 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/agent", agentRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/master", masterRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/driver", driverRoutes);
 app.use("/api/boarding", boardingRoutes);

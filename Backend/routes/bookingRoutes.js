@@ -220,7 +220,12 @@ router.post("/", protect, async (req, res) => {
     });
   } catch (error) {
     console.error("[Create Booking] Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server Error processing trip booking" });
+    const status = [
+      "Bookings closed for this trip",
+      "Not enough available seats left on this trip",
+      "Trip not found"
+    ].includes(error.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message || "Server Error processing trip booking" });
   }
 });
 

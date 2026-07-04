@@ -81,6 +81,9 @@ export interface AgentTrip {
   // Publishing
   publishStatus?: string;
   status?: string;
+  progressPercentage?: number;
+  activeStep?: number;
+  bookingDeadline?: string;
   createdAt?: string;
   updatedAt?: string;
 }

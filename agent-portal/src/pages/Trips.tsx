@@ -13,7 +13,10 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { GlassCard, Button, Input, ImageUploadBox, Modal } from "../components/ui";
-import { getMyTrips, createTrip, updateTrip, deleteTrip, publishTrip } from "../services/tripService";
+import {
+  getMyTrips, createTrip, updateTrip, deleteTrip, publishTrip,
+  saveDraft, requestCancellation, getMasterData, createMasterEntry
+} from "../services/tripService";
 import { AgentTrip, ItineraryDay } from "../types";
 import { formatDate } from "../utils";
 
@@ -167,6 +170,10 @@ export const Trips: React.FC = () => {
   const [draftData, setDraftData] = useState<any>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [missingFieldsAlert, setMissingFieldsAlert] = useState<string[]>([]);
+  const [customBusType, setCustomBusType] = useState("");
+  const [customBusAmenity, setCustomBusAmenity] = useState("");
+  const [customHotelAmenity, setCustomHotelAmenity] = useState("");
+  const [customActivity, setCustomActivity] = useState("");
 
   const isProfileCompleted = !!agent?.profileCompleted;
 
@@ -174,6 +181,31 @@ export const Trips: React.FC = () => {
     queryKey: ["my-trips"],
     queryFn: getMyTrips,
   });
+
+  const { data: busTypesData } = useQuery({
+    queryKey: ["master-bus-types"],
+    queryFn: () => getMasterData("bus-types"),
+  });
+
+  const { data: activitiesData } = useQuery({
+    queryKey: ["master-activities"],
+    queryFn: () => getMasterData("activities"),
+  });
+
+  const { data: hotelAmenitiesData } = useQuery({
+    queryKey: ["master-hotel-amenities"],
+    queryFn: () => getMasterData("hotel-amenities"),
+  });
+
+  const { data: busAmenitiesData } = useQuery({
+    queryKey: ["master-bus-amenities"],
+    queryFn: () => getMasterData("bus-amenities"),
+  });
+
+  const busTypesList = busTypesData?.items?.map(i => i.name) || BUS_TYPES;
+  const activitiesList = activitiesData?.items?.map(i => i.name) || ACTIVITIES_OPTIONS;
+  const hotelAmenitiesList = hotelAmenitiesData?.items?.map(i => i.name) || HOTEL_AMENITIES_OPTIONS;
+  const busAmenitiesList = busAmenitiesData?.items?.map(i => i.name) || BUS_AMENITIES_OPTIONS;
 
   const {
     register,
@@ -364,6 +396,15 @@ export const Trips: React.FC = () => {
     },
   });
 
+  const saveDraftMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<AgentTrip> }) => saveDraft(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      setEditorOpen(false);
+      reset();
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: deleteTrip,
     onSuccess: (_, id) => {
@@ -532,6 +573,8 @@ export const Trips: React.FC = () => {
         : Math.max(0, Number(data.totalSeats) - Number(data.bookedSeats || 0)),
       discountPercentage: autoDiscount,
       saveAmount: autoSave,
+      activeStep: activeTab,
+      progressPercentage: activeTab * 10,
       ...(asDraft ? { status: "draft" } : {}),
     };
   };
@@ -1242,12 +1285,38 @@ export const Trips: React.FC = () => {
                           Bus Type
                           <span className="text-rose-500 font-extrabold ml-1.5 text-[14px] leading-none">*</span>
                         </label>
-                        <select
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500 transition-all"
-                          {...register("busType", { required: "Bus Type is required" })}
-                        >
-                          {BUS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                        <div className="flex gap-2">
+                          <select
+                            className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500 transition-all font-bold"
+                            {...register("busType", { required: "Bus Type is required" })}
+                          >
+                            {busTypesList.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="Add Custom"
+                            value={customBusType}
+                            onChange={(e) => setCustomBusType(e.target.value)}
+                            className="w-32 px-3 py-1 text-xs border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 outline-none font-bold"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={async () => {
+                              if (customBusType.trim()) {
+                                const name = customBusType.trim();
+                                const res = await createMasterEntry("bus-types", name);
+                                if (res.success) {
+                                  setValue("busType", name, { shouldValidate: true });
+                                  setCustomBusType("");
+                                  queryClient.invalidateQueries({ queryKey: ["master-bus-types"] });
+                                }
+                              }
+                            }}
+                          >
+                            +
+                          </Button>
+                        </div>
                       </div>
                       <Input
                         label="Vehicle Number *"
@@ -1260,8 +1329,8 @@ export const Trips: React.FC = () => {
                     {/* Bus amenities */}
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Bus Amenities</label>
-                      <div className="flex flex-wrap gap-2">
-                        {BUS_AMENITIES_OPTIONS.map(opt => {
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {busAmenitiesList.map(opt => {
                           const has = watchBusAmenities.includes(opt);
                           return (
                             <button
@@ -1278,6 +1347,32 @@ export const Trips: React.FC = () => {
                             </button>
                           );
                         })}
+                      </div>
+                      <div className="flex gap-2 max-w-sm">
+                        <input
+                          type="text"
+                          placeholder="New Bus Amenity (e.g. WiFi)"
+                          value={customBusAmenity}
+                          onChange={(e) => setCustomBusAmenity(e.target.value)}
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 outline-none font-bold"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={async () => {
+                            if (customBusAmenity.trim()) {
+                              const name = customBusAmenity.trim();
+                              const res = await createMasterEntry("bus-amenities", name);
+                              if (res.success) {
+                                toggleInList("busAmenities", name);
+                                setCustomBusAmenity("");
+                                queryClient.invalidateQueries({ queryKey: ["master-bus-amenities"] });
+                              }
+                            }
+                          }}
+                        >
+                          + Add
+                        </Button>
                       </div>
                     </div>
 
@@ -1386,8 +1481,8 @@ export const Trips: React.FC = () => {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Hotel Amenities</label>
-                      <div className="flex flex-wrap gap-2">
-                        {HOTEL_AMENITIES_OPTIONS.map(opt => {
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {hotelAmenitiesList.map(opt => {
                           const has = watchHotelAmenities.includes(opt);
                           return (
                             <button
@@ -1405,11 +1500,35 @@ export const Trips: React.FC = () => {
                           );
                         })}
                       </div>
+                      <div className="flex gap-2 max-w-sm">
+                        <input
+                          type="text"
+                          placeholder="New Hotel Amenity (e.g. Spa)"
+                          value={customHotelAmenity}
+                          onChange={(e) => setCustomHotelAmenity(e.target.value)}
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 outline-none font-bold"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={async () => {
+                            if (customHotelAmenity.trim()) {
+                              const name = customHotelAmenity.trim();
+                              const res = await createMasterEntry("hotel-amenities", name);
+                              if (res.success) {
+                                toggleInList("hotelAmenities", name);
+                                setCustomHotelAmenity("");
+                                queryClient.invalidateQueries({ queryKey: ["master-hotel-amenities"] });
+                              }
+                            }
+                          }}
+                        >
+                          + Add
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
-
-                {/* ── STEP 6: Meal Plan ── */}
                 {activeTab === 6 && (
                   <div className="space-y-5 animate-fade-in">
                     <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Meal Inclusions</h3>
@@ -1595,11 +1714,15 @@ export const Trips: React.FC = () => {
                 {/* ── STEP 8: Activities Selection ── */}
                 {activeTab === 8 && (
                   <div className="space-y-5 animate-fade-in">
-                    <h3 className="font-extrabold text-slate-800 dark:text-white text-base">🏂 Trip Activities</h3>
-                    <p className="text-slate-400 text-xs font-semibold">Select all major activities included in this travel package.</p>
-                    
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {ACTIVITIES_OPTIONS.map(act => {
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base">🏂 Trip Activities</h3>
+                        <p className="text-slate-400 text-xs font-semibold">Select all major activities included in this travel package.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                      {activitiesList.map(act => {
                         const isSelected = watchSelectedActivities.includes(act);
                         return (
                           <button
@@ -1617,6 +1740,33 @@ export const Trips: React.FC = () => {
                           </button>
                         );
                       })}
+                    </div>
+
+                    <div className="flex gap-2 max-w-sm pt-2 border-t border-slate-100 dark:border-slate-850">
+                      <input
+                        type="text"
+                        placeholder="Add Custom Activity (e.g. Ziplining)"
+                        value={customActivity}
+                        onChange={(e) => setCustomActivity(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 outline-none font-bold"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={async () => {
+                          if (customActivity.trim()) {
+                            const name = customActivity.trim();
+                            const res = await createMasterEntry("activities", name);
+                            if (res.success) {
+                              toggleInList("selectedActivities", name);
+                              setCustomActivity("");
+                              queryClient.invalidateQueries({ queryKey: ["master-activities"] });
+                            }
+                          }
+                        }}
+                      >
+                        + Add Activity
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -1733,13 +1883,13 @@ export const Trips: React.FC = () => {
                       onClick={() => {
                         const payload = buildFinalPayload(watch() as TripFormData, true);
                         if (editingTripId) {
-                          updateMutation.mutate({ id: editingTripId, data: payload as Partial<AgentTrip> });
+                          saveDraftMutation.mutate({ id: editingTripId, data: payload as Partial<AgentTrip> });
                         } else {
                           createMutation.mutate(payload as Partial<AgentTrip>);
                         }
                         localStorage.removeItem("traveloop_agent_trip_draft");
                       }}
-                      loading={createMutation.isPending || updateMutation.isPending}
+                      loading={createMutation.isPending || saveDraftMutation.isPending}
                     >
                       <Save className="w-4 h-4 mr-1.5" /> Save Draft
                     </Button>
@@ -1778,7 +1928,7 @@ export const Trips: React.FC = () => {
                     ) : (
                       <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                         <CheckCircle className="w-4 h-4 mr-1.5" />
-                        {editingTripId ? "Save & Publish" : "Publish Trip"}
+                        {editingTripId ? "Save Trip" : "Create Trip"}
                       </Button>
                     )}
                   </div>
@@ -1815,6 +1965,14 @@ export const Trips: React.FC = () => {
                 ) : (
                   <div className="w-full h-full bg-gradient-to-tr from-teal-400 to-emerald-500 flex items-center justify-center text-white text-3xl font-black">
                     🏖️
+                  </div>
+                )}
+                {/* DRAFT Overlay */}
+                {(!editingTripId || watch("status") === "draft") && (
+                  <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
+                    <span className="px-3 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black tracking-widest shadow-lg uppercase">
+                      Draft Preview
+                    </span>
                   </div>
                 )}
                 <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black text-slate-700 shadow flex items-center gap-1">
@@ -1912,10 +2070,17 @@ export const Trips: React.FC = () => {
                   {/* Cover */}
                   <div className="relative h-44 w-full bg-slate-100">
                     {trip.coverImage ? (
-                      <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
+                       <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-tr from-teal-400 to-emerald-500 flex items-center justify-center text-white font-bold text-3xl">
                         ✈️
+                      </div>
+                    )}
+                    {statusKey === "draft" && (
+                      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] flex items-center justify-center">
+                        <span className="px-3 py-1 rounded-full bg-amber-500 text-white text-[10px] font-black tracking-widest shadow-lg uppercase">
+                          DRAFT
+                        </span>
                       </div>
                     )}
                     <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black text-slate-700 shadow flex items-center gap-1.5">
@@ -1989,9 +2154,15 @@ export const Trips: React.FC = () => {
                           <Button
                             variant="primary"
                             size="sm"
+                            disabled={trip.progressPercentage !== undefined && trip.progressPercentage !== 100}
                             onClick={() => handlePublish(trip._id)}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white flex-1 font-bold text-xs py-2"
+                            className={`${
+                              trip.progressPercentage === undefined || trip.progressPercentage === 100
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                                : "bg-slate-200 text-slate-400 dark:bg-slate-800 cursor-not-allowed"
+                            } flex-1 font-bold text-xs py-2`}
                             loading={publishMutation.isPending}
+                            title={trip.progressPercentage === undefined || trip.progressPercentage === 100 ? "Publish Trip" : `Cannot publish. Trip progress is only ${trip.progressPercentage}%. Complete all steps first.`}
                           >
                             Publish
                           </Button>

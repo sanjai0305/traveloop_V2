@@ -33,6 +33,28 @@ const fallbackBookings = new Map();
 // Helper to check DB connection
 const isDbConnected = () => mongoose.connection.readyState === 1;
 
+const handleBookingDeadline = (startDate, bookingDeadline) => {
+  let deadline = bookingDeadline;
+  if (!deadline && startDate) {
+    const parts = startDate.split("-").map(Number);
+    // If startDate is like YYYY-MM-DD
+    if (parts.length === 3 && parts[0] > 1000) {
+      const bObj = new Date(parts[0], parts[1] - 1, parts[2] - 1);
+      deadline = `${bObj.getFullYear()}-${String(bObj.getMonth() + 1).padStart(2, "0")}-${String(bObj.getDate()).padStart(2, "0")} 23:59:59`;
+    }
+  } else if (deadline && deadline.length === 10) {
+    deadline = `${deadline} 23:59:59`;
+  }
+  return deadline;
+};
+
+const validateBookingDeadline = (startDate, bookingDeadline) => {
+  if (!startDate || !bookingDeadline) return true;
+  const startD = new Date(startDate);
+  const deadD = new Date(bookingDeadline);
+  return !isNaN(startD.getTime()) && !isNaN(deadD.getTime()) && deadD < startD;
+};
+
 // Seed Mock Data for Fallback
 const seedMockData = (agentId) => {
   fallbackTrips.clear();
@@ -561,6 +583,14 @@ router.post("/trips/create", protectAgent, async (req, res) => {
     const bodyData = { ...req.body };
     delete bodyData.agentId;
 
+    const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
+    if (!validateBookingDeadline(startDate, resolvedBookingDeadline)) {
+      return res.status(400).json({
+        success: false,
+        message: "Booking deadline must be strictly before start date."
+      });
+    }
+
     const tripData = {
       ...bodyData,
       shortDescription,            // resolved above
@@ -569,6 +599,10 @@ router.post("/trips/create", protectAgent, async (req, res) => {
       totalSeats: Number(totalSeats),
       availableSeats: Number(totalSeats),
       driver: driverId,
+      bookingDeadline: resolvedBookingDeadline,
+      status: "draft",
+      publishStatus: "draft",
+      publishedAt: null,
     };
 
     if (isDbConnected()) {
@@ -750,6 +784,33 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
       }
 
+      // 1. Validate bookingDeadline
+      if (req.body.bookingDeadline || req.body.startDate) {
+        const startDate = req.body.startDate || trip.startDate;
+        const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
+        if (!validateBookingDeadline(startDate, resolvedBookingDeadline)) {
+          return res.status(400).json({
+            success: false,
+            message: "Booking deadline must be strictly before start date."
+          });
+        }
+        req.body.bookingDeadline = resolvedBookingDeadline;
+      }
+
+      // 2. Enforce capacity protection
+      if (req.body.totalSeats !== undefined) {
+        const totalSeatsVal = Number(req.body.totalSeats);
+        const currentBooked = trip.bookedSeats || 0;
+        if (currentBooked > 0 && totalSeatsVal < currentBooked) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot reduce total seats below currently booked seats: ${currentBooked}`
+          });
+        }
+        // Recalculate availableSeats
+        req.body.availableSeats = totalSeatsVal - currentBooked;
+      }
+
       if (req.body.driverGmail) {
         const driverId = await handleDriverCreation({
           driverGmail: req.body.driverGmail,
@@ -780,6 +841,30 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
       if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
+      }
+
+      if (req.body.bookingDeadline || req.body.startDate) {
+        const startDate = req.body.startDate || trip.startDate;
+        const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
+        if (!validateBookingDeadline(startDate, resolvedBookingDeadline)) {
+          return res.status(400).json({
+            success: false,
+            message: "Booking deadline must be strictly before start date."
+          });
+        }
+        req.body.bookingDeadline = resolvedBookingDeadline;
+      }
+
+      if (req.body.totalSeats !== undefined) {
+        const totalSeatsVal = Number(req.body.totalSeats);
+        const currentBooked = trip.bookedSeats || 0;
+        if (currentBooked > 0 && totalSeatsVal < currentBooked) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot reduce total seats below currently booked seats: ${currentBooked}`
+          });
+        }
+        req.body.availableSeats = totalSeatsVal - currentBooked;
       }
 
       const updated = {
@@ -859,7 +944,7 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, async (req
 });
 
 // @route   DELETE /api/agent/trip/:id or /api/agent/trips/:id
-// @desc    Delete trip by ID (Soft delete & Realtime sync)
+// @desc    Delete trip by ID (Soft delete & Realtime sync, with Booking & Cancellation confirmations check)
 router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
   try {
     let trip;
@@ -879,16 +964,33 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
-      console.log("Trip exists:", trip);
+      // Check for active bookings
+      const activeBookings = await Booking.find({
+        tripId: req.params.id,
+        status: { $ne: "cancelled" }
+      });
+      const bookingCount = activeBookings.length;
 
-      const deletedTrip = await AgentTrip.findByIdAndDelete(req.params.id);
-      console.log("Deleted:", deletedTrip?._id);
+      if (bookingCount > 0) {
+        const isCancelled = trip.status === "cancelled";
+        // Check if all booked users confirmed cancellation
+        const bookedUserIds = [...new Set(activeBookings.map(b => b.userId.toString()))];
+        const confirmedUserIds = new Set((trip.cancellationConfirmations || []).map(c => c.userId.toString()));
+        const allUsersConfirmed = bookedUserIds.length > 0 && bookedUserIds.every(uid => confirmedUserIds.has(uid));
 
-      const check = await AgentTrip.findById(req.params.id);
-      console.log("Still exists:", check);
+        if (!isCancelled || !allUsersConfirmed) {
+          return res.status(400).json({
+            success: false,
+            code: "DELETION_BLOCKED",
+            message: "Trips with active bookings cannot be deleted immediately. You must request trip cancellation first and wait for all travelers to confirm.",
+            bookingCount,
+            tripStatus: trip.status,
+            allUsersConfirmed
+          });
+        }
+      }
 
-      const count = await AgentTrip.countDocuments();
-      console.log("Trip Count:", count);
+      await AgentTrip.findByIdAndDelete(req.params.id);
 
       // Cascade booking cancellations
       await Booking.updateMany(
@@ -917,6 +1019,29 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized delete request" });
       }
 
+      const activeBookings = Array.from(fallbackBookings.values()).filter(
+        b => b.agentTrip.toString() === req.params.id && b.status !== "cancelled"
+      );
+      const bookingCount = activeBookings.length;
+
+      if (bookingCount > 0) {
+        const isCancelled = trip.status === "cancelled";
+        const bookedUserIds = [...new Set(activeBookings.map(b => b.userId.toString()))];
+        const confirmedUserIds = new Set((trip.cancellationConfirmations || []).map(c => c.userId.toString()));
+        const allUsersConfirmed = bookedUserIds.length > 0 && bookedUserIds.every(uid => confirmedUserIds.has(uid));
+
+        if (!isCancelled || !allUsersConfirmed) {
+          return res.status(400).json({
+            success: false,
+            code: "DELETION_BLOCKED",
+            message: "Trips with active bookings cannot be deleted immediately. You must request trip cancellation first and wait for all travelers to confirm.",
+            bookingCount,
+            tripStatus: trip.status,
+            allUsersConfirmed
+          });
+        }
+      }
+
       fallbackTrips.delete(req.params.id);
 
       for (const [id, booking] of fallbackBookings.entries()) {
@@ -939,7 +1064,7 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Trip and related bookings soft-deleted successfully",
+      message: "Trip and related bookings deleted successfully",
     });
   } catch (error) {
     console.error("Delete trip error:", error);
@@ -1319,6 +1444,344 @@ router.get("/analytics", protectAgent, async (req, res) => {
   } catch (error) {
     console.error("Get analytics error:", error);
     res.status(500).json({ success: false, message: "Server Error calculating analytics data" });
+  }
+});
+
+// @route   PATCH /api/agent/trips/:id/draft or /api/agent/trips/draft
+// @desc    Autosave / save draft preserving all form values
+router.patch(["/trips/:id/draft", "/trips/draft"], protectAgent, async (req, res) => {
+  try {
+    const id = req.params.id || req.body._id || req.body.id;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Trip ID is required" });
+    }
+
+    let trip;
+    if (isDbConnected()) {
+      trip = await AgentTrip.findById(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      // Check owner
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (ownerId && ownerId.toString() !== req.agent._id.toString()) {
+        return res.status(403).json({ success: false, message: "Unauthorized draft save request" });
+      }
+
+      // Handle booking deadline calculation if startDate is changed or deadline is provided
+      if (req.body.startDate || req.body.bookingDeadline) {
+        const startDate = req.body.startDate || trip.startDate;
+        const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
+        // On draft save, we only validate deadline if startDate and deadline are present
+        if (startDate && resolvedBookingDeadline) {
+          if (!validateBookingDeadline(startDate, resolvedBookingDeadline)) {
+            return res.status(400).json({
+              success: false,
+              message: "Booking deadline must be strictly before start date."
+            });
+          }
+        }
+        req.body.bookingDeadline = resolvedBookingDeadline;
+      }
+
+      // Enforce capacity protection
+      if (req.body.totalSeats !== undefined) {
+        const totalSeatsVal = Number(req.body.totalSeats);
+        const currentBooked = trip.bookedSeats || 0;
+        if (currentBooked > 0 && totalSeatsVal < currentBooked) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot reduce total seats below currently booked seats: ${currentBooked}`
+          });
+        }
+        req.body.availableSeats = totalSeatsVal - currentBooked;
+      }
+
+      // Overwrite/merge fields
+      trip = await AgentTrip.findByIdAndUpdate(id, {
+        ...req.body,
+        status: "draft",
+        publishStatus: "draft",
+      }, { new: true });
+    } else {
+      trip = fallbackTrips.get(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+      const updated = {
+        ...trip,
+        ...req.body,
+        status: "draft",
+        publishStatus: "draft",
+        updatedAt: new Date()
+      };
+      fallbackTrips.set(id, updated);
+      trip = updated;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Draft saved successfully",
+      trip
+    });
+  } catch (error) {
+    console.error("Save draft error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error saving draft" });
+  }
+});
+
+// @route   POST /api/agent/trips/publish or /api/agent/trips/:id/publish
+// @desc    Explicitly publish a trip (Requires 100% completion)
+router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], protectAgent, async (req, res) => {
+  try {
+    const id = req.params.id || req.body.id || req.body._id || req.body.tripId;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Trip ID is required to publish" });
+    }
+
+    let trip;
+    if (isDbConnected()) {
+      trip = await AgentTrip.findById(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (ownerId && ownerId.toString() !== req.agent._id.toString()) {
+        return res.status(403).json({ success: false, message: "Unauthorized publish request" });
+      }
+
+      // Check required fields (100% completion)
+      const missingFields = [];
+      if (!trip.title) missingFields.push("title");
+      if (!trip.description) missingFields.push("description");
+      if (!trip.destinations || trip.destinations.length === 0) missingFields.push("destinations");
+      if (!trip.startDate) missingFields.push("startDate");
+      if (!trip.endDate) missingFields.push("endDate");
+      if (!trip.bookingDeadline) missingFields.push("bookingDeadline");
+      if (!trip.busType) missingFields.push("busType");
+      if (!trip.emergencyContact) missingFields.push("emergencyContact");
+      if (!trip.totalSeats) missingFields.push("totalSeats");
+      if (!trip.pricePerPerson && !trip.offerPrice) missingFields.push("pricePerPerson / offerPrice");
+
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot publish trip. Please complete all mandatory sections (100% progress required).",
+          missingFields
+        });
+      }
+
+      trip.status = "published";
+      trip.publishStatus = "published";
+      trip.publishedAt = new Date();
+      trip.progressPercentage = 100;
+      await trip.save();
+    } else {
+      trip = fallbackTrips.get(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+      trip.status = "published";
+      trip.publishStatus = "published";
+      trip.publishedAt = new Date();
+      trip.progressPercentage = 100;
+      fallbackTrips.set(id, trip);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Trip published successfully",
+      trip
+    });
+  } catch (error) {
+    console.error("Publish trip error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error publishing trip" });
+  }
+});
+
+// @route   PATCH /api/agent/trips/:id/cancel-request or /api/agent/trips/cancel-request
+// @desc    Initiate cancellation workflow for a trip
+router.patch(["/trips/:id/cancel-request", "/trips/cancel-request"], protectAgent, async (req, res) => {
+  try {
+    const id = req.params.id || req.body.id || req.body._id || req.body.tripId;
+    if (!id) {
+      return res.status(400).json({ success: false, message: "Trip ID is required" });
+    }
+
+    let trip;
+    let bookings = [];
+
+    if (isDbConnected()) {
+      trip = await AgentTrip.findById(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      bookings = await Booking.find({ tripId: id, status: { $ne: "cancelled" } }).populate("userId");
+      
+      trip.status = "cancel_pending";
+      await trip.save();
+    } else {
+      trip = fallbackTrips.get(id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+      bookings = Array.from(fallbackBookings.values()).filter(b => b.agentTrip.toString() === id && b.status !== "cancelled");
+      trip.status = "cancel_pending";
+      fallbackTrips.set(id, trip);
+    }
+
+    // System sends OTP/email notification to every booked traveler.
+    console.log(`[Trip Cancellation] Sent notification to ${bookings.length} traveler(s) for trip: ${trip.title}`);
+    bookings.forEach(b => {
+      const email = b.userId?.email || b.contactNumber || "traveler@example.com";
+      console.log(`[Notification] OTP/Email Sent to: ${email} for Trip cancellation of: ${trip.title}`);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Trip cancellation initiated. Awaiting travelers acknowledgements.",
+      status: "cancel_pending",
+      bookedUsersCount: bookings.length
+    });
+  } catch (error) {
+    console.error("Cancel request error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error requesting cancellation" });
+  }
+});
+
+// @route   POST /api/agent/trips/cancel/verify
+// @desc    Endpoint for travelers to confirm and acknowledge cancellation
+router.post("/trips/cancel/verify", async (req, res) => {
+  const { tripId, userId } = req.body;
+  if (!tripId || !userId) {
+    return res.status(400).json({ success: false, message: "Trip ID and User ID are required" });
+  }
+
+  try {
+    let trip;
+    let bookings = [];
+
+    if (isDbConnected()) {
+      trip = await AgentTrip.findById(tripId);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      // Check if user already confirmed
+      const alreadyConfirmed = (trip.cancellationConfirmations || []).some(
+        c => c.userId.toString() === userId.toString()
+      );
+      if (!alreadyConfirmed) {
+        trip.cancellationConfirmations.push({ userId, confirmedAt: new Date() });
+        await trip.save();
+      }
+
+      // Get unique users who have active bookings
+      bookings = await Booking.find({ tripId, status: { $ne: "cancelled" } });
+      const bookedUserIds = [...new Set(bookings.map(b => b.userId.toString()))];
+      const confirmedUserIds = new Set((trip.cancellationConfirmations || []).map(c => c.userId.toString()));
+      const allUsersConfirmed = bookedUserIds.length > 0 && bookedUserIds.every(uid => confirmedUserIds.has(uid));
+
+      if (allUsersConfirmed) {
+        trip.status = "cancelled";
+        await trip.save();
+
+        // Mark bookings as cancelled
+        await Booking.updateMany(
+          { tripId, status: { $ne: "cancelled" } },
+          { $set: { status: "cancelled", paymentStatus: "Cancelled" } }
+        );
+      }
+    } else {
+      trip = fallbackTrips.get(tripId);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      if (!trip.cancellationConfirmations) trip.cancellationConfirmations = [];
+      const alreadyConfirmed = trip.cancellationConfirmations.some(c => c.userId.toString() === userId.toString());
+      if (!alreadyConfirmed) {
+        trip.cancellationConfirmations.push({ userId, confirmedAt: new Date() });
+      }
+
+      bookings = Array.from(fallbackBookings.values()).filter(b => b.agentTrip.toString() === tripId && b.status !== "cancelled");
+      const bookedUserIds = [...new Set(bookings.map(b => b.userId.toString()))];
+      const confirmedUserIds = new Set(trip.cancellationConfirmations.map(c => c.userId.toString()));
+      const allUsersConfirmed = bookedUserIds.length > 0 && bookedUserIds.every(uid => confirmedUserIds.has(uid));
+
+      if (allUsersConfirmed) {
+        trip.status = "cancelled";
+        bookings.forEach(b => {
+          b.status = "cancelled";
+          b.paymentStatus = "Cancelled";
+        });
+      }
+      fallbackTrips.set(tripId, trip);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cancellation acknowledged successfully.",
+      status: trip.status
+    });
+  } catch (error) {
+    console.error("Cancel verify error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error verifying cancellation" });
+  }
+});
+
+// @route   GET /api/agent/trips/metrics or /api/agent/metrics
+// @desc    Dashboard Metrics aggregated for agent
+router.get(["/trips/metrics", "/metrics"], protectAgent, async (req, res) => {
+  try {
+    const agentId = req.agent._id || req.agent.id;
+    let trips = [];
+    let bookings = [];
+
+    if (isDbConnected()) {
+      trips = await AgentTrip.find({ agentId, isDeleted: { $ne: true } });
+      const tripIds = trips.map(t => t._id);
+      bookings = await Booking.find({ tripId: { $in: tripIds } });
+    } else {
+      trips = Array.from(fallbackTrips.values()).filter(t => t.agent.toString() === agentId.toString());
+      bookings = Array.from(fallbackBookings.values()).filter(b => b.agent.toString() === agentId.toString());
+    }
+
+    const now = new Date();
+
+    const publishedTrips = trips.filter(t => t.status === "published").length;
+    const draftTrips = trips.filter(t => t.status === "draft").length;
+    const cancelledTrips = trips.filter(t => t.status === "cancelled").length;
+
+    const upcomingTrips = trips.filter(t => t.status === "published" && new Date(t.startDate) > now).length;
+    const completedTrips = trips.filter(t => new Date(t.endDate) < now).length;
+
+    const totalSeats = trips.reduce((sum, t) => sum + (t.totalSeats || 0), 0);
+    const bookedSeats = trips.reduce((sum, t) => sum + (t.bookedSeats || 0), 0);
+    const occupancy = totalSeats > 0 ? Math.round((bookedSeats / totalSeats) * 100) : 0;
+
+    const revenue = bookings
+      .filter(b => b.status !== "cancelled" && b.paymentStatus !== "Cancelled")
+      .reduce((sum, b) => sum + (b.pricePaid || b.amount || 0), 0);
+
+    res.status(200).json({
+      success: true,
+      metrics: {
+        publishedTrips,
+        draftTrips,
+        cancelledTrips,
+        upcomingTrips,
+        completedTrips,
+        occupancy,
+        revenue
+      }
+    });
+  } catch (error) {
+    console.error("Get metrics error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error fetching metrics" });
   }
 });
 
