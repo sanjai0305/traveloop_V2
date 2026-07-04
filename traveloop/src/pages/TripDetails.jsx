@@ -324,25 +324,6 @@ export const TripDetails = () => {
         },
       };
 
-      if (options.key === "rzp_test_dummykeyid" || orderData.orderId.startsWith("order_mock_")) {
-        // Simulate checkout in test mode
-        setTimeout(async () => {
-          const confirmPayment = window.confirm(
-            `[Razorpay Local Sandbox]\n\nSimulate payment of ₹${orderData.amount} for "${trip.title}"?\n\n- Click OK to simulate Success\n- Click Cancel to simulate Cancel/Failure`
-          );
-          if (confirmPayment) {
-            options.handler({
-              razorpay_order_id: orderData.orderId,
-              razorpay_payment_id: `pay_mock_${Math.random().toString(36).substring(2, 11)}`,
-              razorpay_signature: "mock_signature",
-            });
-          } else {
-            options.modal.ondismiss();
-          }
-        }, 1000);
-        return;
-      }
-
       const rzp = new window.Razorpay(options);
       rzp.open();
     } catch (err) {
