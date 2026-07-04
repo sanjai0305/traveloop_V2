@@ -114,13 +114,8 @@ const MobileAppBar = () => {
     };
     socket.on("notification", handlePush);
 
-    // ── Fallback polling (5-minute interval) ─────────────────────────────
-    // Catches any missed events during reconnection windows
-    const interval = setInterval(fetchNotifications, 300000);
-
     return () => {
       socket.off("notification", handlePush);
-      clearInterval(interval);
     };
   }, [user]);
 
