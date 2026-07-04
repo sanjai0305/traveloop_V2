@@ -405,9 +405,10 @@ export const Trips: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
       setEditorOpen(false);
       reset();
+      const isPub = resData?.trip?.status === "published";
       if (!isSavingDraft) {
-        alert("Trip saved successfully");
-        if (resData?.trip) {
+        alert(isPub ? "Package updated successfully" : "Trip saved successfully");
+        if (resData?.trip && !isPub) {
           setPublishModalTrip(resData.trip);
           setPublishConfirmInput("");
         }
@@ -580,6 +581,9 @@ export const Trips: React.FC = () => {
       };
     });
 
+    const currentStatus = data.status || "draft";
+    const isPub = currentStatus === "published";
+
     return {
       ...data,
       itinerary: finalItinerary,
@@ -598,9 +602,9 @@ export const Trips: React.FC = () => {
       saveAmount: autoSave,
       activeStep: activeTab,
       progressPercentage: activeTab * 10,
-      status: "draft",
-      published: false,
-      visible: false,
+      status: isPub ? "published" : "draft",
+      published: isPub,
+      visible: isPub,
     };
   };
 
@@ -1952,10 +1956,33 @@ export const Trips: React.FC = () => {
                         Continue <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
                     ) : (
-                      <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
-                        <CheckCircle className="w-4 h-4 mr-1.5" />
-                        Save Trip
-                      </Button>
+                      (() => {
+                        const isPublished = watch("status") === "published";
+                        const buttonText = isPublished ? "Update Package" : "Save Trip";
+
+                        const handleClick = (e: React.MouseEvent) => {
+                          if (isPublished) {
+                            e.preventDefault();
+                            const confirmUpdate = window.confirm(
+                              "Update Published Package\n\nThis package is already published and visible to travelers. Updating it may affect existing bookings.\n\nAre you sure you want to continue?"
+                            );
+                            if (confirmUpdate) {
+                              handleSubmit(handleFormSubmit)();
+                            }
+                          }
+                        };
+
+                        return (
+                          <Button
+                            type={isPublished ? "button" : "submit"}
+                            onClick={handleClick}
+                            loading={createMutation.isPending || updateMutation.isPending}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1.5" />
+                            {buttonText}
+                          </Button>
+                        );
+                      })()
                     )}
                   </div>
                 </div>

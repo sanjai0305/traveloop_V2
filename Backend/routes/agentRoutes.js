@@ -785,7 +785,28 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
       }
 
-      // 1. Validate bookingDeadline
+      // 1. Check bookings count/capacity lock rules
+      const currentBooked = trip.bookedSeats || 0;
+      if (currentBooked > 0) {
+        // Disallow editing startDate, endDate
+        if (req.body.startDate !== undefined && req.body.startDate !== trip.startDate) {
+          return res.status(400).json({ success: false, message: "Cannot edit start date after bookings have been made." });
+        }
+        if (req.body.endDate !== undefined && req.body.endDate !== trip.endDate) {
+          return res.status(400).json({ success: false, message: "Cannot edit end date after bookings have been made." });
+        }
+        // Disallow deleting selected activities
+        if (req.body.selectedActivities !== undefined) {
+          const currentActs = trip.selectedActivities || [];
+          const newActs = req.body.selectedActivities || [];
+          const missingAct = currentActs.find(a => !newActs.includes(a));
+          if (missingAct) {
+            return res.status(400).json({ success: false, message: `Cannot remove booked activity: ${missingAct}` });
+          }
+        }
+      }
+
+      // 2. Validate bookingDeadline
       if (req.body.bookingDeadline || req.body.startDate) {
         const startDate = req.body.startDate || trip.startDate;
         const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
@@ -798,10 +819,9 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
         req.body.bookingDeadline = resolvedBookingDeadline;
       }
 
-      // 2. Enforce capacity protection
+      // 3. Enforce capacity protection
       if (req.body.totalSeats !== undefined) {
         const totalSeatsVal = Number(req.body.totalSeats);
-        const currentBooked = trip.bookedSeats || 0;
         if (currentBooked > 0 && totalSeatsVal < currentBooked) {
           return res.status(400).json({
             success: false,
