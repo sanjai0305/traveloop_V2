@@ -653,7 +653,8 @@ export const getSharedTrip = async (req, res) => {
       });
     }
 
-    const trip = { ...tripData, _id: tripData.id };
+    // Use toObject() so all schema fields (userId, collaborators, etc.) are own-enumerable
+    const trip = { ...tripData.toObject(), _id: tripData._id };
 
     // Populate owner
     if (trip.userId) {
@@ -1052,7 +1053,10 @@ export const inviteCollaborator = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const isOwner = (trip.owner?._id || trip.owner)?.toString() === req.user.id || (trip.user?._id || trip.user)?.toString() === req.user.id;
+    // Resolve owner from canonical userId field first, then legacy owner/user fields
+    const ownerId = (trip.userId || trip.owner?._id || trip.owner || trip.user)?.toString();
+    console.log("[Invite] ownerId:", ownerId, "| req.user.id:", req.user.id, "| match:", ownerId === req.user.id);
+    const isOwner = ownerId === req.user.id;
     if (!isOwner) {
       return res.status(403).json({ success: false, message: "Forbidden: Only the Owner can invite collaborators" });
     }
@@ -1123,7 +1127,8 @@ export const getCollaborators = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripData, _id: tripData.id };
+    // Use toObject() so all schema fields (userId, collaborators, etc.) are own-enumerable
+    const trip = { ...tripData.toObject(), _id: tripData._id };
 
     // Populate collaborators.userId
     if (trip.collaborators && trip.collaborators.length > 0) {
@@ -1167,7 +1172,10 @@ export const removeCollaborator = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const isOwner = (trip.owner?._id || trip.owner)?.toString() === req.user.id || (trip.user?._id || trip.user)?.toString() === req.user.id;
+    // Resolve owner from canonical userId field first, then legacy owner/user fields
+    const ownerId = (trip.userId || trip.owner?._id || trip.owner || trip.user)?.toString();
+    console.log("[RemoveCollaborator] ownerId:", ownerId, "| req.user.id:", req.user.id, "| match:", ownerId === req.user.id);
+    const isOwner = ownerId === req.user.id;
     if (!isOwner) {
       return res.status(403).json({ success: false, message: "Forbidden: Only the Owner can remove collaborators" });
     }
@@ -1204,7 +1212,10 @@ export const updateCollaboratorRole = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const isOwner = (trip.owner?._id || trip.owner)?.toString() === req.user.id || (trip.user?._id || trip.user)?.toString() === req.user.id;
+    // Resolve owner from canonical userId field first, then legacy owner/user fields
+    const ownerId = (trip.userId || trip.owner?._id || trip.owner || trip.user)?.toString();
+    console.log("[UpdateCollaboratorRole] ownerId:", ownerId, "| req.user.id:", req.user.id, "| match:", ownerId === req.user.id);
+    const isOwner = ownerId === req.user.id;
     if (!isOwner) {
       return res.status(403).json({ success: false, message: "Forbidden: Only the Owner can change permissions" });
     }
@@ -1326,7 +1337,8 @@ export const getActivityLogs = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripData, _id: tripData.id };
+    // Use toObject() so all schema fields (userId, collaborators, etc.) are own-enumerable
+    const trip = { ...tripData.toObject(), _id: tripData._id };
 
     if (!hasTripPermission(trip, req.user.id, "read")) {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view activity logs" });
