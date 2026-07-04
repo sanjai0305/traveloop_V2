@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 /**
  * scripts/pack-ota.js
- * 
- * Packages the React build output into an OTA bundle for Firebase Storage.
+ *
+ * Packages the React build output into OTA assets for GitHub Releases.
  *
  * Usage (run from traveloop/):
- *   node scripts/pack-ota.js [version]
- *
- * Examples:
- *   node scripts/pack-ota.js          # uses version from package.json
- *   node scripts/pack-ota.js 1.2.0    # explicit version
+ *   npm run ota:pack              # uses version from package.json
+ *   npm run ota:pack 1.2.0        # explicit version
+ *   npm run ota:release           # builds + packs in one step
  *
  * Output:
- *   ota-bundles/v1.2.0.zip    ← upload this to Firebase Storage at  updates/v1.2.0.zip
- *   ota-bundles/version.json  ← upload this to Firebase Storage at  updates/version.json
+ *   ota-bundles/
+ *     ├── web.zip          ← upload as GitHub Release asset
+ *     └── version.json     ← upload as GitHub Release asset
  *
- * After uploading, users who open the app will see the update dialog.
+ * GitHub Release structure required:
+ *   Tag:    v1.2.0
+ *   Assets: web.zip  +  version.json
+ *
+ * After publishing the release, users who open the app will see the update dialog.
  */
 
 import { execSync } from "child_process";
@@ -24,34 +27,36 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, "..");
+const rootDir   = path.resolve(__dirname, "..");
 
-// ── Resolve version ────────────────────────────────────────────────────────────
-const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"));
-const version = process.argv[2] || pkgJson.version || "1.0.0";
+// ── Resolve version ─────────────────────────────────────────────────────────
+const pkgJson  = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"));
+const version  = process.argv[2] || pkgJson.version || "1.0.0";
+const tagName  = `v${version}`;
 
-console.log(`\n📦  Packing OTA bundle  v${version}\n`);
+const GITHUB_REPO = "sanjai0305/traveloop_V2";
+const GITHUB_USER = GITHUB_REPO.split("/")[0];
+const GITHUB_NAME = GITHUB_REPO.split("/")[1];
 
-// ── Ensure dist/ exists ────────────────────────────────────────────────────────
+console.log(`\n📦  Packing OTA bundle  ${tagName}\n`);
+
+// ── Ensure dist/ exists ─────────────────────────────────────────────────────
 const distDir = path.join(rootDir, "dist");
 if (!fs.existsSync(distDir)) {
   console.error("❌  dist/ not found. Run  npm run build  first.");
   process.exit(1);
 }
 
-// ── Create output directory ────────────────────────────────────────────────────
+// ── Create output directory ─────────────────────────────────────────────────
 const outDir = path.join(rootDir, "ota-bundles");
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-// ── Zip dist/ ─────────────────────────────────────────────────────────────────
-const zipName = `v${version}.zip`;
-const zipPath = path.join(outDir, zipName);
-
+// ── Zip dist/ → web.zip ─────────────────────────────────────────────────────
+const zipPath = path.join(outDir, "web.zip");
 if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
-console.log(`🗜   Zipping dist/ → ota-bundles/${zipName} …`);
+console.log("🗜   Zipping dist/ → ota-bundles/web.zip …");
 
-// Use PowerShell Compress-Archive on Windows, zip on Unix
 const isWindows = process.platform === "win32";
 if (isWindows) {
   execSync(
@@ -62,42 +67,52 @@ if (isWindows) {
   execSync(`cd "${distDir}" && zip -r "${zipPath}" .`, { stdio: "inherit" });
 }
 
-console.log(`✅  Bundle created:  ota-bundles/${zipName}`);
+const zipSizeKB = Math.round(fs.statSync(zipPath).size / 1024);
+console.log(`✅  web.zip created  (${zipSizeKB} KB)`);
 
-// ── Generate version.json ──────────────────────────────────────────────────────
-// Update the bundleUrl to match your actual Firebase Storage project/bucket.
-const FIREBASE_PROJECT = process.env.VITE_FIREBASE_PROJECT_ID || "traveloop-version-2-83bd2";
-
+// ── Generate version.json ────────────────────────────────────────────────────
+//
+// The bundleUrl points to the release tag that will be created on GitHub.
+// Format matches what OTAService.getLatestVersion() expects.
+//
 const versionJson = {
   version,
-  bundleUrl: `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_PROJECT}.appspot.com/o/updates%2F${encodeURIComponent(zipName)}?alt=media`,
-  changelog: [
-    "UI and performance improvements",
-    "Bug fixes",
-  ],
-  publishedAt: new Date().toISOString(),
+  url: `https://github.com/${GITHUB_REPO}/releases/download/${tagName}/web.zip`,
+  mandatory: false,
+  releaseNotes: `Bug fixes and UI improvements in ${tagName}`,
 };
 
 const versionJsonPath = path.join(outDir, "version.json");
 fs.writeFileSync(versionJsonPath, JSON.stringify(versionJson, null, 2));
 
-console.log(`\n📄  version.json generated:`);
+console.log("\n📄  version.json:");
 console.log(JSON.stringify(versionJson, null, 2));
 
+// ── Print upload instructions ────────────────────────────────────────────────
 console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Next steps — Upload to Firebase Storage:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GitHub Release steps
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  1. Open Firebase Console → Storage
-  2. Navigate to / or create folder  updates/
-  3. Upload:
-       ota-bundles/${zipName}   →   updates/${zipName}
-       ota-bundles/version.json →   updates/version.json
+  Option A — GitHub CLI (recommended):
 
-  4. Make both files publicly readable (or use a signed URL)
+    gh release create ${tagName} \\
+      ota-bundles/web.zip \\
+      ota-bundles/version.json \\
+      --title "Traveloop ${tagName}" \\
+      --notes "Bug fixes and UI improvements"
 
-  5. Done! Users will see the update prompt on next app launch.
+  Option B — Web UI:
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    1. Go to  https://github.com/${GITHUB_REPO}/releases/new
+    2. Set Tag:   ${tagName}
+    3. Set Title: Traveloop ${tagName}
+    4. Upload:    ota-bundles/web.zip
+                  ota-bundles/version.json
+    5. Publish Release
+
+  After publishing:
+    Users will see the update dialog on next app launch. ✓
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);

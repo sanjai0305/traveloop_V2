@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ROUTES
@@ -21,8 +21,9 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 import OfflineIndicator from "./components/common/OfflineIndicator";
 
 // OTA UPDATE SYSTEM
-import OTAUpdateModal from "./components/common/OTAUpdateModal";
-import { notifyAppReady, checkForUpdate, CURRENT_VERSION } from "./utils/otaService";
+import UpdateModal from "./components/common/UpdateModal";
+import { useOTAUpdate } from "./hooks/useOTAUpdate";
+import OTAService from "./services/otaService";
 
 // LOGO IMAGE
 import logoImg from "./assets/logo.jpg";
@@ -76,41 +77,35 @@ const SplashScreen = () => {
 };
 
 const App = () => {
-  const [showSplash, setShowSplash]     = useState(true);
-  const [otaManifest, setOtaManifest]   = useState(null);
-  const [showOtaModal, setShowOtaModal] = useState(false);
+  const [showSplash, setShowSplash] = React.useState(true);
 
-  // ── OTA: notify Capacitor this bundle loaded correctly
-  // Must run immediately on startup — prevents auto-rollback
+  // ── OTA: hook manages all update state ────────────────────────────────────
+  const ota = useOTAUpdate();
+
+  // ── OTA Step 1: notify Capacitor immediately on startup ───────────────────
+  // Prevents the watchdog from auto-rolling back if we don't signal readiness
   useEffect(() => {
-    notifyAppReady();
+    OTAService.notifyAppReady();
   }, []);
 
+  // ── Splash timer ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 1800);
+    const timer = setTimeout(() => setShowSplash(false), 1800);
     return () => clearTimeout(timer);
   }, []);
 
-  // ── OTA: check for updates once splash screen is gone
+  // ── OTA Step 2: check for updates 2s after splash ─────────────────────────
   useEffect(() => {
     if (showSplash) return;
     let cancelled = false;
-    const runCheck = async () => {
-      const { available, manifest } = await checkForUpdate();
-      if (!cancelled && available && manifest) {
-        setOtaManifest(manifest);
-        setShowOtaModal(true);
-      }
-    };
-    // Small delay to let the app settle before showing the dialog
-    const t = setTimeout(runCheck, 2000);
+    const t = setTimeout(() => {
+      if (!cancelled) ota.checkNow();
+    }, 2000);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [showSplash]);
+  }, [showSplash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleFocusIn = (e) => {
@@ -150,13 +145,8 @@ const App = () => {
             <OfflineIndicator />
             <AppRoutes />
 
-            {/* OTA Update Modal — shown post-splash when a newer bundle exists */}
-            <OTAUpdateModal
-              isOpen={showOtaModal}
-              onClose={() => setShowOtaModal(false)}
-              currentVersion={CURRENT_VERSION}
-              manifest={otaManifest}
-            />
+            {/* OTA Update Modal — shown post-splash when a newer version exists on GitHub */}
+            <UpdateModal ota={ota} />
           </AuthProvider>
         </ToastProvider>
       </ThemeProvider>
