@@ -1,4 +1,4 @@
-package com.sanjai.traveloop;
+package com.sam.traveloop;
 
 import com.getcapacitor.BridgeActivity;
 
