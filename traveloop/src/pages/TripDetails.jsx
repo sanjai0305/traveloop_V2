@@ -263,6 +263,7 @@ export const TripDetails = () => {
         description: trip.title,
         order_id: orderData.orderId,
         handler: async (response) => {
+          console.log("[Razorpay Checkout Callback Response]:", response);
           setBookingStage("payment"); // Show loader during signature verification
           try {
             // 3. Verify Payment and Store Booking on Backend
