@@ -173,7 +173,9 @@ class ChatTransport {
   }
 
   isConnected() {
-    return this.connected && navigator.onLine;
+    // navigator.onLine is NOT used — it is unreliable in Capacitor Android.
+    // ChatTransport uses Firebase Realtime DB which manages its own connection state.
+    return this.connected;
   }
 
   // Listener registration

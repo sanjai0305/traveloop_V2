@@ -48,9 +48,16 @@ import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 let dbConnected = true;
 
 const allowedOrigins = [
+  // ── Local development ─────────────────────────────────────────────────
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:5174",
+  // ── Capacitor Android / iOS WebView origins ───────────────────────────
+  // The Android WebView sends one of these depending on Capacitor version:
+  "capacitor://localhost",
+  "https://localhost",
+  "http://localhost",
+  // ── Production web ───────────────────────────────────────────────────
   "https://traveloop-v2.vercel.app",
   "https://traveloop-v2-x92b.vercel.app",
   "https://traveloop-v2-yj2k.vercel.app",
@@ -157,25 +164,33 @@ const authLimiter = rateLimit({
    CORS CONFIGURATION
 ------------------------------ */
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no Origin header (curl, Postman, same-origin server calls)
     if (!origin) return callback(null, true);
-    
-    const isAllowed = allowedOrigins.includes(origin) || 
-                      origin.endsWith(".vercel.app") || 
-                      origin.startsWith("http://localhost:") || 
-                      origin.startsWith("http://127.0.0.1:");
-                      
-    if (isAllowed) {
-      return callback(null, true);
-    }
-    console.error("Blocked CORS Origin:", origin);
+
+    const isAllowed =
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") ||
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:") ||
+      // Capacitor WebView on Android emits one of these:
+      origin === "capacitor://localhost" ||
+      origin === "https://localhost" ||
+      origin === "http://localhost";
+
+    if (isAllowed) return callback(null, true);
+
+    console.error("[CORS] Blocked origin:", origin);
     return callback(null, false);
   },
-  credentials: true
-}));
+  credentials: true,
+};
 
-app.options(/.*/, cors());
+app.use(cors(corsOptions));
+
+// Pre-flight: use the same configured options (not a bare cors() which ignores allowedOrigins)
+app.options(/.*/, cors(corsOptions));
 
 /* -----------------------------
    SECURITY

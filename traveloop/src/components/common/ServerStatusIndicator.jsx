@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { socket } from "../../utils/socket";
-import { getApiUrl } from "../../utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 
 const ServerStatusIndicator = () => {
@@ -12,16 +11,32 @@ const ServerStatusIndicator = () => {
   const checkHealth = async () => {
     setChecking(true);
     try {
-      // Hitting absolute root URL of backend (import.meta.env.VITE_API_URL/ or https://traveloopv2.duckdns.org/)
-      const rootUrl = getApiUrl("").replace(/\/api\/?$/, "/");
-      const res = await window.fetch(rootUrl, { method: "GET" });
+      // Use the dedicated /api/health endpoint — it returns { success: true }
+      // Use originalFetch (bypasses the Axios interceptor) with a hard 8-second timeout
+      // so a CORS failure resolves quickly instead of hanging.
+      const healthUrl = `${import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org"}/api/health`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch(healthUrl, {
+        method: "GET",
+        signal: controller.signal,
+        // no-cors is NOT used — we want the real response; CORS must be fixed on the server
+        credentials: "include",
+      });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
-        const data = await res.json();
-        setBackendOnline(data.success === true && data.db === "connected");
+        const data = await res.json().catch(() => ({}));
+        // /api/health returns { success: true } — accept any ok response as healthy
+        setBackendOnline(data.success === true || res.status < 400);
       } else {
         setBackendOnline(false);
       }
-    } catch (_) {
+    } catch (err) {
+      // AbortError = timeout; TypeError = network/CORS block
+      console.warn("[ServerStatus] Health check failed:", err?.name, err?.message);
       setBackendOnline(false);
     } finally {
       setChecking(false);
@@ -32,8 +47,8 @@ const ServerStatusIndicator = () => {
     // Initial health check
     checkHealth();
 
-    // Check health every 30 seconds
-    const interval = setInterval(checkHealth, 30000);
+    // Check health every 10 seconds (fast recovery on reconnect)
+    const interval = setInterval(checkHealth, 10000);
 
     // Sync initial socket connection state
     setSocketConnected(socket.connected);

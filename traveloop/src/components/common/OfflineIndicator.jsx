@@ -1,62 +1,100 @@
-import React, { useState, useEffect } from "react";
+// src/components/common/OfflineIndicator.jsx
+//
+// Detects real connectivity by pinging the backend health endpoint.
+// navigator.onLine is NOT used — it is unreliable inside Capacitor Android
+// because the WebView always reports online even when CORS blocks all requests.
+
+import React, { useState, useEffect, useRef } from "react";
 import { WifiOff, Wifi, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const HEALTH_URL = `${import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org"}/api/health`;
+const POLL_INTERVAL_MS  = 10_000; // check every 10 seconds
+const TIMEOUT_MS        = 6_000;  // treat as offline if no response in 6 s
+
+async function pingBackend() {
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const res = await fetch(HEALTH_URL, {
+      method: "GET",
+      credentials: "include",
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 const OfflineIndicator = () => {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [showStatus, setShowStatus] = useState(false);
-  const [transitionToOnline, setTransitionToOnline] = useState(false);
+  const [isOnline, setIsOnline]               = useState(true);   // optimistic start
+  const [showBanner, setShowBanner]           = useState(false);
+  const [transitionToOnline, setTransition]   = useState(false);
+  const prevOnlineRef = useRef(true);
+  const intervalRef   = useRef(null);
+  const dismissTimer  = useRef(null);
+
+  const runCheck = async () => {
+    const online = await pingBackend();
+    const wasOnline = prevOnlineRef.current;
+    prevOnlineRef.current = online;
+
+    setIsOnline(online);
+
+    if (!online && wasOnline) {
+      // Just went offline — show banner
+      setTransition(false);
+      setShowBanner(true);
+    } else if (online && !wasOnline) {
+      // Just came back online — show "back online" banner briefly
+      setTransition(true);
+      setShowBanner(true);
+      clearTimeout(dismissTimer.current);
+      dismissTimer.current = setTimeout(() => {
+        setShowBanner(false);
+        setTransition(false);
+      }, 3000);
+    }
+    // If state unchanged, do nothing — no flicker
+  };
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      setTransitionToOnline(true);
-      setShowStatus(true);
-      const timer = setTimeout(() => {
-        setShowStatus(false);
-        setTransitionToOnline(false);
-      }, 3000);
-      return () => clearTimeout(timer);
-    };
+    // First check immediately (slight delay so app renders first)
+    const firstCheck = setTimeout(runCheck, 1500);
 
-    const handleOffline = () => {
-      setIsOnline(false);
-      setTransitionToOnline(false);
-      setShowStatus(true);
-    };
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    // Initial check: if offline on load, show it
-    if (!navigator.onLine) {
-      setShowStatus(true);
-    }
+    // Then poll on interval
+    intervalRef.current = setInterval(runCheck, POLL_INTERVAL_MS);
 
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      clearTimeout(firstCheck);
+      clearInterval(intervalRef.current);
+      clearTimeout(dismissTimer.current);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRetry = () => {
-    if (navigator.onLine) {
+  const handleRetry = async () => {
+    const online = await pingBackend();
+    if (online) {
+      prevOnlineRef.current = true;
       setIsOnline(true);
-      setTransitionToOnline(true);
-      setShowStatus(true);
-      setTimeout(() => {
-        setShowStatus(false);
-        setTransitionToOnline(false);
+      setTransition(true);
+      setShowBanner(true);
+      clearTimeout(dismissTimer.current);
+      dismissTimer.current = setTimeout(() => {
+        setShowBanner(false);
+        setTransition(false);
       }, 3000);
-    } else {
-      alert("Connection still unavailable. Please check your internet settings.");
     }
+    // If still offline, keep banner visible — no alert
   };
 
   return (
     <AnimatePresence>
-      {(!isOnline || showStatus) && (
+      {showBanner && (
         <motion.div
+          key="offline-banner"
           initial={{ y: -50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -50, opacity: 0 }}
@@ -86,7 +124,7 @@ const OfflineIndicator = () => {
                   Retry
                 </button>
                 <button
-                  onClick={() => setShowStatus(false)}
+                  onClick={() => setShowBanner(false)}
                   className="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white"
                   aria-label="Dismiss offline banner"
                 >
