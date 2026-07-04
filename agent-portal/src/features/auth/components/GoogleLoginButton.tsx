@@ -20,6 +20,9 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ onSuccess,
     provider.setCustomParameters({ prompt: "select_account" });
 
     try {
+      if (!auth) {
+        throw new Error('Firebase Auth not initialized');
+      }
       console.log("[Google Login] Initiating direct signInWithPopup on user click...");
       const result = await signInWithPopup(auth, provider);
       const firebaseUser = result.user;

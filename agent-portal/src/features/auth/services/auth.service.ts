@@ -8,6 +8,9 @@ const googleProvider = new GoogleAuthProvider();
 
 export const loginWithGoogleFirebase = async (): Promise<{ token: string; agent: Agent }> => {
   console.log("[Auth Service] Starting Firebase Google Sign-In popup...");
+  if (!auth) {
+    throw new Error('Firebase Auth not initialized');
+  }
   const result = await signInWithPopup(auth, googleProvider);
   const firebaseUser = result.user;
   const idToken = await firebaseUser.getIdToken(true);

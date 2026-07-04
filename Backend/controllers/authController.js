@@ -164,15 +164,18 @@ export const verifyOtp = async (req, res) => {
       phone,
       password,
       otpCode,
+      otp,
       city,
       country,
       additionalInfo,
     } = req.body;
 
-    if (!email || !otpCode || !password) {
+    const actualOtp = otpCode || otp;
+
+    if (!email || !actualOtp) {
       return res.status(400).json({
         success: false,
-        message: "Email, Password, and Verification Code are required.",
+        message: "Email and Verification Code are required.",
       });
     }
 
@@ -204,7 +207,7 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    if (otpData.otpCode !== otpCode) {
+    if (otpData.otpCode !== actualOtp) {
       return res.status(400).json({
         success: false,
         message: "Invalid verification code. Please check and try again.",
@@ -213,6 +216,20 @@ export const verifyOtp = async (req, res) => {
 
     // Mark OTP as verified
     await updateDoc(otpDocRef, { verified: true });
+
+    // If no password is provided, we just verify the OTP and return an otpToken
+    if (!password) {
+      const otpToken = jwt.sign(
+        { email: emailKey, otpVerified: true },
+        process.env.JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      return res.status(200).json({
+        success: true,
+        message: "Email verified successfully.",
+        otpToken,
+      });
+    }
 
     if (!firstName || !lastName || !phone) {
       return res.status(400).json({

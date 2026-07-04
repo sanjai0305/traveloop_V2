@@ -42,6 +42,9 @@ export const Auth: React.FC = () => {
 
     const handleRedirectResult = async () => {
       try {
+        if (!auth) {
+          throw new Error('Firebase Auth not initialized');
+        }
         console.log("[Google Auth] Checking for redirect sign-in result (once on mount)...");
         const result = await getRedirectResult(auth);
         if (result) {
