@@ -1,35 +1,49 @@
 {
   "project_info": {
-    "project_number": "176828060174",
-    "firebase_url": "https://traveloop-21307-default-rtdb.firebaseio.com",
-    "project_id": "traveloop-21307",
-    "storage_bucket": "traveloop-21307.firebasestorage.app"
+    "project_number": "740933888609",
+    "project_id": "traveloop-version-2-83bd2",
+    "storage_bucket": "traveloop-version-2-83bd2.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:176828060174:android:9d2c22b7e49cf877d6625f",
+        "mobilesdk_app_id": "1:740933888609:android:76bbb3779eee41a6205820",
         "android_client_info": {
-          "package_name": "com.sanjai.traveloop"
+          "package_name": "com.sam.traveloop"
         }
       },
       "oauth_client": [
         {
-          "client_id": "176828060174-fkphm10lp2gqqe0b58jdcaijs8lkcuus.apps.googleusercontent.com",
+          "client_id": "740933888609-foiremccopjpkp7nqgjvlb70g4n36bp1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sam.traveloop",
+            "certificate_hash": "ff649eb2d50f36bc70a3e4d7c35b4389f97e5de0"
+          }
+        },
+        {
+          "client_id": "740933888609-i01jkrhkjs48lc5r4dhj8iplt8baa003.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyD1spB6-nbWi6f7GnIssbkZpHqTy3Wut30"
+          "current_key": "AIzaSyAGel_exiDkDDCUmuHNPKAkWz8UjfFUd1k"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "176828060174-fkphm10lp2gqqe0b58jdcaijs8lkcuus.apps.googleusercontent.com",
+              "client_id": "740933888609-i01jkrhkjs48lc5r4dhj8iplt8baa003.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "740933888609-f4sp2ta5tme54fpesjperbsv0dq76236.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.traveloop.app"
+              }
             }
           ]
         }
