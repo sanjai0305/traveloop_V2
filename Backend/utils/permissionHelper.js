@@ -6,10 +6,11 @@ export const hasTripPermission = (trip, userId, action) => {
   }
 
   console.log(`[Trip Permission Check] Checking userId: ${userIdStr} for trip: ${trip._id} (Action: ${action})`);
-  console.log(`[Trip Permission Check] Trip owner field: ${trip.owner?._id || trip.owner} / user field: ${trip.user}`);
+  console.log(`[Trip Permission Check] trip.userId: ${trip.userId} / trip.owner: ${trip.owner?._id || trip.owner} / trip.user: ${trip.user}`);
   console.log(`[Trip Permission Check] Collaborators:`, JSON.stringify(trip.collaborators));
 
-  const ownerId = (trip.owner?._id || trip.owner || trip.user)?.toString();
+  // Resolve owner from canonical field first (userId), then fallback to legacy fields
+  const ownerId = (trip.userId || trip.owner?._id || trip.owner || trip.user)?.toString();
   const isOwner = ownerId === userIdStr;
 
   if (isOwner) {

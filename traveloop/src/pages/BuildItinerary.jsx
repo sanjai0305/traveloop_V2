@@ -70,6 +70,7 @@ const BuildItinerary = () => {
   const { user, isInitialized, firebaseUser } = useAuth();
 
   const [trip, setTrip] = useState(null);
+  const [tripError, setTripError] = useState(null); // null | { status: 403|404, message: string }
   const [loading, setLoading] = useState(true);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareLink, setShareLink] = useState("");
@@ -1106,12 +1107,21 @@ const BuildItinerary = () => {
 
       if (tripData.success) {
         setTrip(tripData.trip);
+        setTripError(null);
         if (tripData.trip.startDate && tripData.trip.endDate) {
           const d = Math.max(1, Math.ceil(
             (new Date(tripData.trip.endDate) - new Date(tripData.trip.startDate)) / 86400000
           ));
           setDays(d);
         }
+      } else {
+        // Distinguish 403 Forbidden from 404 Not Found for proper UX message
+        setTripError({
+          status: tripRes.status,
+          message: tripData.message || (tripRes.status === 403
+            ? "You do not have permission to access this trip"
+            : "Trip not found"),
+        });
       }
       if (itinData.success) {
         setItems(itinData.itinerary || []);
@@ -2023,11 +2033,17 @@ const BuildItinerary = () => {
   }
 
   if (!trip) {
+    const is403 = tripError?.status === 403;
     return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <span className="text-5xl">😕</span>
-          <p className="text-xl font-bold text-slate-700">Trip Not Found</p>
+          <span className="text-5xl">{is403 ? "🔒" : "😕"}</span>
+          <p className="text-xl font-bold text-slate-700">
+            {is403 ? "Access Denied" : "Trip Not Found"}
+          </p>
+          <p className="text-sm text-slate-400 text-center px-8">
+            {tripError?.message || "This trip could not be loaded."}
+          </p>
           <button onClick={() => navigate("/my-trips")} className="px-6 py-3 rounded-full text-white font-semibold" style={{ background: "linear-gradient(135deg,#14B8B5,#0D9488)" }}>
             Back to Trips
           </button>

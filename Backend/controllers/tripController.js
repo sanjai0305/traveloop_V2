@@ -265,7 +265,11 @@ export const getTripById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    const trip = { ...tripData, _id: tripData.id };
+    // IMPORTANT: Use .toObject() before spreading so all Mongoose schema fields
+    // become own-enumerable properties. A raw spread of a Mongoose Document
+    // loses userId, user, collaborators etc., causing hasTripPermission to always
+    // deny access with 403.
+    const trip = { ...tripData.toObject(), _id: tripData._id };
 
     // Populate owner
     if (trip.userId) {
