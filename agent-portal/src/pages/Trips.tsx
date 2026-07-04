@@ -174,6 +174,9 @@ export const Trips: React.FC = () => {
   const [customBusAmenity, setCustomBusAmenity] = useState("");
   const [customHotelAmenity, setCustomHotelAmenity] = useState("");
   const [customActivity, setCustomActivity] = useState("");
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [publishModalTrip, setPublishModalTrip] = useState<AgentTrip | null>(null);
+  const [publishConfirmInput, setPublishConfirmInput] = useState("");
 
   const isProfileCompleted = !!agent?.profileCompleted;
 
@@ -368,14 +371,23 @@ export const Trips: React.FC = () => {
 
   const createMutation = useMutation({
     mutationFn: createTrip,
-    onSuccess: () => {
+    onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
       setEditorOpen(false);
       reset();
       setSubmitError(null);
       setMissingFieldsAlert([]);
+      if (!isSavingDraft) {
+        alert("Trip saved successfully");
+        if (resData?.trip) {
+          setPublishModalTrip(resData.trip);
+          setPublishConfirmInput("");
+        }
+      }
+      setIsSavingDraft(false);
     },
     onError: (err: any) => {
+      setIsSavingDraft(false);
       // Display backend-returned missingFields if available
       const data = err?.response?.data;
       if (data?.missingFields?.length) {
@@ -389,11 +401,22 @@ export const Trips: React.FC = () => {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<AgentTrip> }) => updateTrip(id, data),
-    onSuccess: () => {
+    onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
       setEditorOpen(false);
       reset();
+      if (!isSavingDraft) {
+        alert("Trip saved successfully");
+        if (resData?.trip) {
+          setPublishModalTrip(resData.trip);
+          setPublishConfirmInput("");
+        }
+      }
+      setIsSavingDraft(false);
     },
+    onError: () => {
+      setIsSavingDraft(false);
+    }
   });
 
   const saveDraftMutation = useMutation({
@@ -575,7 +598,9 @@ export const Trips: React.FC = () => {
       saveAmount: autoSave,
       activeStep: activeTab,
       progressPercentage: activeTab * 10,
-      ...(asDraft ? { status: "draft" } : {}),
+      status: "draft",
+      published: false,
+      visible: false,
     };
   };
 
@@ -646,14 +671,14 @@ export const Trips: React.FC = () => {
     },
   });
 
-  const handlePublish = (id: string) => {
-    if (
-      confirm(
-        "Are you sure you want to publish this trip? It will instantly appear on Traveloop Explore for travelers to book!"
-      )
-    ) {
-      publishMutation.mutate(id);
+  const handlePublish = (trip: AgentTrip) => {
+    const missing = validateBeforeSubmit(trip as any);
+    if (trip.progressPercentage !== 100 || missing.length > 0) {
+      alert("Complete all required sections before publishing.");
+      return;
     }
+    setPublishModalTrip(trip);
+    setPublishConfirmInput("");
   };
 
   const toggleInList = (listName: "selectedActivities" | "busAmenities" | "hotelAmenities" | "mealType" | "includedServices" | "excludedServices", value: string) => {
@@ -1881,6 +1906,7 @@ export const Trips: React.FC = () => {
                       type="button"
                       variant="outline"
                       onClick={() => {
+                        setIsSavingDraft(true);
                         const payload = buildFinalPayload(watch() as TripFormData, true);
                         if (editingTripId) {
                           saveDraftMutation.mutate({ id: editingTripId, data: payload as Partial<AgentTrip> });
@@ -1928,7 +1954,7 @@ export const Trips: React.FC = () => {
                     ) : (
                       <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
                         <CheckCircle className="w-4 h-4 mr-1.5" />
-                        {editingTripId ? "Save Trip" : "Create Trip"}
+                        Save Trip
                       </Button>
                     )}
                   </div>
@@ -2056,11 +2082,13 @@ export const Trips: React.FC = () => {
             {trips.map((trip: AgentTrip & TripFormData) => {
               const hasSaving = trip.originalPrice && trip.offerPrice && trip.originalPrice > trip.offerPrice;
               const publishBadge = {
-                draft: { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-500", label: "Draft" },
-                pending: { bg: "bg-amber-50 dark:bg-amber-955/20", text: "text-amber-600", label: "Pending" },
-                published: { bg: "bg-emerald-50 dark:bg-emerald-955/20", text: "text-emerald-600", label: "Published" },
-                closed: { bg: "bg-rose-50 dark:bg-rose-955/20", text: "text-rose-600", label: "Closed" },
-                completed: { bg: "bg-blue-50 dark:bg-blue-955/20", text: "text-blue-600", label: "Completed" },
+                draft: { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-500", label: "DRAFT" },
+                pending: { bg: "bg-amber-50 dark:bg-amber-955/20", text: "text-amber-600", label: "PENDING" },
+                published: { bg: "bg-emerald-50 dark:bg-emerald-955/20", text: "text-emerald-600", label: "PUBLISHED" },
+                closed: { bg: "bg-rose-50 dark:bg-rose-955/20", text: "text-rose-600", label: "CLOSED" },
+                completed: { bg: "bg-blue-50 dark:bg-blue-955/20", text: "text-blue-600", label: "COMPLETED" },
+                cancelled: { bg: "bg-rose-50 dark:bg-rose-955/20", text: "text-rose-600", label: "CANCELLED" },
+                canceled: { bg: "bg-rose-50 dark:bg-rose-955/20", text: "text-rose-600", label: "CANCELLED" },
               };
               const statusKey = trip.status || trip.publishStatus || "draft";
               const status = publishBadge[(statusKey as keyof typeof publishBadge)] || publishBadge.draft;
@@ -2155,7 +2183,7 @@ export const Trips: React.FC = () => {
                             variant="primary"
                             size="sm"
                             disabled={trip.progressPercentage !== undefined && trip.progressPercentage !== 100}
-                            onClick={() => handlePublish(trip._id)}
+                            onClick={() => handlePublish(trip as AgentTrip)}
                             className={`${
                               trip.progressPercentage === undefined || trip.progressPercentage === 100
                                 ? "bg-emerald-500 hover:bg-emerald-600 text-white"
@@ -2193,6 +2221,86 @@ export const Trips: React.FC = () => {
               <p className="text-xs text-slate-500">{watch("description")}</p>
             </div>
             <Button className="w-full" onClick={() => setShowPreviewModal(false)}>Close Preview</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Publish Confirmation Modal */}
+      {publishModalTrip && (
+        <Modal
+          isOpen={!!publishModalTrip}
+          onClose={() => {
+            setPublishModalTrip(null);
+            setPublishConfirmInput("");
+          }}
+          title="Publish Trip"
+        >
+          <div className="p-6 space-y-4">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400 block uppercase">You are about to publish:</span>
+              <h3 className="text-lg font-black text-slate-800 dark:text-white">{publishModalTrip.title}</h3>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs">
+              <div>
+                <span className="text-slate-400 block uppercase font-bold text-[10px]">Duration:</span>
+                <span className="font-extrabold text-slate-700 dark:text-slate-200">{publishModalTrip.duration || "1 Day / 0 Nights"}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block uppercase font-bold text-[10px]">Seats:</span>
+                <span className="font-extrabold text-slate-700 dark:text-slate-200">{publishModalTrip.totalSeats} Slots</span>
+              </div>
+              <div className="col-span-2 border-t border-slate-100 dark:border-slate-800 pt-2 mt-1">
+                <span className="text-slate-400 block uppercase font-bold text-[10px]">Offer Price:</span>
+                <span className="font-black text-teal-600 dark:text-teal-400 text-sm">₹{(publishModalTrip.offerPrice || publishModalTrip.pricePerPerson || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 font-semibold leading-relaxed">
+              Published trips become visible to travelers on the explore board and can accept payments.
+            </p>
+
+            <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                Type <span className="text-rose-500 font-black">PUBLISH</span> to continue
+              </label>
+              <input
+                type="text"
+                placeholder="Type PUBLISH"
+                value={publishConfirmInput}
+                onChange={(e) => setPublishConfirmInput(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500 transition-all font-bold"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setPublishModalTrip(null);
+                  setPublishConfirmInput("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
+                disabled={publishConfirmInput !== "PUBLISH"}
+                loading={publishMutation.isPending}
+                onClick={async () => {
+                  if (publishConfirmInput === "PUBLISH") {
+                    await publishMutation.mutateAsync(publishModalTrip._id);
+                    setPublishModalTrip(null);
+                    setPublishConfirmInput("");
+                    alert("Trip published successfully!");
+                  }
+                }}
+              >
+                Publish Trip
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

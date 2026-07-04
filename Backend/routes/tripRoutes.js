@@ -40,7 +40,8 @@ router.get("/published", async (req, res) => {
   try {
     const data = await AgentTrip.find({
       isDeleted: { $ne: true },
-      $or: [{ status: "published" }, { publishStatus: "published" }]
+      published: true,
+      status: "published"
     }).populate("agentId", "companyName email").sort({ createdAt: -1 });
 
     const now = new Date();
@@ -62,14 +63,11 @@ router.get("/published", async (req, res) => {
         return mapped;
       })
       .filter(t => {
-        if (t.bookingDeadline) {
-          const deadline = new Date(t.bookingDeadline);
-          if (!isNaN(deadline.getTime()) && deadline < now) return false;
-        }
-        if (t.startDate) {
-          const start = new Date(t.startDate);
-          if (!isNaN(start.getTime()) && start < now) return false;
-        }
+        if (!t.bookingDeadline || !t.startDate) return false;
+        const deadline = new Date(t.bookingDeadline);
+        const start = new Date(t.startDate);
+        if (isNaN(deadline.getTime()) || deadline <= now) return false;
+        if (isNaN(start.getTime()) || start <= now) return false;
         return true;
       });
 

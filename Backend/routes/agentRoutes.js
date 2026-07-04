@@ -1575,6 +1575,8 @@ router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], prote
 
       trip.status = "published";
       trip.publishStatus = "published";
+      trip.published = true;
+      trip.visible = true;
       trip.publishedAt = new Date();
       trip.progressPercentage = 100;
       await trip.save();
@@ -1585,6 +1587,8 @@ router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], prote
       }
       trip.status = "published";
       trip.publishStatus = "published";
+      trip.published = true;
+      trip.visible = true;
       trip.publishedAt = new Date();
       trip.progressPercentage = 100;
       fallbackTrips.set(id, trip);

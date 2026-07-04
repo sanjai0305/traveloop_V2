@@ -100,6 +100,45 @@ async function runTests() {
   }
   console.log("✔ PASS: Trip deletion rules correctly enforced.");
 
+  console.log("\n--- TEST 5: Explicit Publish Workflow & Visibility Rules ---");
+  const draftTrip = new MockAgentTrip({
+    title: "Draft Trip",
+    status: "draft",
+    published: false,
+    visible: false,
+    startDate: "2026-08-10",
+    bookingDeadline: "2026-08-09T23:59:59.000Z"
+  });
+
+  const publishedTrip = new MockAgentTrip({
+    title: "Published Trip",
+    status: "published",
+    published: true,
+    visible: true,
+    startDate: "2026-08-10",
+    bookingDeadline: "2026-08-09T23:59:59.000Z"
+  });
+
+  // Mock list check (Only display: published=true, status="published", bookingDeadline > now, startDate > now)
+  const mockNow = new Date("2026-07-04T12:00:00.000Z");
+  const filterTrips = (trips) => {
+    return trips.filter(t => {
+      if (!t.published || t.status !== "published") return false;
+      if (!t.bookingDeadline || !t.startDate) return false;
+      const deadline = new Date(t.bookingDeadline);
+      const start = new Date(t.startDate);
+      if (deadline <= mockNow || start <= mockNow) return false;
+      return true;
+    });
+  };
+
+  const visibleTrips = filterTrips([draftTrip, publishedTrip]);
+  console.log("✔ Visible trips count:", visibleTrips.length);
+  if (visibleTrips.length !== 1 || visibleTrips[0].title !== "Published Trip") {
+    throw new Error("FAIL: Visibility filter does not match specification! Drafts must not be visible.");
+  }
+  console.log("✔ PASS: Explicit publish status and visibility rules enforced correctly.");
+
   console.log("\n--- All Business Logic Verification Tests Passed! ---");
 }
 

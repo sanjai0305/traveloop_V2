@@ -247,6 +247,14 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "draft",
     },
+    published: {
+      type: Boolean,
+      default: false,
+    },
+    visible: {
+      type: Boolean,
+      default: false,
+    },
     publishedAt: {
       type: Date,
       default: null,
