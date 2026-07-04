@@ -31,9 +31,10 @@ const DEST_EMOJIS = {
   Maldives: "🐚", Switzerland: "🏔️", Dubai: "🌆",
   Kerala: "🌿", Manali: "❄️", Rajasthan: "🏰", default: "✈️",
 };
-const getEmoji = (dest = "") => {
+const getEmoji = (dest) => {
+  const destStr = typeof dest === "string" ? dest : "";
   for (const key of Object.keys(DEST_EMOJIS)) {
-    if (key !== "default" && dest.toLowerCase().includes(key.toLowerCase()))
+    if (key !== "default" && destStr.toLowerCase().includes(key.toLowerCase()))
       return DEST_EMOJIS[key];
   }
   return DEST_EMOJIS.default;
@@ -461,7 +462,7 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
     { icon: Compass,    label: "Activities", path: `/activities/${trip._id}`,        color: "text-blue-600",   bg: "bg-blue-50" },
   ];
 
-  const isShared  = trip.collaborators && trip.collaborators.some(c => c.acceptedAt !== null);
+  const isShared  = Array.isArray(trip.collaborators) && trip.collaborators.some(c => c && c.acceptedAt !== null);
   const userRole  = trip.role || "owner";
   const badgeText = isShared
     ? `Shared • ${userRole.charAt(0).toUpperCase() + userRole.slice(1)}`
@@ -740,7 +741,8 @@ const MyTrips = () => {
   const filterBooked = (bookings) => bookings.filter(b => {
     if (!b) return false;
     const trip = b.agentTrip || {};
-    const dest = (trip.destinations || [])[0] || "";
+    const rawDest = (trip.destinations || [])[0] || "";
+    const dest = typeof rawDest === "string" ? rawDest : (rawDest.name || "");
     const matchSearch =
       (trip.title || "").toLowerCase().includes(search.toLowerCase()) ||
       dest.toLowerCase().includes(search.toLowerCase()) ||
