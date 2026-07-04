@@ -1,5 +1,16 @@
 import Notification from "../models/Notification.js";
 
+// Socket.IO instance injected at server startup via setIo()
+let _io = null;
+export const setIo = (io) => { _io = io; };
+
+/** Emit a notification to the user's personal socket room */
+const pushToSocket = (userId, notification) => {
+  if (_io && userId) {
+    _io.to(`user_${userId.toString()}`).emit("notification", notification);
+  }
+};
+
 // GET ALL NOTIFICATIONS
 export const getNotifications = async (req, res) => {
   try {
@@ -119,12 +130,20 @@ export const triggerNotification = async (userId, title, message, type = "info",
 
     if (existing) return;
 
-    await Notification.create({
+    const created = await Notification.create({
       userId,
       title,
       message,
       type,
       tripId: tripId || null
+    });
+
+    // Push in real-time via Socket.IO — eliminates need for client polling
+    pushToSocket(userId, {
+      ...created.toObject(),
+      _id: created._id,
+      user: created.userId,
+      trip: created.tripId
     });
   } catch (err) {
     console.error("Failed to trigger notification:", err);

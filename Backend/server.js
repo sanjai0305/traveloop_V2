@@ -21,6 +21,7 @@ import itineraryRoutes from "./routes/itineraryRoutes.js";
 import checklistRoutes from "./routes/checklistRoutes.js";
 import notesRoutes from "./routes/notesRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import { setIo as setNotificationIo } from "./controllers/notificationController.js";
 import weatherRoutes from "./routes/weatherRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import journalRoutes from "./routes/journalRoutes.js";
@@ -87,12 +88,23 @@ const io = new Server(server, {
   }
 });
 
+// Inject io into notification controller for real-time push delivery
+setNotificationIo(io);
+
 io.on("connection", (socket) => {
   console.log(`[Socket.io] Client connected: ${socket.id}`);
   
   socket.on("join_room", (room) => {
     socket.join(room);
     console.log(`[Socket.io] Client ${socket.id} joined room: ${room}`);
+  });
+
+  // Allow authenticated users to subscribe to their personal notification room
+  socket.on("join_user_room", (userId) => {
+    if (userId) {
+      socket.join(`user_${userId}`);
+      console.log(`[Socket.io] Client ${socket.id} joined user room: user_${userId}`);
+    }
   });
 
   socket.on("trip_deleted", (tripId) => {

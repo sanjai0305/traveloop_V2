@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { getApiUrl } from "../../utils/api";
+import socket from "../../utils/socket";
 import BottomSheet from "./BottomSheet";
 
 import Avatar from "../common/Avatar";
@@ -95,11 +96,33 @@ const MobileAppBar = () => {
   };
 
   useEffect(() => {
+    // Initial load
     fetchNotifications();
-    // Poll for notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // ── Socket.IO real-time push ──────────────────────────────────────────
+    // Join the authenticated user's personal room so backend can push directly
+    if (user?.id || user?._id) {
+      socket.emit("join_user_room", user.id || user._id);
+    }
+
+    // Prepend incoming notifications without any API call
+    const handlePush = (notification) => {
+      setNotifications(prev => {
+        if (prev.some(n => n._id === notification._id)) return prev;
+        return [notification, ...prev];
+      });
+    };
+    socket.on("notification", handlePush);
+
+    // ── Fallback polling (5-minute interval) ─────────────────────────────
+    // Catches any missed events during reconnection windows
+    const interval = setInterval(fetchNotifications, 300000);
+
+    return () => {
+      socket.off("notification", handlePush);
+      clearInterval(interval);
+    };
+  }, [user]);
 
   const handleMarkAsRead = async (id, e) => {
     if (e) e.stopPropagation();
