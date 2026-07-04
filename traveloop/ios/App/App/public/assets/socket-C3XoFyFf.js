@@ -1,1 +1,0 @@
-import{s as e}from"./vendor-ClhMuW6c.js";import{t}from"./api-DsKcm3hZ.js";var n=t(``).replace(/\/api\/?$/,``);console.log(`[Socket.io] Connecting Traveler App to:`,n);var r=e(n,{autoConnect:!0,reconnection:!0,reconnectionAttempts:1/0,reconnectionDelay:1e3,reconnectionDelayMax:5e3,transports:[`websocket`,`polling`]});export{r as t};
