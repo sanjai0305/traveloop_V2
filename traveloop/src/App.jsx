@@ -20,6 +20,10 @@ import { ThemeProvider } from "./context/ThemeContext";
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import OfflineIndicator from "./components/common/OfflineIndicator";
 
+// OTA UPDATE SYSTEM
+import OTAUpdateModal from "./components/common/OTAUpdateModal";
+import { notifyAppReady, checkForUpdate, CURRENT_VERSION } from "./utils/otaService";
+
 // LOGO IMAGE
 import logoImg from "./assets/logo.jpg";
 
@@ -72,7 +76,15 @@ const SplashScreen = () => {
 };
 
 const App = () => {
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash]     = useState(true);
+  const [otaManifest, setOtaManifest]   = useState(null);
+  const [showOtaModal, setShowOtaModal] = useState(false);
+
+  // ── OTA: notify Capacitor this bundle loaded correctly
+  // Must run immediately on startup — prevents auto-rollback
+  useEffect(() => {
+    notifyAppReady();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -80,6 +92,25 @@ const App = () => {
     }, 1800);
     return () => clearTimeout(timer);
   }, []);
+
+  // ── OTA: check for updates once splash screen is gone
+  useEffect(() => {
+    if (showSplash) return;
+    let cancelled = false;
+    const runCheck = async () => {
+      const { available, manifest } = await checkForUpdate();
+      if (!cancelled && available && manifest) {
+        setOtaManifest(manifest);
+        setShowOtaModal(true);
+      }
+    };
+    // Small delay to let the app settle before showing the dialog
+    const t = setTimeout(runCheck, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [showSplash]);
 
   useEffect(() => {
     const handleFocusIn = (e) => {
@@ -118,6 +149,14 @@ const App = () => {
             </AnimatePresence>
             <OfflineIndicator />
             <AppRoutes />
+
+            {/* OTA Update Modal — shown post-splash when a newer bundle exists */}
+            <OTAUpdateModal
+              isOpen={showOtaModal}
+              onClose={() => setShowOtaModal(false)}
+              currentVersion={CURRENT_VERSION}
+              manifest={otaManifest}
+            />
           </AuthProvider>
         </ToastProvider>
       </ThemeProvider>
