@@ -20,7 +20,9 @@ export const TripDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const isDeadlinePassed = trip && trip.bookingDeadline ? new Date() > new Date(trip.bookingDeadline) : false;
+  const isDeadlinePassed = trip
+    ? (trip.status === "closed" || (trip.bookingDeadline ? new Date() > new Date(trip.bookingDeadline) : false))
+    : false;
   const bookingDeadlineFormatted = trip && trip.bookingDeadline ? new Date(trip.bookingDeadline).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "2-digit",
