@@ -267,6 +267,7 @@ export const TripDetails = () => {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
+                bookingId: bookingDetails?.bookingId,
                 bookingPayload: {
                   tripId: bookingDetails.tripId,
                   maleCount: bookingDetails.maleCount,

@@ -44,6 +44,6 @@ jobs:
             cd /home/ubuntu/traveloop_V2/Backend
             git pull origin main
             npm install
-            pm2 restart traveloop-backend || pm2 start server.js --name traveloop-backend
+            pm2 restart traveloop-backend --update-env || pm2 start server.js --name traveloop-backend --update-env
             pm2 save
             echo "=== Deployment Finished Successfully ==="

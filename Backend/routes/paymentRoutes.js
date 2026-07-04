@@ -56,19 +56,21 @@ router.post("/create-order", protect, async (req, res) => {
       receipt: `trip_${tripId}_${Date.now()}`,
     };
 
+    console.log("NODE_ENV:", process.env.NODE_ENV);
+    console.log("KEY:", process.env.RAZORPAY_KEY_ID);
+    console.log("SECRET LENGTH:", process.env.RAZORPAY_KEY_SECRET?.length);
+
     let order;
     try {
       const instance = getRazorpayInstance();
       order = await instance.orders.create(options);
     } catch (apiError) {
-      if (process.env.NODE_ENV === "production") {
-        console.error("[Razorpay Create Order] API call failed in production:", apiError);
-        throw apiError;
-      }
-      console.warn("[Razorpay Create Order] API call failed. Falling back to mock order ID. Reason:", apiError.message || apiError);
-      order = {
-        id: `order_mock_${Math.random().toString(36).substring(2, 11)}`,
-      };
+      console.error("[Razorpay Create Order] API call failed.");
+      console.dir(apiError, { depth: null });
+      return res.status(500).json({
+        success: false,
+        message: "Unable to create Razorpay order"
+      });
     }
 
     res.status(200).json({
