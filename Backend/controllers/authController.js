@@ -380,11 +380,27 @@ export const registerUser = async (req, res) => {
         const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email.trim().toLowerCase(), password);
         uid = userCredential.user.uid;
       } catch (fbErr) {
-        console.error("Firebase registration failed:", fbErr);
-        return res.status(400).json({
-          success: false,
-          message: fbErr.message || "Failed to create Firebase Auth account.",
-        });
+        // If the email is already in Firebase but missing in MongoDB, recover it!
+        if (fbErr.code === "auth/email-already-in-use") {
+          try {
+            console.log(`[Orphan Recovery] Email "${email}" already exists in Firebase Auth but missing in MongoDB. Recovering Firebase UID...`);
+            const fbUser = await admin.auth().getUserByEmail(email.trim().toLowerCase());
+            uid = fbUser.uid;
+            console.log(`[Orphan Recovery] Successfully recovered UID: ${uid}`);
+          } catch (adminErr) {
+            console.error("[Orphan Recovery Failed] Firebase admin user lookup failed:", adminErr);
+            return res.status(400).json({
+              success: false,
+              message: fbErr.message || "Failed to create Firebase Auth account.",
+            });
+          }
+        } else {
+          console.error("Firebase registration failed:", fbErr);
+          return res.status(400).json({
+            success: false,
+            message: fbErr.message || "Failed to create Firebase Auth account.",
+          });
+        }
       }
     }
 

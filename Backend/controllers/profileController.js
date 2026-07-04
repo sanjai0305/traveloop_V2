@@ -4,6 +4,13 @@ import Itinerary from "../models/Itinerary.js";
 import Checklist from "../models/Checklist.js";
 import Note from "../models/Note.js";
 import Notification from "../models/Notification.js";
+import Booking from "../models/Booking.js";
+import Payment from "../models/Payment.js";
+import Budget from "../models/Budget.js";
+import Flight from "../models/Flight.js";
+import Journal from "../models/Journal.js";
+import ChatMessage from "../models/ChatMessage.js";
+import admin from "../config/firebaseAdmin.js";
 
 // Get saved destinations
 export const getSavedDestinations = async (req, res) => {
@@ -159,29 +166,63 @@ export const deleteAccount = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // Find all trips owned by this user
-    const trips = await Trip.find({ user: userId });
+    // 1. Delete Firebase Authentication user profile (if exists)
+    if (user.firebaseUid) {
+      try {
+        console.log(`[Cascading Delete] Deleting Firebase user: ${user.firebaseUid}`);
+        await admin.auth().deleteUser(user.firebaseUid);
+      } catch (fbErr) {
+        // Log but don't block DB deletion if already deleted in Firebase
+        console.warn(`[Cascading Delete] Firebase user deletion warning:`, fbErr.message);
+      }
+    }
+
+    // Find all trips owned by this user (check both userId and user fields)
+    const trips = await Trip.find({ $or: [{ userId }, { user: userId }] });
     const tripIds = trips.map(t => t._id);
 
-    // Delete child items of these trips
+    // 2. Delete child items of these trips
     if (tripIds.length > 0) {
+      console.log(`[Cascading Delete] Deleting child resources for trips:`, tripIds);
       await Itinerary.deleteMany({ trip: { $in: tripIds } });
       await Checklist.deleteMany({ trip: { $in: tripIds } });
       await Note.deleteMany({ trip: { $in: tripIds } });
+      await Budget.deleteMany({ tripId: { $in: tripIds } });
+      await Flight.deleteMany({ tripId: { $in: tripIds } });
+      await Journal.deleteMany({ tripId: { $in: tripIds } });
+      await ChatMessage.deleteMany({ tripId: { $in: tripIds } });
       await Trip.deleteMany({ _id: { $in: tripIds } });
     }
 
-    // Delete user notifications
-    await Notification.deleteMany({ user: userId });
+    // 3. Delete user notifications (userId and user field)
+    await Notification.deleteMany({ $or: [{ userId }, { user: userId }] });
 
-    // Delete user document
+    // 4. Delete user bookings
+    await Booking.deleteMany({ userId });
+
+    // 5. Delete user payments
+    await Payment.deleteMany({ userId });
+
+    // 6. Delete chat messages sent by this user
+    await ChatMessage.deleteMany({ senderId: userId });
+
+    // 7. Clean up other users' trip collaborators reference arrays
+    await Trip.updateMany(
+      { "collaborators.userId": userId },
+      { $pull: { collaborators: { userId } } }
+    );
+
+    // 8. Delete user document from MongoDB
     await User.findByIdAndDelete(userId);
+
+    console.log(`[Cascading Delete] Account and all data deleted successfully for user: ${userId}`);
 
     res.json({
       success: true,
       message: "Account and all associated travel records deleted successfully.",
     });
   } catch (error) {
+    console.error("[Cascading Delete Error]:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
