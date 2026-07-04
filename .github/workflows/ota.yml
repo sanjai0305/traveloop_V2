@@ -89,10 +89,13 @@ jobs:
           fi
 
       # ── Step 5: Install dependencies ─────────────────────────────────────
+      # --legacy-peer-deps is required because @codetrix-studio/capacitor-google-auth
+      # declares a peer dep on @capacitor/core ^6 but the project uses v8.x.
       - name: Install npm dependencies
         run: |
           echo "[OTA] Installing dependencies…"
-          npm ci --prefer-offline
+          npm install --legacy-peer-deps
+          echo "[OTA] Dependencies installed."
 
       # ── Step 6: Build React app ───────────────────────────────────────────
       # Vite reads .env.production (committed to git) for VITE_* variables.
