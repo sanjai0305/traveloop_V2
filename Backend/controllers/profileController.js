@@ -212,8 +212,12 @@ export const deleteAccount = async (req, res) => {
       { $pull: { collaborators: { userId } } }
     );
 
-    // 8. Delete user document from MongoDB
-    await User.findByIdAndDelete(userId);
+    // 8. Delete user document from MongoDB (by firebaseUid or fallback userId)
+    if (user.firebaseUid) {
+      await User.deleteOne({ firebaseUid: user.firebaseUid });
+    } else {
+      await User.findByIdAndDelete(userId);
+    }
 
     console.log(`[Cascading Delete] Account and all data deleted successfully for user: ${userId}`);
 

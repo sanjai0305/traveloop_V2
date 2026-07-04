@@ -491,7 +491,37 @@ export const loginUser = async (req, res) => {
     }
 
     // FIND USER IN MONGODB
-    const userRow = await User.findOne({ email: email.trim().toLowerCase() });
+    let userRow = await User.findOne({ email: email.trim().toLowerCase() });
+
+    if (!userRow) {
+      // Automatic recovery: Check if the user exists in Firebase Auth
+      try {
+        console.log(`[Auto Recovery] Checking Firebase Auth for email: ${email}`);
+        const fbUser = await admin.auth().getUserByEmail(email.trim().toLowerCase());
+        if (fbUser) {
+          console.log(`[Auto Recovery] Firebase user found (${fbUser.uid}). Re-creating MongoDB profile...`);
+          const nameParts = (fbUser.displayName || "").split(" ");
+          const firstName = nameParts[0] || "Traveler";
+          const lastName = nameParts.slice(1).join(" ") || "User";
+          
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(password, salt);
+
+          userRow = await User.create({
+            firstName,
+            lastName,
+            email: email.trim().toLowerCase(),
+            password: hashedPassword,
+            firebaseUid: fbUser.uid,
+            acceptedTerms: true,
+            termsAcceptedAt: new Date().toISOString(),
+            termsVersion: "2026-06",
+          });
+        }
+      } catch (fbErr) {
+        console.warn(`[Auto Recovery Warning] Firebase lookup failed:`, fbErr.message);
+      }
+    }
 
     if (!userRow) {
       return res.status(400).json({
