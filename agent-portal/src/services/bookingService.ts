@@ -13,6 +13,35 @@ export const getBookings = async (): Promise<{ bookings: Booking[] }> => {
   return response.data;
 };
 
+export const getTripManifest = async (tripId: string): Promise<{
+  success: boolean;
+  trip: any;
+  bookings: Booking[];
+  tripStats: {
+    passengerCount: number;
+    paidCount: number;
+    cancelledCount: number;
+    boardedCount: number;
+    pendingBoardingCount: number;
+    maleCount: number;
+    femaleCount: number;
+    otherCount: number;
+    totalSeats: number;
+    bookedSeats: number;
+    availableSeats: number;
+    occupancyPercent: number;
+    grossRevenue: number;
+    commissionAmount: number;
+    netRevenue: number;
+    pendingRevenue: number;
+    refundedAmount: number;
+  };
+  driver: any;
+}> => {
+  const response = await api.get(`/agent/trips/${tripId}/manifest`);
+  return response.data;
+};
+
 export const updateBookingStatus = async (
   bookingId: string,
   paymentStatus: "Paid" | "Pending" | "Cancelled"

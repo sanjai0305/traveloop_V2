@@ -1085,23 +1085,49 @@ router.get("/bookings", protectAgent, async (req, res) => {
 
     if (isDbConnected()) {
       const agentId = req.agent._id || req.agent.id;
-      const agentTripIds = await AgentTrip.find({ agentId }).distinct("_id");
+
+      // Find all trips belonging to this agent (support both field names for legacy docs)
+      const agentTripIds = await AgentTrip.find({
+        $or: [{ agentId }, { agent: agentId }],
+        isDeleted: { $ne: true },
+      }).distinct("_id");
+
       const bookingsData = await Booking.find({
         $or: [
           { tripId: { $in: agentTripIds } },
-          { agentTrip: { $in: agentTripIds } }
-        ]
-      }).populate("tripId").sort({ createdAt: -1 });
+        ],
+      })
+        .populate("tripId", "title totalSeats availableSeats startDate endDate driverName driverPhone busNumber busType coverImage status boardingStatus")
+        .populate("userId", "name email phone profileImage")
+        .sort({ createdAt: -1 });
 
       bookings = (bookingsData || []).map(b => {
         const obj = b.toObject ? b.toObject() : b;
-        // TODO: remove agentTrip fallback after migration (scripts/migrateIds.js)
         const trip = obj.tripId;
+        const user = obj.userId;
+
+        // Normalize travelerName: prefer stored value, fallback to populated user name
+        const resolvedName = obj.travelerName || user?.name || "Unknown Traveler";
+        const resolvedPhone = obj.contactNumber || user?.phone || "";
+        const resolvedEmail = user?.email || "";
+
         return {
           ...obj,
           _id: b._id,
           tripId: trip?._id || trip,
-          tripName: trip ? trip.title : "Deleted Trip"
+          // Expose agentTrip alias for frontend backward-compat
+          agentTrip: trip?._id || trip,
+          tripName: trip ? trip.title : "Deleted Trip",
+          travelerName: resolvedName,
+          contactNumber: resolvedPhone,
+          email: resolvedEmail,
+          userProfile: user ? {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            profileImage: user.profileImage,
+          } : null,
         };
       });
     } else {
@@ -1293,6 +1319,142 @@ router.put("/bookings/:id/update-details", protectAgent, async (req, res) => {
   } catch (error) {
     console.error("Update booking details error:", error);
     res.status(500).json({ success: false, message: "Server Error updating booking details" });
+  }
+});
+
+
+/* ==========================================
+   TRIP MANIFEST ENDPOINT
+   ========================================== */
+
+// @route   GET /api/agent/trips/:id/manifest
+// @desc    Return fully-populated trip manifest with stats aggregation
+router.get("/trips/:id/manifest", protectAgent, async (req, res) => {
+  try {
+    const tripId = req.params.id;
+    const agentId = req.agent._id || req.agent.id;
+
+    if (!mongoose.Types.ObjectId.isValid(tripId)) {
+      return res.status(400).json({ success: false, message: "Invalid trip ID" });
+    }
+
+    // Fetch trip with driver populated
+    const tripData = await AgentTrip.findOne({
+      _id: tripId,
+      $or: [{ agentId }, { agent: agentId }],
+    }).populate("driverId").populate("driver");
+
+    if (!tripData) {
+      return res.status(404).json({ success: false, message: "Trip manifest not found" });
+    }
+
+    // Fetch all bookings for this trip with user info
+    const bookingsData = await Booking.find({ tripId })
+      .populate("userId", "name email phone profileImage")
+      .sort({ createdAt: -1 });
+
+    const bookings = (bookingsData || []).map(b => {
+      const obj = b.toObject ? b.toObject() : b;
+      const user = obj.userId;
+      return {
+        ...obj,
+        _id: b._id,
+        agentTrip: tripId,
+        travelerName: obj.travelerName || user?.name || "Unknown Traveler",
+        contactNumber: obj.contactNumber || user?.phone || "",
+        email: user?.email || "",
+        userProfile: user ? {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          profileImage: user.profileImage,
+        } : null,
+      };
+    });
+
+    // Compute stats
+    const activeBookings = bookings.filter(b =>
+      b.paymentStatus !== "Cancelled" &&
+      b.paymentStatus !== "cancelled"
+    );
+    const paidBookings = bookings.filter(b =>
+      b.paymentStatus === "Paid"
+    );
+    const cancelledBookings = bookings.filter(b =>
+      b.paymentStatus === "Cancelled" || b.paymentStatus === "cancelled"
+    );
+    const boardedBookings = activeBookings.filter(b =>
+      b.boardingStatus === "boarded"
+    );
+    const pendingBoardingBookings = activeBookings.filter(b =>
+      b.boardingStatus !== "boarded"
+    );
+
+    const totalSeats = tripData.totalSeats || 0;
+    const bookedSeatsCount = activeBookings.reduce((sum, b) => sum + (b.seats || 1), 0);
+    const availableSeats = Math.max(0, totalSeats - bookedSeatsCount);
+    const occupancyPercent = totalSeats > 0 ? parseFloat(((bookedSeatsCount / totalSeats) * 100).toFixed(1)) : 0;
+
+    const grossRevenue = paidBookings.reduce((sum, b) => sum + (b.pricePaid || b.amountPaid || 0), 0);
+    const commissionRate = 0.10;
+    const commissionAmount = parseFloat((grossRevenue * commissionRate).toFixed(2));
+    const netRevenue = parseFloat((grossRevenue - commissionAmount).toFixed(2));
+
+    const maleCount = activeBookings.filter(b => b.gender === "Male" || b.gender === "male").length;
+    const femaleCount = activeBookings.filter(b => b.gender === "Female" || b.gender === "female").length;
+
+    const driverDoc = tripData.driverId || tripData.driver;
+    const trip = tripData.toObject();
+    const driverInfo = driverDoc ? {
+      _id: driverDoc._id,
+      name: driverDoc.name || driverDoc.driverName || trip.driverName || "Not Assigned",
+      phone: driverDoc.phone || driverDoc.driverPhone || trip.driverPhone || "",
+      licenseNumber: driverDoc.licenseNumber || driverDoc.driverLicenseNumber || trip.driverLicenseNumber || "",
+      vehicleNumber: driverDoc.vehicleNumber || trip.busNumber || "",
+      busType: trip.busType || "",
+      experience: driverDoc.experience || trip.driverExperience || 0,
+      photo: driverDoc.photo || trip.driverPhoto || "",
+      emergencyContact: driverDoc.emergencyContact || trip.emergencyContact || "",
+    } : {
+      name: trip.driverName || "Not Assigned",
+      phone: trip.driverPhone || "",
+      licenseNumber: trip.driverLicenseNumber || "",
+      vehicleNumber: trip.busNumber || "",
+      busType: trip.busType || "",
+      emergencyContact: trip.emergencyContact || "",
+    };
+
+    const tripStats = {
+      passengerCount: activeBookings.length,
+      paidCount: paidBookings.length,
+      cancelledCount: cancelledBookings.length,
+      boardedCount: boardedBookings.length,
+      pendingBoardingCount: pendingBoardingBookings.length,
+      maleCount,
+      femaleCount,
+      otherCount: activeBookings.length - maleCount - femaleCount,
+      totalSeats,
+      bookedSeats: bookedSeatsCount,
+      availableSeats,
+      occupancyPercent,
+      grossRevenue,
+      commissionAmount,
+      netRevenue,
+      pendingRevenue: bookings.filter(b => b.paymentStatus === "Pending").reduce((sum, b) => sum + (b.pricePaid || 0), 0),
+      refundedAmount: cancelledBookings.reduce((sum, b) => sum + (b.pricePaid || 0), 0),
+    };
+
+    res.status(200).json({
+      success: true,
+      trip: { ...trip, driver: driverInfo },
+      bookings,
+      tripStats,
+      driver: driverInfo,
+    });
+  } catch (error) {
+    console.error("[Trip Manifest] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error loading trip manifest" });
   }
 });
 

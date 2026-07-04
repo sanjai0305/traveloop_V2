@@ -130,6 +130,22 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    qrCode: {
+      type: String,
+      default: "",
+    },
+    boardedAt: {
+      type: Date,
+      default: null,
+    },
+    checkedInAt: {
+      type: Date,
+      default: null,
+    },
+    emergencyContact: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

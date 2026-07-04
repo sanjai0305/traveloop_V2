@@ -41,7 +41,7 @@ import {
   Ban,
 } from "lucide-react";
 import { GlassCard, Button } from "../components/ui";
-import { getBookings, updateBookingStatus, updateBookingDetails } from "../services/bookingService";
+import { getBookings, updateBookingStatus, updateBookingDetails, getTripManifest } from "../services/bookingService";
 import { getMyTrips, updateTrip } from "../services/tripService";
 import { Booking } from "../types";
 import { formatDate, formatCurrency } from "../utils";
@@ -50,6 +50,14 @@ export const Bookings: React.FC = () => {
   const { tripId } = useParams<{ tripId?: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  // Dedicated React Query fetch for Manifest
+  const { data: manifestData, isLoading: manifestLoading, error: manifestError } = useQuery({
+    queryKey: ["manifest", tripId],
+    queryFn: () => getTripManifest(tripId!),
+    enabled: !!tripId,
+    refetchInterval: 8000,
+  });
 
   // Filter & Search states
   const [filterStatus, setFilterStatus] = useState<
@@ -90,6 +98,7 @@ export const Bookings: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      queryClient.invalidateQueries({ queryKey: ["manifest", tripId] });
       // Update drawer if active
       if (selectedPassenger && selectedPassenger._id === res.booking._id) {
         setSelectedPassenger(res.booking);
@@ -104,6 +113,7 @@ export const Bookings: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      queryClient.invalidateQueries({ queryKey: ["manifest", tripId] });
       // Update drawer
       if (selectedPassenger && selectedPassenger._id === res.booking._id) {
         setSelectedPassenger(res.booking);
@@ -118,6 +128,7 @@ export const Bookings: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      queryClient.invalidateQueries({ queryKey: ["manifest", tripId] });
     }
   });
 
@@ -158,6 +169,7 @@ export const Bookings: React.FC = () => {
       const handleUpdate = () => {
         queryClient.invalidateQueries({ queryKey: ["bookings"] });
         queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+        queryClient.invalidateQueries({ queryKey: ["manifest", tripId] });
       };
 
       socket.on("booking_updated", handleUpdate);
@@ -174,7 +186,7 @@ export const Bookings: React.FC = () => {
         socket.off("booking-boarded", handleUpdate);
       };
     });
-  }, [queryClient]);
+  }, [queryClient, tripId]);
 
   // Mock document download triggers
   const triggerInvoiceDownload = (bookingId: string) => {
@@ -205,74 +217,112 @@ export const Bookings: React.FC = () => {
     );
   }
 
+  // Handle manifest load failures (e.g. trip does not exist or unauthorized)
+  if (tripId && (manifestError as any)) {
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={() => navigate("/bookings")}
+          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Departures Ledger
+        </button>
+        <div className="p-6 rounded-2xl bg-rose-50 dark:bg-rose-955/20 border border-rose-100 dark:border-rose-900/50 flex items-center gap-3">
+          <AlertCircle className="w-6 h-6 text-rose-500" />
+          <span className="text-sm font-bold text-rose-600 dark:text-rose-455">
+            404 — Manifest not found
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   const bookingsList = bookingsData.bookings || [];
   const tripsList = tripsData.trips || [];
 
   // ─── CASE A: Specific Trip Drill-down Detail ───
   if (tripId) {
-    const selectedTrip = tripsList.find((t) => t._id === tripId);
-    const tripBookings = bookingsList.filter(
+    if (manifestLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm font-semibold text-slate-500">Retrieving trip manifest details...</span>
+        </div>
+      );
+    }
+
+    const selectedTrip = manifestData?.trip || tripsList.find((t) => t._id === tripId);
+    const tripBookings = manifestData?.bookings || bookingsList.filter(
       (b) =>
+        (b as any).tripId === tripId ||
+        (typeof (b as any).tripId === "object" && (b as any).tripId?._id === tripId) ||
         b.agentTrip === tripId ||
         (typeof b.agentTrip === "object" && b.agentTrip?._id === tripId)
     );
 
-    // Calculations for the selected trip
-    const activeBookings = tripBookings.filter((b) => 
+    // Calculations for the selected trip (prefer backend stats if loaded, else fallback to precise client calculations)
+    const activeBookings = tripBookings.filter((b: any) => 
       b.paymentStatus !== "Cancelled" && 
-      (b as any).status !== "Cancelled" && 
-      (b as any).status !== "cancelled"
+      b.paymentStatus !== "cancelled" && 
+      b.status !== "Cancelled" && 
+      b.status !== "cancelled"
     );
 
-    const totalBookedSeats = activeBookings.reduce((sum, b) => {
-      const count = (b.seats && typeof b.seats === 'number') 
-        ? b.seats 
-        : (Array.isArray(b.seats) ? b.seats.length : (((b as any).seats as any)?.length || b.seatNumbers?.length || 1));
-      return sum + count;
-    }, 0);
+    const totalBookedSeats = manifestData?.tripStats?.bookedSeats !== undefined
+      ? manifestData.tripStats.bookedSeats
+      : activeBookings.reduce((sum, b) => {
+          const count = (b.seats && typeof b.seats === 'number') 
+            ? b.seats 
+            : (Array.isArray(b.seats) ? b.seats.length : (((b as any).seats as any)?.length || b.seatNumbers?.length || 1));
+          return sum + count;
+        }, 0);
 
-    const occupancyPercent = selectedTrip && selectedTrip.totalSeats > 0
-      ? ((totalBookedSeats / selectedTrip.totalSeats) * 100).toFixed(1)
-      : 0;
+    const totalSeats = selectedTrip?.totalSeats || 40;
+    const occupancyPercent = totalSeats > 0
+      ? ((totalBookedSeats / totalSeats) * 100).toFixed(1)
+      : "0.0";
 
-    const totalRevenue = activeBookings
-      .filter((b) => b.paymentStatus === "Paid" || (b as any).status === "Paid")
-      .reduce((sum, b) => sum + ((b as any).amountPaid || b.pricePaid || (b as any).price || 0), 0);
+    const totalRevenue = manifestData?.tripStats?.grossRevenue !== undefined
+      ? manifestData.tripStats.grossRevenue
+      : activeBookings
+          .filter((b: any) => b.paymentStatus === "Paid" || b.status === "Paid")
+          .reduce((sum, b) => sum + (b.pricePaid || (b as any).amountPaid || (b as any).price || 0), 0);
 
-    const totalRefund = tripBookings
-      .filter((b) => b.paymentStatus === "Cancelled" || (b as any).status === "Cancelled" || (b as any).status === "cancelled")
-      .reduce((sum, b) => sum + ((b as any).amountPaid || b.pricePaid || (b as any).price || 0), 0);
+    const totalRefund = manifestData?.tripStats?.refundedAmount !== undefined
+      ? manifestData.tripStats.refundedAmount
+      : tripBookings
+          .filter((b: any) => b.paymentStatus === "Cancelled" || b.status === "Cancelled")
+          .reduce((sum, b) => sum + (b.pricePaid || (b as any).amountPaid || (b as any).price || 0), 0);
 
-    const totalCommission = activeBookings
-      .filter((b) => b.paymentStatus === "Paid" || (b as any).status === "Paid")
-      .reduce((sum, b) => sum + (((b as any).amountPaid || b.pricePaid || (b as any).price || 0) * 0.1), 0); // 10% Agent Commission
+    const totalCommission = manifestData?.tripStats?.commissionAmount !== undefined
+      ? manifestData.tripStats.commissionAmount
+      : totalRevenue * 0.1; // 10% Agent Commission
 
-    const netPayout = totalRevenue - totalCommission;
+    const netPayout = manifestData?.tripStats?.netRevenue !== undefined
+      ? manifestData.tripStats.netRevenue
+      : totalRevenue - totalCommission;
 
-    const passengers = tripBookings.filter((b) => 
-      (b as any).status !== "cancelled" && 
-      (b as any).status !== "Cancelled" && 
-      b.paymentStatus !== "Cancelled"
-    ).length;
+    const passengers = manifestData?.tripStats?.passengerCount !== undefined
+      ? manifestData.tripStats.passengerCount
+      : activeBookings.length;
 
-    const boardedCount = activeBookings.filter((b) => b.boardingStatus === "boarded").length;
-    const pendingBoardingCount = tripBookings.filter((b) => 
-      (b as any).status === "pending" || 
-      (b as any).status === "Pending" ||
-      b.paymentStatus === "Pending"
-    ).length;
+    const boardedCount = manifestData?.tripStats?.boardedCount !== undefined
+      ? manifestData.tripStats.boardedCount
+      : activeBookings.filter((b) => b.boardingStatus === "boarded").length;
 
-    const cancelledCount = tripBookings.filter((b) => 
-      b.paymentStatus === "Cancelled" || 
-      (b as any).status === "Cancelled" || 
-      (b as any).status === "cancelled"
-    ).length;
+    const pendingBoardingCount = manifestData?.tripStats?.pendingBoardingCount !== undefined
+      ? manifestData.tripStats.pendingBoardingCount
+      : activeBookings.filter((b) => b.boardingStatus !== "boarded").length;
+
+    const cancelledCount = manifestData?.tripStats?.cancelledCount !== undefined
+      ? manifestData.tripStats.cancelledCount
+      : tripBookings.filter((b: any) => 
+          b.paymentStatus === "Cancelled" || 
+          b.status === "Cancelled"
+        ).length;
 
     console.log("Trip:", selectedTrip);
     console.log("Bookings:", tripBookings.length);
-    if (selectedTrip) {
-      console.log("Seats:", selectedTrip.totalSeats);
-    }
     console.log("Booked Seats:", totalBookedSeats);
     console.log("Revenue:", totalRevenue);
 
@@ -654,7 +704,49 @@ export const Bookings: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
-                    {filteredTripBookings.length === 0 ? (
+                    {tripBookings.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-12 px-4 text-center">
+                          <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-4">
+                            <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-805 flex items-center justify-center text-slate-400 dark:text-slate-500 text-3xl">
+                              🎫
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-150">No passengers booked yet</h4>
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium leading-relaxed">
+                                Share this trip details link or run a coupon promotion to start receiving traveler reservations.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`https://traveloopv2.duckdns.org/trips/${tripId}`);
+                                  alert("Trip Link Copied!");
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-primary text-white text-[10px] font-black uppercase hover:opacity-90 transition-all flex items-center gap-1 shadow-sm"
+                              >
+                                <Send className="w-3 h-3" /> Share Trip
+                              </button>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`https://traveloopv2.duckdns.org/trips/${tripId}`);
+                                  alert("Trip Link Copied!");
+                                }}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-400 font-extrabold hover:bg-slate-50 dark:hover:bg-slate-850 transition-all"
+                              >
+                                Copy Link
+                              </button>
+                              <button
+                                onClick={() => alert("Launching coupon promotion campaigns...")}
+                                className="px-3 py-1.5 rounded-lg bg-teal-500 text-white text-[10px] font-black uppercase hover:opacity-90 transition-all flex items-center gap-1 shadow-sm"
+                              >
+                                <Percent className="w-3 h-3" /> Send Promotion
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : filteredTripBookings.length === 0 ? (
                       <tr>
                         <td colSpan={11} className="text-center py-10 text-slate-400 dark:text-slate-505 font-bold">
                           No matching passenger reservation records found.
@@ -785,15 +877,23 @@ export const Bookings: React.FC = () => {
                 <div>
                   <span className="text-[10px] text-slate-400 block font-bold">Driver Name</span>
                   <span className="font-extrabold text-slate-800 dark:text-slate-100">
-                    {selectedTrip?.driverName || "Not Assigned"}
+                    {selectedTrip?.driverName || selectedTrip?.driver?.name || "Not Assigned"}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 block font-bold">Driver Phone</span>
                   <span className="font-bold text-slate-800 dark:text-slate-100">
-                    {selectedTrip?.driverPhone || "N/A"}
+                    {selectedTrip?.driverPhone || selectedTrip?.driver?.phone || "N/A"}
                   </span>
                 </div>
+                {selectedTrip?.driver?.licenseNumber && (
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold">License Number</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">
+                      {selectedTrip.driver.licenseNumber}
+                    </span>
+                  </div>
+                )}
                 <div>
                   <span className="text-[10px] text-slate-400 block font-bold">Bus Numbers</span>
                   <span className="font-extrabold text-slate-800 dark:text-slate-100">
@@ -805,6 +905,38 @@ export const Bookings: React.FC = () => {
                   <span>
                     {selectedTrip?.busType || "Sleeper"} ({selectedTrip?.totalSeats || 40} Seats Capacity)
                   </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-bold">Co-driver / Crew Support</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {selectedTrip?.coDriver || "N/A"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-bold">Emergency Contact</span>
+                  <span className="font-bold text-rose-500">
+                    {selectedTrip?.emergencyContact || selectedTrip?.driver?.emergencyContact || "N/A"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-t border-slate-100 dark:border-slate-850 pt-2">
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Reporting Time</span>
+                    <span className="font-semibold text-indigo-500">{selectedTrip?.reportingTime || "N/A"}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Departure Time</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedTrip?.departureTime || "N/A"}</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Dispatch Status</span>
+                    <span className="font-bold text-teal-600 uppercase text-[10px]">{selectedTrip?.status === "completed" ? "Dispatched" : "Scheduled"}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Live Status</span>
+                    <span className="font-bold text-emerald-500 text-[10px]">On Track</span>
+                  </div>
                 </div>
                 <div className="border-t border-slate-100 dark:border-slate-850 pt-3">
                   <div className="flex justify-between font-bold text-slate-500 text-[11px] mb-1">
@@ -978,7 +1110,7 @@ export const Bookings: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Primary Booking metadata */}
+                 {/* Primary Booking metadata */}
                 <div className="space-y-3.5">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -988,6 +1120,21 @@ export const Bookings: React.FC = () => {
                     <div>
                       <span className="text-[9px] text-slate-400 block">Contact Phone</span>
                       <span className="font-mono text-xs text-slate-800 dark:text-slate-100">{selectedPassenger.contactNumber}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-850 pt-2">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block">Gender</span>
+                      <span className="text-xs font-bold text-slate-850 dark:text-slate-100">{selectedPassenger.gender || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block">Age</span>
+                      <span className="text-xs font-bold text-slate-850 dark:text-slate-100">{selectedPassenger.age || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block">Email Address</span>
+                      <span className="text-xs font-bold text-slate-850 dark:text-slate-100 truncate block">{(selectedPassenger as any).email || "—"}</span>
                     </div>
                   </div>
 
