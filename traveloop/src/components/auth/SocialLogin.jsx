@@ -22,29 +22,22 @@ const SocialLogin = () => {
     if (isNative) {
       setIsCapacitor(true);
       
-      // Select the correct client ID depending on the running platform
-      let nativeClientId = "740933888609-f4sp2ta5tme54fpesjperbsv0dq76236.apps.googleusercontent.com"; // Default to iOS Client ID
-      
-      if (platform === "android") {
-        nativeClientId = "740933888609-m3po7gl817kloa75ua69eo6bpkpfjho3.apps.googleusercontent.com"; // Android Client ID
-      } else if (platform === "ios") {
-        nativeClientId = "740933888609-f4sp2ta5tme54fpesjperbsv0dq76236.apps.googleusercontent.com"; // iOS Client ID
-      }
-
-      console.log(`[GoogleAuth Audit] Native client ID selected for platform "${platform}":`, nativeClientId);
+      const nativeClientId = "740933888609-m3po7gl817kloa75ua69eo6bpkpfjho3.apps.googleusercontent.com";
 
       // Initialize Capacitor Google Auth
       import("@codetrix-studio/capacitor-google-auth")
-        .then(({ GoogleAuth }) => {
-          GoogleAuth.initialize({
-            clientId: nativeClientId,
-            scopes: ["profile", "email"],
-            grantOfflineAccess: true,
-          }).then(() => {
-            console.log("[GoogleAuth Audit] Capacitor GoogleAuth initialized successfully.");
-          }).catch((err) =>
-            console.warn("[SocialLogin] Capacitor GoogleAuth init error:", err)
-          );
+        .then(async ({ GoogleAuth }) => {
+          try {
+            await GoogleAuth.initialize({
+              clientId: nativeClientId,
+              scopes: ["profile", "email"],
+              grantOfflineAccess: true
+            });
+            console.log("GoogleAuth initialized");
+            console.log("Using Client ID:", nativeClientId);
+          } catch (error) {
+            console.error("Google Sign-In Error:", error);
+          }
         })
         .catch((err) =>
           console.error("[SocialLogin] Failed to import Capacitor GoogleAuth:", err)
@@ -110,30 +103,30 @@ const SocialLogin = () => {
       const { GoogleAuth } = await import("@codetrix-studio/capacitor-google-auth");
       console.log("[GoogleAuth Audit] Starting native Google Sign-In...");
 
-      const nativeUser = await GoogleAuth.signIn();
-      console.log("[GoogleAuth Audit] Native sign-in user received:", nativeUser?.email);
+      const user = await GoogleAuth.signIn();
+      console.log("[GoogleAuth Audit] Native sign-in user received:", user?.email);
 
-      if (nativeUser && nativeUser.authentication && nativeUser.authentication.idToken) {
+      if (user && user.authentication && user.authentication.idToken) {
         // Sign into Firebase Auth first using the native Google OAuth ID Token
-        const credential = GoogleAuthProvider.credential(nativeUser.authentication.idToken);
+        const credential = GoogleAuthProvider.credential(user.authentication.idToken);
         const result = await signInWithCredential(auth, credential);
         
         // Retrieve the Firebase ID Token to send to the backend
         const firebaseIdToken = await result.user.getIdToken();
         await sendTokenToBackend(firebaseIdToken);
       } else {
-        console.warn("[GoogleAuth Audit] Native sign-in: No idToken in user object.", nativeUser);
+        console.warn("[GoogleAuth Audit] Native sign-in: No idToken in user object.", user);
         window.dispatchEvent(
           new CustomEvent("auth:google:error", {
             detail: "Google Sign-In did not return a valid token. Please try again.",
           })
         );
       }
-    } catch (err) {
-      if (err.message && err.message.includes("cancelled")) {
+    } catch (error) {
+      if (error.message && error.message.includes("cancelled")) {
         console.log("[GoogleAuth Audit] Native sign-in cancelled by user.");
       } else {
-        console.error("[GoogleAuth Audit] Native Google Sign-In error:", err.message, err);
+        console.error("Google Sign-In Error:", error);
         window.dispatchEvent(
           new CustomEvent("auth:google:error", {
             detail: "Google Sign-In failed. Please try again.",
