@@ -754,7 +754,11 @@ const MyTrips = () => {
     const isDeletedTrip = b.tripDeleted || trip.isDeleted || trip.status === "deleted";
     if (isDeletedTrip) return false;
 
-    const isCancelled = b.status === "cancelled" || b.paymentStatus === "Cancelled";
+    // Only display paid bookings
+    const isPaid = b.paymentStatus === "Paid" || b.paymentStatus === "paid" || b.status === "Paid" || b.status === "paid";
+    if (!isPaid) return false;
+
+    const isCancelled = b.status === "cancelled" || b.paymentStatus === "Cancelled" || b.paymentStatus === "cancelled";
 
     // Filter by tab
     if (activeTab === "all") return !isCancelled;
