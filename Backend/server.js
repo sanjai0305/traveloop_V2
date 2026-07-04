@@ -269,8 +269,16 @@ app.use((err, req, res, next) => {
 
 await connectDB();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET environment variable is missing!");
+}
+
 if (!process.env.RAZORPAY_KEY_ID) {
-  console.warn("Missing Razorpay Key");
+  console.warn("⚠️ Warning: Missing Razorpay Key ID (RAZORPAY_KEY_ID)");
+}
+
+if (!process.env.RAZORPAY_KEY_SECRET && !process.env.RAZORPAY_SECRET) {
+  console.warn("⚠️ Warning: Missing Razorpay Key Secret (RAZORPAY_KEY_SECRET / RAZORPAY_SECRET)");
 }
 
 let port = parseInt(process.env.PORT || "5000", 10);

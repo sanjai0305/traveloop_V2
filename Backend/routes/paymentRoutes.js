@@ -61,6 +61,10 @@ router.post("/create-order", protect, async (req, res) => {
       const instance = getRazorpayInstance();
       order = await instance.orders.create(options);
     } catch (apiError) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Razorpay Create Order] API call failed in production:", apiError);
+        throw apiError;
+      }
       console.warn("[Razorpay Create Order] API call failed. Falling back to mock order ID. Reason:", apiError.message || apiError);
       order = {
         id: `order_mock_${Math.random().toString(36).substring(2, 11)}`,
