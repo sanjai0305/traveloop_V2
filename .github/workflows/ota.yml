@@ -3,14 +3,14 @@
 # Traveloop OTA Automation — Level 3
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Trigger : git push → main
+# Trigger : git push → main  (when traveloop/ changes)
+# Source  : package.json "version" field  (NO .env dependency)
 # Output  : GitHub Release (tag vX.Y.Z) with web.zip + version.json
-# Backend : GitHub Releases (no Firebase, no S3, no Capgo cloud)
 #
-# Developer workflow — the ONLY manual steps required:
+# Developer workflow — ONLY three steps required:
 #   1. Make UI changes
-#   2. Bump VITE_APP_VERSION=X.Y.Z  in  traveloop/.env
-#   3. git add . && git commit -m "..." && git push
+#   2. Bump "version" in  traveloop/package.json  (e.g. "1.1.0")
+#   3. git add . && git commit -m "OTA v1.1.0" && git push
 #   → Everything else is automated.
 #
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -21,7 +21,7 @@ on:
   push:
     branches:
       - main
-    # Only run when frontend files change — skip if only Backend changes
+    # Only run when frontend files change — avoids wasting CI minutes on Backend-only commits
     paths:
       - 'traveloop/**'
       - '.github/workflows/ota.yml'
@@ -44,7 +44,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history so we can check existing tags
+          fetch-depth: 0   # Full history so git log commit messages are available
 
       # ── Step 2: Setup Node.js ─────────────────────────────────────────────
       - name: Setup Node.js 22
@@ -54,28 +54,30 @@ jobs:
           cache: 'npm'
           cache-dependency-path: traveloop/package-lock.json
 
-      # ── Step 3: Read VITE_APP_VERSION from .env ───────────────────────────
-      # Parses the line  VITE_APP_VERSION=1.2.0  and stores the value.
-      # Fails loudly if the variable is missing so the developer is alerted.
-      - name: Read version from .env
+      # ── Step 3: Read version from package.json ────────────────────────────
+      # package.json is tracked by git and always available in the runner.
+      # This is the single source of truth — no .env needed.
+      - name: Read version from package.json
         id: version
         run: |
-          echo "[OTA] Reading version from traveloop/.env"
+          echo "[OTA] Reading version from package.json…"
 
-          VERSION=$(grep -m1 '^VITE_APP_VERSION=' .env | cut -d'=' -f2 | tr -d '[:space:]')
+          VERSION=$(node -p "require('./package.json').version")
 
-          if [ -z "$VERSION" ]; then
-            echo "::error::VITE_APP_VERSION not found in traveloop/.env"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "::error::Could not read version from traveloop/package.json"
             exit 1
           fi
 
-          echo "[OTA] Version detected: $VERSION"
-          echo "VERSION=$VERSION"         >> "$GITHUB_OUTPUT"
-          echo "TAG=v$VERSION"            >> "$GITHUB_OUTPUT"
+          echo "[OTA] Version: $VERSION"
+
+          # Make available to all subsequent steps
+          echo "VERSION=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "TAG=v$VERSION"      >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION"   >> "$GITHUB_ENV"
 
       # ── Step 4: Check for duplicate release ───────────────────────────────
-      # If the tag already exists we still proceed — softprops/action-gh-release
-      # will overwrite the assets on the existing release (update-existing: true).
+      # Informational only — softprops/action-gh-release handles overwrites.
       - name: Check existing release
         run: |
           TAG="${{ steps.version.outputs.TAG }}"
@@ -83,7 +85,7 @@ jobs:
           if git tag --list | grep -q "^${TAG}$"; then
             echo "[OTA] Release $TAG exists — assets will be overwritten."
           else
-            echo "[OTA] No existing release. A new one will be created."
+            echo "[OTA] No existing release found — a new one will be created."
           fi
 
       # ── Step 5: Install dependencies ─────────────────────────────────────
@@ -93,7 +95,8 @@ jobs:
           npm ci --prefer-offline
 
       # ── Step 6: Build React app ───────────────────────────────────────────
-      # Vite picks up .env automatically; VITE_APP_VERSION is embedded at build time.
+      # Vite reads .env.production (committed to git) for VITE_* variables.
+      # VITE_APP_VERSION in .env.production should match package.json version.
       - name: Build application
         run: |
           echo "[OTA] Building Traveloop ${{ steps.version.outputs.VERSION }}…"
@@ -101,8 +104,8 @@ jobs:
           echo "[OTA] Build complete — dist/ ready."
 
       # ── Step 7: Package dist/ → web.zip ──────────────────────────────────
-      # The zip contains all files from dist/ at the root level so Capgo can
-      # unpack it directly into the WebView assets directory.
+      # All files inside dist/ are zipped at root level so Capgo can unpack
+      # them directly into the WebView assets directory without an extra folder.
       - name: Package OTA bundle
         run: |
           echo "[OTA] Packaging dist/ → web.zip…"
@@ -113,10 +116,8 @@ jobs:
           echo "[OTA] web.zip created (${SIZE})"
 
       # ── Step 8: Generate version.json ─────────────────────────────────────
-      # This is the manifest fetched by OTAService.getLatestVersion().
-      # The `url` field uses /releases/latest/download/ — GitHub automatically
-      # resolves this to the latest published release, so users always get
-      # the newest bundle without the URL changing.
+      # This is the manifest that OTAService.getLatestVersion() fetches.
+      # releaseNotes are pulled from the latest git commit message automatically.
       - name: Generate version.json
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
@@ -124,10 +125,10 @@ jobs:
 
           echo "[OTA] Generating version.json for $VERSION…"
 
-          # Build a one-line release notes string from the last git commit message
+          # Use the git commit message as release notes (no manual editing needed)
           COMMIT_MSG=$(git log -1 --pretty=format:"%s" HEAD)
 
-          cat > version.json <<EOF
+          cat > version.json << EOF
           {
             "version": "$VERSION",
             "url": "https://github.com/sanjai0305/traveloop_V2/releases/download/${TAG}/web.zip",
@@ -136,15 +137,24 @@ jobs:
           }
           EOF
 
-          # Validate JSON before upload
-          python3 -c "import json,sys; json.load(open('version.json')); print('[OTA] version.json is valid JSON')"
+          # Validate JSON is well-formed before upload
+          python3 -c "
+          import json, sys
+          try:
+              json.load(open('version.json'))
+              print('[OTA] version.json is valid JSON ✓')
+          except json.JSONDecodeError as e:
+              print(f'[OTA] Invalid JSON: {e}', file=sys.stderr)
+              sys.exit(1)
+          "
 
-          echo "[OTA] version.json:"
+          echo "[OTA] version.json contents:"
           cat version.json
 
       # ── Step 9: Create / update GitHub Release + upload assets ───────────
-      # softprops/action-gh-release creates the release if it doesn't exist,
-      # or updates it if the tag already exists (overwriting previous assets).
+      # softprops/action-gh-release@v2:
+      #   - Creates the release if the tag doesn't exist yet
+      #   - Overwrites existing assets if the tag already exists (re-run safe)
       - name: Create GitHub Release and upload OTA assets
         uses: softprops/action-gh-release@v2
         with:
@@ -153,25 +163,24 @@ jobs:
           body: |
             ## Traveloop OTA Update — ${{ steps.version.outputs.TAG }}
 
-            This release was created automatically by GitHub Actions.
+            This release was created automatically by the GitHub Actions OTA workflow.
 
-            **Installed automatically** — users with the Traveloop app installed will see an update prompt on next launch.
+            > Users with the Traveloop app installed will see an update prompt on next launch.
 
             ### Assets
             | File | Description |
             |---|---|
-            | `web.zip` | React UI bundle for OTA delivery |
-            | `version.json` | Update manifest read by the app |
+            | `web.zip` | React UI bundle for OTA delivery via Capgo |
+            | `version.json` | Update manifest fetched by the app at startup |
 
             ---
-            *Built from commit: ${{ github.sha }}*
+            *Commit: ${{ github.sha }} · Branch: ${{ github.ref_name }}*
           files: |
             traveloop/web.zip
             traveloop/version.json
-          # Overwrite existing assets if the tag already exists
-          generate_release_notes: false
           make_latest: true
           fail_on_unmatched_files: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -181,14 +190,14 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           TAG="${{ steps.version.outputs.TAG }}"
           echo ""
-          echo "╔════════════════════════════════════════════════════════════╗"
-          echo "║              [OTA] Release Published ✓                    ║"
-          echo "╠════════════════════════════════════════════════════════════╣"
-          echo "║  Version  : $VERSION"
-          echo "║  Tag      : $TAG"
-          echo "║  Release  : https://github.com/sanjai0305/traveloop_V2/releases/tag/$TAG"
-          echo "║  web.zip  : https://github.com/sanjai0305/traveloop_V2/releases/download/$TAG/web.zip"
-          echo "║  manifest : https://github.com/sanjai0305/traveloop_V2/releases/latest/download/version.json"
-          echo "╚════════════════════════════════════════════════════════════╝"
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║               [OTA] Release Published ✓                     ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "  Version  : $VERSION"
+          echo "  Tag      : $TAG"
+          echo "  Release  : https://github.com/sanjai0305/traveloop_V2/releases/tag/$TAG"
+          echo "  web.zip  : https://github.com/sanjai0305/traveloop_V2/releases/download/$TAG/web.zip"
+          echo "  manifest : https://github.com/sanjai0305/traveloop_V2/releases/latest/download/version.json"
+          echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
           echo "[OTA] Users who open Traveloop will now be prompted to update."
