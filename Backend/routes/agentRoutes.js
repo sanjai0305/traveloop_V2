@@ -458,6 +458,7 @@ const handleDriverCreation = async (tripData, agentId) => {
 // @desc    Create a new trip (Checking security verification flags)
 router.post("/trips/create", protectAgent, async (req, res) => {
   // ── Debug logging ────────────────────────────────────────────────
+  console.log("[CreateTrip] Incoming request body:", req.body);
   console.log("[CreateTrip] Incoming body keys:", Object.keys(req.body));
   console.log("[CreateTrip] title:", req.body.title);
   console.log("[CreateTrip] shortDescription:", req.body.shortDescription);

@@ -60,7 +60,7 @@ router.post("/create-order", protect, async (req, res) => {
     const options = {
       amount: Math.round(amount * 100), // Razorpay accepts in paise
       currency: "INR",
-      receipt: `trip_${tripId}_${Date.now()}`,
+      receipt: `TRIP-${tripId.toString().slice(-8)}-${String(Date.now()).slice(-6)}`,
     };
 
     console.log("NODE_ENV:", process.env.NODE_ENV);
