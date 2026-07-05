@@ -10,6 +10,9 @@ import Agent from "../models/Agent.js";
 import AdminNotification from "../models/AdminNotification.js";
 import SystemSetting from "../models/SystemSetting.js";
 import BookingService from "../services/BookingService.js";
+import Passenger from "../models/Passenger.js";
+import SeatBooking from "../models/SeatBooking.js";
+import redisClient from "../config/redis.js";
 
 const router = express.Router();
 
@@ -91,6 +94,87 @@ router.post("/create-order", protect, async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error creating Razorpay order" });
   }
 });
+
+const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) => {
+  const createdPassengers = [];
+  const travellersList = travellers || booking.travellers || [];
+  const seatNumbersList = booking.seatNumbers || [];
+
+  for (let i = 0; i < travellersList.length; i++) {
+    const pData = travellersList[i];
+    const seatNumber = pData.seatNumber || seatNumbersList[i];
+
+    if (!seatNumber) continue;
+
+    // 1. Create/update Passenger document
+    const passenger = await Passenger.findOneAndUpdate(
+      { bookingId: booking._id, seatNumber },
+      {
+        bookingId: booking._id,
+        bookingRef: booking.bookingId,
+        tripId,
+        userId,
+        name: pData.name || "",
+        age: Number(pData.age) || 0,
+        gender: pData.gender || "Other",
+        phone: pData.phone || "",
+        emergencyContact: pData.emergencyContact || booking.contactNumber || "",
+        seatNumber,
+        seatPreference: pData.seatPreference || "No Preference",
+        seatType: pData.seatType || "Window",
+        specialRequest: pData.specialRequest || "",
+        status: "active",
+        paymentStatus: "completed",
+        qrPayload: {
+          bookingId: booking.bookingId || String(booking._id),
+          tripId: String(tripId),
+          passenger: pData.name,
+          seat: seatNumber,
+          gender: pData.gender,
+          age: pData.age,
+          timestamp: new Date().toISOString(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    createdPassengers.push(passenger);
+
+    // 2. Mark SeatBooking as booked
+    await SeatBooking.updateOne(
+      { tripId, seatNumber },
+      {
+        status: "booked",
+        bookingId: booking._id,
+        passengerId: passenger._id,
+        passengerName: pData.name || "",
+        gender: pData.gender || "Other",
+        age: Number(pData.age) || 0,
+        paymentStatus: "completed",
+        reservedUntil: null,
+      }
+    );
+
+    // 3. Clear Redis lock
+    if (redisClient) {
+      const key = `seat_lock:${tripId}:${seatNumber}`;
+      await redisClient.del(key);
+    }
+
+    // 4. Emit live seat update
+    if (io) {
+      io.to(`trip_${tripId}`).emit("seat_update", {
+        tripId,
+        seatNumber,
+        status: "booked",
+        gender: pData.gender || "Other",
+        passengerName: pData.name || "",
+        age: pData.age || 0,
+      });
+    }
+  }
+  return createdPassengers;
+};
 
 // @route   POST /api/payment/verify
 // @desc    Verify payment signature and record booking
@@ -279,6 +363,7 @@ router.post("/verify", protect, async (req, res) => {
             agent.totalBookings = (agent.totalBookings || 0) + 1;
             await agent.save();
           }
+          await confirmPassengerSeats(booking, bookingPayload?.travellers || booking.travellers, trip._id, userId, req.app.get("io"));
         }
       }
     } else if (bookingPayload) {
@@ -310,6 +395,7 @@ router.post("/verify", protect, async (req, res) => {
         contactNumber: bookingPayload.travellers?.[0]?.phone || req.user.phone || req.user.email,
       });
       booking = result.booking;
+      await confirmPassengerSeats(booking, bookingPayload.travellers, trip._id, userId, req.app.get("io"));
     } else {
       return res.status(400).json({ success: false, message: "Missing bookingId or bookingPayload" });
     }

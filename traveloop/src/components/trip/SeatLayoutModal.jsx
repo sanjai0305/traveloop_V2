@@ -174,7 +174,7 @@ const SeatLayoutModal = ({
   // ── Socket.IO live seat updates ─────────────────────────────────────────────
   useEffect(() => {
     const socketUrl = getSocketUrl ? getSocketUrl() : import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-    const socket = socketIO(socketUrl, { transports: ["websocket", "polling"] });
+    const socket = socketIO(socketUrl, { transports: ["polling", "websocket"] });
 
     socket.on("connect", () => {
       socket.emit("join_trip_seats", trip._id);

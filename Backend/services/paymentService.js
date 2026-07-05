@@ -5,6 +5,8 @@ import Payment from "../models/Payment.js";
 import AgentTrip from "../models/AgentTrip.js";
 import { addSyncJob } from "../config/bullmq.js";
 import { setCache, getCache } from "./cacheService.js";
+import Passenger from "../models/Passenger.js";
+import SeatBooking from "../models/SeatBooking.js";
 
 export class PaymentService {
   /** Create a payment lock on a booking in Redis to prevent double booking */
@@ -99,6 +101,63 @@ export class PaymentService {
     booking.paymentVerified = true;
     booking.paymentDate = new Date();
     await booking.save();
+
+    // Confirm passenger and seat status
+    const travellersList = booking.travellers || [];
+    const seatNumbersList = booking.seatNumbers || [];
+    for (let i = 0; i < travellersList.length; i++) {
+      const pData = travellersList[i];
+      const seatNumber = seatNumbersList[i] || pData.seatNumber;
+
+      if (!seatNumber) continue;
+
+      // 1. Create/update Passenger document
+      const passenger = await Passenger.findOneAndUpdate(
+        { bookingId: booking._id, seatNumber },
+        {
+          bookingId: booking._id,
+          bookingRef: booking.bookingId,
+          tripId: booking.tripId,
+          userId: booking.userId,
+          name: pData.name || "",
+          age: Number(pData.age) || 0,
+          gender: pData.gender || "Other",
+          phone: pData.phone || "",
+          emergencyContact: pData.emergencyContact || booking.contactNumber || "",
+          seatNumber,
+          seatPreference: pData.seatPreference || "No Preference",
+          seatType: pData.seatType || "Window",
+          specialRequest: pData.specialRequest || "",
+          status: "active",
+          paymentStatus: "completed",
+          qrPayload: {
+            bookingId: booking.bookingId || String(booking._id),
+            tripId: String(booking.tripId),
+            passenger: pData.name,
+            seat: seatNumber,
+            gender: pData.gender,
+            age: pData.age,
+            timestamp: new Date().toISOString(),
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      // 2. Mark SeatBooking as booked
+      await SeatBooking.updateOne(
+        { tripId: booking.tripId, seatNumber },
+        {
+          status: "booked",
+          bookingId: booking._id,
+          passengerId: passenger._id,
+          passengerName: pData.name || "",
+          gender: pData.gender || "Other",
+          age: Number(pData.age) || 0,
+          paymentStatus: "completed",
+          reservedUntil: null,
+        }
+      );
+    }
 
     // Create payment ledger record
     const payment = await Payment.create({
