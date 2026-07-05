@@ -341,6 +341,9 @@ router.post("/verify", protect, async (req, res) => {
   } catch (error) {
     console.error("[Razorpay Verify & Record] Error:", error);
     res.status(400).json({ success: false, message: error.message || "Payment Verification Failed" });
+  }
+});
+
 // @route   POST /api/payment/generate-qr
 // @desc    Generate a dynamic UPI QR Code for booking checkout
 // @access  Private (Traveler)
