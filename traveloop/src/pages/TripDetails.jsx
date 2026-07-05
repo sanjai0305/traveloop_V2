@@ -1737,7 +1737,10 @@ export const TripDetails = () => {
             <SeatLayoutModal
               trip={trip}
               requiredSeats={totalBookingSeats || 1}
-              onConfirm={handleSeatsConfirmed}
+              onConfirm={(seats, passengersList) => {
+                setSelectedSeatsList(seats);
+                handlePassengersConfirmed(passengersList);
+              }}
               onClose={() => { setShowBookingModal(false); }}
             />
           )}

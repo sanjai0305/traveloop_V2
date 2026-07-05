@@ -1,46 +1,70 @@
 /**
- * UPIPaymentModal.jsx — UPI Payment Flow with QR + Deep Links
+ * UPIPaymentModal.jsx — Premium Razorpay-inspired Checkout Experience
  *
- * - Generates UPI intent string: upi://pay?pa=traveloop@upi&pn=TravelLoop&am=...&tn=...
- * - Renders QR code via qrcode.react
- * - One-tap deep links for Google Pay, PhonePe, Paytm, BHIM
- * - Status polling every 3s → /api/payment/status/:bookingId
- * - On success: calls onSuccess(bookingId)
+ * - Renders a high-fidelity checkout visual containing:
+ *   - Trip Summary: Journey Name, Boarding/Dropping points, Seats, Travel Date, Duration, Amount, Status.
+ *   - Payment Methods Panel: UPI (Google Pay, PhonePe, Paytm, BHIM, Amazon Pay), Card, Net Banking, Wallets, EMI.
+ *   - Secured by Razorpay / Powered by Razorpay visual badges.
+ * - Integrates the real Razorpay SDK checkout overlay trigger using existing keys and verification APIs.
+ * - Retains live status polling, QR generation fallback, and manual booking confirmation.
  */
 
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import {
   X, CheckCircle2, XCircle, Loader2, RefreshCw, Clock,
-  AlertTriangle, CreditCard, Bus
+  Smartphone, Zap, AlertTriangle, Info, CreditCard,
+  Copy, Bus, ShieldCheck, Landmark, Wallet, Sparkles, HelpCircle, Lock
 } from "lucide-react";
 import { getApiUrl } from "../../utils/api";
 import { useToast } from "../mobile/MobileToast";
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+const UPI_VPA = import.meta.env.VITE_UPI_VPA || "traveloop@upi";
+const PAYEE_NAME = "TravelLoop";
+const POLL_INTERVAL = 3000;
+
+// ─── BUILD UPI INTENT STRING FOR QR FALLBACK ─────────────────────────────────
+
+const buildUPIString = (amount, bookingRef, tripTitle, seatNumbers) => {
+  const upiId = import.meta.env.VITE_UPI_VPA || "traveloop@upi";
+  const merchantName = "TravelLoop";
+  const bookingId = bookingRef || "BOOK";
+  const note = encodeURIComponent(`Bus Seat Booking - ${bookingId}`);
+  const name = encodeURIComponent(merchantName);
+  return `upi://pay?pa=${upiId}&pn=${name}&am=${amount || 0}&cu=INR&tn=${note}`;
+};
 
 const UPIPaymentModal = ({
   booking,       // { bookingId, tripTitle, totalAmount }
   passengers,    // PassengerData[]
   trip,
   onSuccess,     // (bookingId: string) => void
-  onCancel,      // () => void — releases seats
+  onCancel,      // () => void
   onClose,
 }) => {
   const toast = useToast();
-  const [phase, setPhase] = useState("pending"); // "pending" | "polling" | "success" | "failed"
+  const [phase, setPhase] = useState("gateway"); // "gateway" | "polling" | "success" | "failed"
+  const [activeMethod, setActiveMethod] = useState("upi"); // "upi" | "card" | "netbanking" | "wallets" | "emi"
+  const [pollCount, setPollCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
   const [error, setError] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [copiedUPI, setCopiedUPI] = useState(false);
   const [razorpayLoading, setRazorpayLoading] = useState(false);
+  const pollRef = useRef(null);
   const timerRef = useRef(null);
 
   const amount = booking?.totalAmount || 0;
   const bookingRef = booking?.bookingId || "BOOK";
   const tripTitle = trip?.title || booking?.tripTitle || "Bus Trip";
+  const seatNumbers = passengers?.map((p) => p.seatNumber).join(", ") || "";
 
-  const upiString = buildUPIString(amount, bookingRef, tripTitle);
+  const upiString = buildUPIString(amount, bookingRef, tripTitle, seatNumbers);
+  const qrData = upiString;
   const isMobile = /Android|iPhone/i.test(navigator.userAgent);
 
+  // ── Real Razorpay Checkout Overlay Trigger ─────────────────────────────────
   const handleOpenRazorpay = async () => {
     if (!window.Razorpay) {
       toast.error("Razorpay SDK is not loaded yet. Please wait a moment.");
@@ -51,7 +75,7 @@ const UPIPaymentModal = ({
     try {
       const token = localStorage.getItem("token");
       
-      // 1. Create Razorpay Order
+      // Create Razorpay Order on Backend
       const res = await fetch(getApiUrl("payment/create-order"), {
         method: "POST",
         headers: {
@@ -68,18 +92,18 @@ const UPIPaymentModal = ({
         throw new Error(data.message || "Failed to initiate payment");
       }
 
-      // 2. Configure Razorpay Checkout
+      // Configure Razorpay Options
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
         amount: data.amount * 100, // paise
         currency: data.currency || "INR",
-        name: "TravelLoop",
+        name: "TravelLoop Payments",
         description: `Bus Seat Reservation - ${tripTitle}`,
         order_id: data.orderId,
         handler: async (response) => {
           setPhase("polling");
           try {
-            // 3. Verify Signature
+            // Verify payment
             const verifyRes = await fetch(getApiUrl("payment/verify"), {
               method: "POST",
               headers: {
@@ -94,9 +118,6 @@ const UPIPaymentModal = ({
               })
             });
             const verifyData = await verifyRes.json();
-            console.log("API URL:", getApiUrl("payment/verify"));
-            console.log("confirmEndpoint (deprecated):", getApiUrl("bookings/confirm"));
-            console.log("response:", verifyData);
 
             if (verifyData.success) {
               setPhase("success");
@@ -132,7 +153,14 @@ const UPIPaymentModal = ({
     }
   };
 
-  // ── Countdown timer ─────────────────────────────────────────────────────────
+  const handleCopyUPI = () => {
+    navigator.clipboard.writeText(UPI_VPA);
+    setCopiedUPI(true);
+    toast.success("UPI VPA copied successfully!");
+    setTimeout(() => setCopiedUPI(false), 2000);
+  };
+
+  // Timer countdown
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
@@ -148,9 +176,96 @@ const UPIPaymentModal = ({
     return () => clearInterval(timerRef.current);
   }, []);
 
-  const handleCancel = () => {
-    clearInterval(timerRef.current);
-    onCancel();
+  // Status Polling
+  const startPolling = () => {
+    if (pollRef.current) return;
+    setPhase("polling");
+
+    pollRef.current = setInterval(async () => {
+      setPollCount((c) => c + 1);
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          getApiUrl(`payment/status/${booking?._id || bookingRef}`),
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+
+        if (data.success) {
+          const status = (data.status || data.booking?.paymentStatus || "").toUpperCase();
+          if (status === "PAID" || status === "COMPLETED") {
+            clearInterval(pollRef.current);
+            clearInterval(timerRef.current);
+            setPhase("success");
+            setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+          } else if (status === "FAILED" || status === "CANCELLED") {
+            clearInterval(pollRef.current);
+            setPhase("failed");
+            setError("Payment failed or was cancelled.");
+          }
+        }
+      } catch (err) {
+        // network retry
+      }
+    }, POLL_INTERVAL);
+  };
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+      clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Manual payment check
+  const handleManualConfirm = async () => {
+    setConfirming(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("payment/confirm-manual"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          bookingId: booking?._id || bookingRef,
+          paymentMethod: "upi_qr",
+          transactionId: `UPI-${Date.now()}`,
+        }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        stopPolling();
+        clearInterval(timerRef.current);
+        setPhase("success");
+        setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+      } else {
+        setError(data.message || "Could not confirm payment.");
+      }
+    } catch (err) {
+      setError("Connection error. Please try again.");
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  const handleAppOpen = (app) => {
+    if (!upiString) {
+      toast.error("UPI link is not generated");
+      return;
+    }
+    const deepLink = app.replace("upi://", "tez://"); // tez is default tez/phonepe scheme replacer
+    window.location.href = deepLink;
+    setTimeout(startPolling, 3000);
   };
 
   const formatTime = (secs) => {
@@ -159,243 +274,369 @@ const UPIPaymentModal = ({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // ─── RENDER ─────────────────────────────────────────────────────────────────
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center p-0 md:p-4 overflow-hidden"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
 
-      {/* Modal */}
+      {/* Main Payment Checkout Card */}
       <motion.div
-        initial={{ y: 80, opacity: 0 }}
+        initial={{ y: "100%", opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 80, opacity: 0 }}
-        transition={{ type: "spring", damping: 22, stiffness: 300 }}
-        className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
+        exit={{ y: "100%", opacity: 0 }}
+        transition={{ type: "spring", damping: 25, stiffness: 280 }}
+        className="relative w-full max-w-4xl h-full md:h-[88vh] bg-slate-900 border border-slate-800 text-white rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col md:flex-row overflow-hidden"
       >
         {/* Success overlay */}
         <AnimatePresence>
           {phase === "success" && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-3xl gap-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900 gap-4"
             >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.1 }}
-                className="w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center"
-              >
-                <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-              </motion.div>
-              <div className="text-center">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">Payment Confirmed!</h3>
-                <p className="text-xs text-slate-500 mt-1">Generating your QR ticket…</p>
+              <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400" />
               </div>
-              <Loader2 className="w-5 h-5 text-teal-500 animate-spin" />
+              <div className="text-center">
+                <h3 className="text-lg font-black text-white">Payment Confirmed Successfully!</h3>
+                <p className="text-xs text-slate-400 mt-1">Directing you to your boarding pass...</p>
+              </div>
+              <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 px-5 pt-5 pb-4 rounded-t-3xl flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <CreditCard size={16} className="text-teal-500" />
-              Complete Payment
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">{tripTitle}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-700"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex-1 px-5 py-4 space-y-4 overflow-y-auto">
-
-          {/* Billing Summary Card */}
-          <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-150 dark:border-slate-700">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">Total Amount to Pay</span>
-              <span className="text-xl font-black text-teal-600 dark:text-teal-400">₹{amount.toLocaleString("en-IN")}</span>
+        {/* Left Panel: Trip Summary */}
+        <div className="w-full md:w-[380px] bg-slate-950 border-r border-slate-850 p-6 flex flex-col overflow-y-auto shrink-0">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between pb-4 border-b border-slate-850 mb-5">
+            <div className="flex items-center gap-2">
+              <Bus size={18} className="text-teal-400" />
+              <span className="text-sm font-black tracking-wider uppercase">Trip Details</span>
             </div>
-            <div className="space-y-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              <div className="flex justify-between">
-                <span>Journey Name:</span>
-                <span className="font-extrabold text-slate-700 dark:text-slate-200 truncate max-w-[180px]">{tripTitle}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Booking ID:</span>
-                <span className="font-extrabold text-slate-700 dark:text-slate-200">{bookingRef}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Seats Reserved:</span>
-                <span className="font-extrabold text-slate-700 dark:text-slate-200">
-                  {passengers?.map((p) => p.seatNumber).join(", ")}
-                </span>
-              </div>
-            </div>
-            {/* Session countdown */}
-            <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-xl w-fit">
-              <Clock size={10} className="text-red-500" />
-              <span className="text-[10px] font-black text-red-550 dark:text-red-400">
-                Session expires in {formatTime(timeLeft)}
+            <div className="flex items-center gap-1.5 bg-red-500/10 px-2.5 py-1 rounded-xl">
+              <Clock size={11} className="text-red-400" />
+              <span className="text-[10px] font-black text-red-400 font-mono">
+                {formatTime(timeLeft)}
               </span>
             </div>
           </div>
 
-          {/* Passenger Section */}
-          {passengers && passengers.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-[11px] font-black text-slate-500 uppercase tracking-wide">Travelers Summary</p>
+          {/* Ticket Information */}
+          <div className="space-y-4 flex-1">
+            <div className="space-y-1">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Journey Name</span>
+              <p className="text-xs font-black text-white leading-normal truncate">{tripTitle}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Boarding Point</span>
+                <p className="text-xs font-bold text-slate-200 truncate">{trip?.pickupLocation || booking?.pickupLocation || "Main Terminal"}</p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Dropping Point</span>
+                <p className="text-xs font-bold text-slate-200 truncate">{trip?.dropPoint || "Terminal Drop"}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Travel Date</span>
+                <p className="text-xs font-mono font-bold text-slate-200">{trip?.startDate ? new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Duration</span>
+                <p className="text-xs font-bold text-slate-200">{trip?.duration || "N/A"}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-3 border-t border-slate-850">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Passengers ({passengers?.length || 1})</span>
               <div className="space-y-2">
-                {passengers.map((p, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-3xl border border-slate-200 dark:border-slate-700"
-                  >
-                    <div
-                      className={`w-7.5 h-7.5 rounded-full flex items-center justify-center text-[10px] font-black text-white ${
-                        p.gender === "Female" ? "bg-pink-500" : "bg-sky-500"
-                      }`}
-                    >
-                      {p.name?.[0]?.toUpperCase() || "?"}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-black text-slate-800 dark:text-slate-200 truncate">{p.name}</p>
-                      <p className="text-[10px] text-slate-500">{p.gender} · {p.age} years</p>
-                    </div>
-                    <span className="px-3 py-1 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 text-[10px] font-black border border-teal-200 dark:border-teal-800 flex items-center gap-1">
-                      <Bus size={10} /> {p.seatNumber}
-                    </span>
+                {passengers?.map((p, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs font-semibold text-slate-350 bg-slate-900/60 rounded-xl px-3 py-2 border border-slate-850">
+                    <span className="truncate max-w-[150px]">{p.name} ({p.gender[0]})</span>
+                    <span className="text-teal-400 font-mono text-[10px] bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">Seat {p.seatNumber}</span>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Error */}
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-rose-50 dark:bg-rose-900/20 rounded-xl border border-rose-200 text-rose-600 text-[11px] font-semibold">
-              <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
-              {error}
+          {/* Pricing Box */}
+          <div className="bg-slate-900 border border-slate-850 rounded-2xl p-4.5 mt-5">
+            <div className="flex justify-between items-center pb-2.5 border-b border-slate-800 mb-2.5">
+              <span className="text-[10px] font-black text-slate-450 uppercase tracking-widest">Grand Total</span>
+              <span className="text-xl font-black text-teal-400">₹{amount.toLocaleString("en-IN")}</span>
             </div>
-          )}
-
-          {phase === "failed" ? (
-            <div className="text-center py-8 space-y-3 bg-rose-50/10 dark:bg-rose-900/5 rounded-3xl border border-rose-150 p-6">
-              <div className="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center mx-auto">
-                <XCircle className="w-8 h-8 text-rose-500" />
-              </div>
-              <p className="text-sm font-black text-slate-800 dark:text-white">Payment Failed</p>
-              <p className="text-[11px] text-slate-500">{error || "The transaction was unsuccessful."}</p>
-              <button
-                onClick={() => { setPhase("pending"); setError(null); setTimeLeft(600); }}
-                className="px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-black text-xs flex items-center gap-1.5 mx-auto shadow-md transition-colors"
-              >
-                <RefreshCw size={12} /> Try Again
-              </button>
+            <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-500 uppercase tracking-wider">
+              <Lock size={10} className="text-emerald-500" /> Secure SSL Connection
             </div>
-          ) : (
-            <>
-              {/* Razorpay Integration Card */}
-              <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-wide">Razorpay Gateway</span>
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-200/50">SECURED</span>
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-400">Powered by Razorpay</span>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800 pb-2 mb-2">
-                  <div>
-                    <span className="block text-[8px] uppercase tracking-wide text-slate-400">Payment Status</span>
-                    <span className="font-extrabold text-amber-500 uppercase">PENDING</span>
-                  </div>
-                  <div>
-                    <span className="block text-[8px] uppercase tracking-wide text-slate-400">Order ID</span>
-                    <span className="font-mono text-slate-700 dark:text-slate-300 truncate block">{bookingRef}</span>
-                  </div>
-                </div>
+          </div>
+        </div>
 
+        {/* Right Panel: Payment Options */}
+        <div className="flex-1 flex flex-col overflow-y-auto bg-slate-900">
+          
+          {/* Header */}
+          <div className="px-6 py-4.5 border-b border-slate-850 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-black flex items-center gap-2 text-white">
+                <ShieldCheck size={18} className="text-teal-400 animate-pulse" />
+                Select Payment Mode
+              </h2>
+              <p className="text-[10px] text-slate-450 mt-0.5">Secure payment gateway powered by Razorpay.</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+            
+            {/* Method Tabs Left Side */}
+            <div className="w-full md:w-40 border-b md:border-b-0 md:border-r border-slate-850 flex md:flex-col shrink-0 bg-slate-950/20 overflow-x-auto md:overflow-x-visible">
+              {[
+                { id: "upi", label: "UPI Apps", icon: Smartphone },
+                { id: "card", label: "Cards", icon: CreditCard },
+                { id: "netbanking", label: "Net Banking", icon: Landmark },
+                { id: "wallets", label: "Wallets", icon: Wallet },
+                { id: "emi", label: "EMI Plans", icon: RefreshCw },
+              ].map((method) => {
+                const Icon = method.icon;
+                const isSelected = activeMethod === method.id;
+                return (
+                  <button
+                    key={method.id}
+                    onClick={() => setActiveMethod(method.id)}
+                    className={`flex-1 md:flex-initial flex items-center justify-center md:justify-start gap-2.5 px-4 py-4 text-xs font-black uppercase tracking-wider text-left transition-all ${
+                      isSelected
+                        ? "bg-slate-800 text-teal-400 border-b-2 md:border-b-0 md:border-l-4 border-teal-400"
+                        : "text-slate-400 hover:text-white hover:bg-slate-850/50"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    <span>{method.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Method Details Pane */}
+            <div className="flex-1 p-6 overflow-y-auto space-y-6">
+              
+              {/* Method 1: UPI */}
+              {activeMethod === "upi" && (
+                <div className="space-y-5 animate-fade-in">
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pay directly with UPI app</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      {[
+                        { name: "Google Pay", color: "from-blue-600 to-blue-700", bg: "bg-blue-600/10 border-blue-500/20" },
+                        { name: "PhonePe", color: "from-purple-600 to-purple-700", bg: "bg-purple-600/10 border-purple-500/20" },
+                        { name: "Paytm", color: "from-sky-500 to-sky-600", bg: "bg-sky-500/10 border-sky-500/20" },
+                        { name: "BHIM", color: "from-orange-500 to-orange-600", bg: "bg-orange-500/10 border-orange-500/20" },
+                        { name: "Amazon Pay", color: "from-amber-500 to-amber-600", bg: "bg-amber-500/10 border-amber-500/20" },
+                      ].map((app) => (
+                        <button
+                          key={app.name}
+                          onClick={() => handleAppOpen(app.name)}
+                          className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${app.bg} hover:border-teal-400 transition-all active:scale-95 text-center shrink-0 h-16`}
+                        >
+                          <span className="text-[9px] font-black text-white">{app.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* QR Fallback */}
+                  <div className="border-t border-slate-850 pt-5 flex flex-col items-center gap-4">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scan QR Code to pay</p>
+                    <div className="p-3 bg-white rounded-2xl shadow-inner border border-slate-100 flex items-center justify-center">
+                      {qrData ? (
+                        <QRCodeSVG value={qrData} size={150} level="H" includeMargin fgColor="#0f172a" />
+                      ) : (
+                        <span className="text-[10px] text-rose-500 font-bold py-8">QR generation failed. Use gateway.</span>
+                      )}
+                    </div>
+                    
+                    {/* Copy VPA */}
+                    <div className="w-full max-w-xs bg-slate-950/60 border border-slate-850 rounded-2xl p-3 flex items-center justify-between">
+                      <div className="overflow-hidden mr-2">
+                        <p className="text-[8px] text-slate-500 font-black uppercase">UPI Address</p>
+                        <p className="text-[11px] font-bold text-slate-300 truncate">{UPI_VPA}</p>
+                      </div>
+                      <button
+                        onClick={handleCopyUPI}
+                        className="bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[9px] font-black px-2.5 py-1.5 rounded-xl transition-all"
+                      >
+                        {copiedUPI ? "Copied" : "Copy VPA"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Method 2: Cards */}
+              {activeMethod === "card" && (
+                <div className="space-y-4 animate-fade-in">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credit / Debit Card details</p>
+                  
+                  {/* Mock Premium Card UI */}
+                  <div className="bg-gradient-to-br from-slate-800 to-slate-950 rounded-3xl p-5 border border-white/10 shadow-lg relative overflow-hidden h-40 flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">Traveloop Classic</span>
+                      <CreditCard size={18} className="text-teal-400" />
+                    </div>
+                    <div className="text-sm font-mono tracking-widest text-slate-300">••••  ••••  ••••  ••••</div>
+                    <div className="flex justify-between items-end text-[9px] font-mono text-slate-400">
+                      <div>
+                        <span>CARD HOLDER</span>
+                        <p className="font-bold text-white uppercase tracking-wider mt-0.5">Your Name</p>
+                      </div>
+                      <div className="text-right">
+                        <span>EXPIRES</span>
+                        <p className="font-bold text-white mt-0.5">MM/YY</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <input disabled placeholder="Card Number" className="col-span-3 px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
+                    <input disabled placeholder="Expiry (MM/YY)" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
+                    <input disabled placeholder="CVV" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
+                    <button onClick={handleOpenRazorpay} className="py-3 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 text-[10px] font-black uppercase">Secure Fill</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Method 3: Net Banking */}
+              {activeMethod === "netbanking" && (
+                <div className="space-y-4 animate-fade-in">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Popular Bank</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra", "Punjab National Bank"].map((bank) => (
+                      <button
+                        key={bank}
+                        onClick={handleOpenRazorpay}
+                        className="flex items-center gap-2 p-3 bg-slate-950/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-950 transition-all text-left font-bold"
+                      >
+                        <Landmark size={12} className="text-teal-400" />
+                        <span className="truncate">{bank}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Method 4: Wallets */}
+              {activeMethod === "wallets" && (
+                <div className="space-y-4 animate-fade-in">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link Wallet Option</p>
+                  <div className="grid grid-cols-1 gap-2 text-xs">
+                    {["Amazon Pay Wallet", "Paytm Wallet", "PhonePe Wallet", "MobiKwik"].map((wallet) => (
+                      <button
+                        key={wallet}
+                        onClick={handleOpenRazorpay}
+                        className="flex items-center justify-between p-3.5 bg-slate-950/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-950 transition-all font-bold"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Wallet size={12} className="text-teal-400" />
+                          <span>{wallet}</span>
+                        </div>
+                        <span className="text-[9px] text-slate-450 uppercase">Connect</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Method 5: EMI */}
+              {activeMethod === "emi" && (
+                <div className="space-y-4 animate-fade-in text-center py-6">
+                  <RefreshCw size={24} className="mx-auto text-teal-400 animate-spin" />
+                  <p className="text-xs font-bold text-slate-300">EMI plans are available for amounts above ₹3,000</p>
+                  <p className="text-[10px] text-slate-500">EMI options will be listed securely on the Razorpay overlay checkout.</p>
+                  <button
+                    onClick={handleOpenRazorpay}
+                    className="px-5 py-2.5 bg-teal-500 text-slate-950 rounded-xl font-black text-[10px] uppercase tracking-wider mx-auto"
+                  >
+                    Check EMI eligibility
+                  </button>
+                </div>
+              )}
+
+              {/* Manual Confirmation (Already Paid warning) */}
+              <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl space-y-2">
+                <div className="flex items-start gap-2">
+                  <Info size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-slate-400 leading-normal font-semibold">
+                    Already completed your UPI transaction? If verified on your phone, click manual verification to update booking status immediately.
+                  </p>
+                </div>
                 <button
-                  onClick={handleOpenRazorpay}
-                  disabled={razorpayLoading}
-                  className="w-full py-3.5 rounded-2xl bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-98 transition-all shadow-md shadow-teal-500/10"
+                  onClick={handleManualConfirm}
+                  disabled={confirming}
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5"
                 >
-                  {razorpayLoading ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
-                  {razorpayLoading ? "Connecting Gateway..." : `Proceed with Razorpay (Pay ₹${amount.toLocaleString("en-IN")})`}
+                  {confirming ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                  {confirming ? "Confirming..." : "I've Paid — Verify Payment"}
                 </button>
               </div>
 
-              {/* Payment Methods Card */}
-              <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 space-y-2.5">
-                <p className="text-[11px] font-black text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
-                  <CreditCard size={12} className="text-teal-500" /> Supported Payment Methods
-                </p>
-                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-650 dark:text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Razorpay UPI
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Razorpay QR
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Google Pay
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> PhonePe
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Paytm
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> BHIM
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Amazon Pay
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Credit/Debit Card
-                  </div>
-                  <div className="flex items-center gap-1.5 col-span-2">
-                    <CheckCircle2 size={12} className="text-emerald-500" /> Net Banking & Wallets
-                  </div>
+              {/* Error box */}
+              {error && (
+                <div className="flex items-start gap-2 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse">
+                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
                 </div>
-              </div>
+              )}
 
+              {/* Polling Check */}
               {phase === "polling" && (
-                <div className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300">
+                <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
                   <Loader2 size={12} className="animate-spin" />
-                  <span className="text-[11px] font-black">
-                    Verifying payment signature with Razorpay...
+                  <span className="text-[10px] font-black">
+                    Validating transaction signature... (Attempt #{pollCount})
                   </span>
                 </div>
               )}
-            </>
-          )}
+
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="p-6 border-t border-slate-850 bg-slate-950/40 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 py-4 border border-slate-850 hover:border-rose-500/30 hover:bg-rose-500/5 text-slate-400 hover:text-rose-400 font-black text-xs uppercase tracking-wider rounded-2xl transition-all"
+            >
+              Cancel & Release Seats
+            </button>
+            <button
+              onClick={handleOpenRazorpay}
+              disabled={razorpayLoading}
+              className="flex-1.5 py-4 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-teal-500/10 active:scale-98 transition-all flex items-center justify-center gap-2"
+            >
+              {razorpayLoading ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={14} />}
+              {razorpayLoading ? "Linking checkout..." : `Pay ₹${amount.toLocaleString("en-IN")} via Razorpay`}
+            </button>
+          </div>
+
         </div>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 px-4 pb-6 pt-3">
-          <button
-            onClick={handleCancel}
-            className="w-full py-3.5 rounded-2xl border-2 border-slate-200 dark:border-slate-700 text-slate-500 font-black text-xs hover:border-rose-300 hover:text-rose-500 transition-colors"
-          >
-            Cancel & Release Seats
-          </button>
-        </div>
       </motion.div>
     </motion.div>
   );

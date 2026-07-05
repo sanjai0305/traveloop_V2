@@ -1,54 +1,54 @@
 /**
- * SeatLayoutModal.jsx — Premium Volvo Sleeper Bus Seat Selection
+ * SeatLayoutModal.jsx — Premium RedBus/MakeMyTrip Bus Seat Selection Experience
  *
- * - Renders driver cabin, entry door, full seat grid
- * - Colour-codes seats by status (available/reserved/booked male/booked female/selected)
- * - Tooltips on booked seats show Passenger Name, Gender, Age
- * - Listens to Socket.IO seat_update events for live cross-user sync
- * - Shows availability counters: Available / Male / Female / Reserved
+ * - Renders driver cabin, entry door, premium sleeper/seater grid layout
+ * - Interactive seat nodes with hover animations, glow effects, initials, and tooltips
+ * - Premium right-side passenger details drawer (Rounded 28px, Glassmorphism, Fare Summary)
+ * - Restores live socket.io updates and API calls (seats/reserve)
  */
 
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Users, Bus, DoorOpen, Check, AlertTriangle, Loader2,
-  User, RefreshCw, Info
+  User, RefreshCw, Info, ArrowRight, Sparkles, Phone, ShieldCheck, Heart
 } from "lucide-react";
 import { io as socketIO } from "socket.io-client";
 import { getApiUrl, getSocketUrl } from "../../utils/api";
+import { useToast } from "../mobile/MobileToast";
 
-// ─── SEAT STATUS COLOURS ──────────────────────────────────────────────────────
+// ─── SEAT STATUS COLOURS & STYLES ───────────────────────────────────────────
 
 const SEAT_STYLES = {
   available: {
-    bg: "bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-600",
-    text: "text-slate-700 dark:text-slate-300",
-    hover: "hover:border-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 cursor-pointer",
+    bg: "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm",
+    text: "text-slate-700 dark:text-slate-350",
+    hover: "hover:border-teal-400 hover:shadow-[0_0_12px_rgba(20,184,166,0.25)] dark:hover:border-teal-500/60 cursor-pointer",
     label: "Available",
   },
   selected: {
-    bg: "bg-blue-500 border-blue-600",
+    bg: "bg-gradient-to-br from-teal-400 to-cyan-500 border-teal-500 text-white shadow-lg shadow-teal-500/25",
     text: "text-white",
     hover: "cursor-pointer",
     label: "Selected",
   },
   reserved: {
-    bg: "bg-amber-100 border-amber-400 dark:bg-amber-900/40",
-    text: "text-amber-700 dark:text-amber-300",
+    bg: "bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60",
+    text: "text-amber-700 dark:text-amber-400",
     hover: "cursor-not-allowed",
     label: "Reserved",
   },
   booked_male: {
-    bg: "bg-sky-100 border-sky-400 dark:bg-sky-900/40",
-    text: "text-sky-700 dark:text-sky-300",
-    hover: "cursor-pointer",
-    label: "Male",
+    bg: "bg-sky-50 dark:bg-sky-950/20 border-sky-300 dark:border-sky-900/60",
+    text: "text-sky-700 dark:text-sky-400",
+    hover: "cursor-not-allowed",
+    label: "Booked (Male)",
   },
   booked_female: {
-    bg: "bg-pink-100 border-pink-400 dark:bg-pink-900/30",
-    text: "text-pink-700 dark:text-pink-300",
-    hover: "cursor-pointer",
-    label: "Female",
+    bg: "bg-pink-50 dark:bg-pink-955/20 border-pink-300 dark:border-pink-900/50",
+    text: "text-pink-700 dark:text-pink-400",
+    hover: "cursor-not-allowed",
+    label: "Booked (Female)",
   },
 };
 
@@ -63,62 +63,88 @@ const getSeatStyle = (seat, isSelected) => {
 
 // ─── INDIVIDUAL SEAT CELL ─────────────────────────────────────────────────────
 
-const SeatCell = ({ seat, isSelected, onClick, disabled }) => {
+const SeatCell = ({ seat, isSelected, onClick, disabled, passengerInfo }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const style = getSeatStyle(seat, isSelected);
   const isBooked = seat.status === "booked";
   const isReserved = seat.status === "reserved";
+  
+  // Calculate initials to display inside selected seat
+  const initials = passengerInfo?.name
+    ? passengerInfo.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
+    : "";
 
   return (
     <div className="relative flex flex-col items-center">
-      <button
+      <motion.button
+        type="button"
+        whileHover={{ scale: (isBooked || isReserved || disabled) ? 1 : 1.06 }}
+        whileTap={{ scale: (isBooked || isReserved || disabled) ? 1 : 0.95 }}
         onClick={() => !disabled && onClick(seat)}
-        onMouseEnter={() => isBooked && setShowTooltip(true)}
+        onMouseEnter={() => (isBooked || passengerInfo) && setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
         disabled={disabled || isBooked || isReserved}
         className={`
-          relative w-10 h-10 rounded-lg border-2 flex flex-col items-center justify-center
-          text-[9px] font-extrabold transition-all duration-150 select-none
+          relative w-12 h-12 rounded-xl border-2 flex flex-col items-center justify-center
+          text-[9px] font-extrabold transition-all duration-200 select-none
           ${style.bg} ${style.text} ${style.hover}
-          ${isSelected ? "scale-105 shadow-lg shadow-blue-500/30 ring-2 ring-blue-300" : ""}
-          ${isBooked || isReserved ? "opacity-90" : "active:scale-95"}
+          ${isSelected ? "ring-2 ring-teal-300 dark:ring-teal-800 scale-105" : ""}
+          ${isBooked || isReserved ? "opacity-90" : ""}
         `}
-        title={seat.seatNumber}
       >
-        {/* Seat icon */}
         {isSelected ? (
-          <Check size={12} className="mb-px" />
+          <div className="flex flex-col items-center justify-center">
+            <span className="leading-none text-[8px] opacity-75">{seat.seatNumber}</span>
+            <span className="text-[10px] font-black tracking-tighter mt-0.5 bg-white/20 px-1 rounded">
+              {initials || "Sel"}
+            </span>
+          </div>
         ) : isBooked ? (
-          <User size={10} className="mb-px opacity-70" />
+          <div className="flex flex-col items-center justify-center opacity-75">
+            <User size={10} className="mb-px" />
+            <span className="leading-none text-[8px]">{seat.seatNumber}</span>
+          </div>
         ) : (
-          <div className="w-6 h-3.5 rounded-t border border-current opacity-40 mb-px" />
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-8 h-2.5 rounded bg-slate-300 dark:bg-slate-700 opacity-40 mb-1" />
+            <span className="leading-none">{seat.seatNumber}</span>
+          </div>
         )}
-        <span className="leading-none">{seat.seatNumber}</span>
-
-        {/* Reserved indicator dot */}
+        
         {isReserved && (
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white animate-pulse" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white dark:border-slate-900 animate-pulse" />
         )}
-      </button>
+      </motion.button>
 
-      {/* Hover Tooltip for booked seats */}
+      {/* Hover Tooltip */}
       <AnimatePresence>
-        {showTooltip && isBooked && (
+        {showTooltip && (isBooked || passengerInfo) && (
           <motion.div
             initial={{ opacity: 0, y: 4, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.95 }}
-            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[10000] pointer-events-none"
           >
-            <div className="bg-slate-900 text-white rounded-xl px-3 py-2 text-[10px] shadow-2xl border border-slate-700 whitespace-nowrap min-w-[130px]">
-              <div className="font-black text-[11px] text-teal-400 mb-1">Seat {seat.seatNumber}</div>
-              <div className="space-y-0.5 opacity-90">
-                {seat.passengerName && <div>👤 {seat.passengerName}</div>}
-                {seat.gender && <div>⚧ {seat.gender}</div>}
-                {seat.age > 0 && <div>🎂 {seat.age} years</div>}
+            <div className="bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur-md text-white rounded-2xl px-3.5 py-2 text-[10px] shadow-2xl border border-slate-700/80 whitespace-nowrap min-w-[140px]">
+              <div className="font-black text-[11px] text-teal-400 mb-1">
+                Seat {seat.seatNumber} ({passengerInfo ? "Selected" : "Booked"})
               </div>
-              {/* Tooltip arrow */}
-              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+              <div className="space-y-0.5 opacity-90">
+                {passengerInfo ? (
+                  <>
+                    <div>👤 {passengerInfo.name}</div>
+                    <div>🎂 {passengerInfo.age} yrs · {passengerInfo.gender}</div>
+                    {passengerInfo.phone && <div>📞 {passengerInfo.phone}</div>}
+                  </>
+                ) : (
+                  <>
+                    {seat.passengerName && <div>👤 {seat.passengerName}</div>}
+                    {seat.gender && <div>⚧ {seat.gender}</div>}
+                    {seat.age > 0 && <div>🎂 {seat.age} years</div>}
+                  </>
+                )}
+              </div>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900/95" />
             </div>
           </motion.div>
         )}
@@ -132,13 +158,31 @@ const SeatCell = ({ seat, isSelected, onClick, disabled }) => {
 const SeatLayoutModal = ({
   trip,
   requiredSeats,       // number of seats user must select
-  onConfirm,           // (selectedSeats: string[]) => void
+  onConfirm,           // (selectedSeats: string[], passengerList: Passenger[]) => void
   onClose,
 }) => {
+  const toast = useToast();
   const [seats, setSeats] = useState([]);
   const [counters, setCounters] = useState({ available: 0, male: 0, female: 0, reserved: 0 });
   const [layout, setLayout] = useState({ rows: [], seatsPerRow: 4 });
   const [selected, setSelected] = useState([]);
+  
+  // Passenger assignments indexed by seat number
+  const [passengerDetails, setPassengerDetails] = useState({});
+  
+  // Active seat drawer state
+  const [drawerSeat, setDrawerSeat] = useState(null);
+  
+  // Drawer form state
+  const [formData, setFormData] = useState({
+    name: "",
+    age: "",
+    gender: "Male",
+    phone: "",
+    emergencyContact: "",
+    seatPreference: "Window",
+  });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reserving, setReserving] = useState(false);
@@ -221,26 +265,89 @@ const SeatLayoutModal = ({
   const handleSeatClick = (seat) => {
     if (seat.status === "booked" || seat.status === "reserved") return;
 
-    setSelected((prev) => {
-      if (prev.includes(seat.seatNumber)) {
-        return prev.filter((s) => s !== seat.seatNumber);
+    const seatNum = seat.seatNumber;
+    
+    // Toggling selection
+    if (selected.includes(seatNum)) {
+      setSelected((prev) => prev.filter((s) => s !== seatNum));
+      // Remove passenger info
+      setPassengerDetails((prev) => {
+        const next = { ...prev };
+        delete next[seatNum];
+        return next;
+      });
+      // Close drawer if it was open for this seat
+      if (drawerSeat === seatNum) {
+        setDrawerSeat(null);
       }
-      if (prev.length >= requiredSeats) {
-        // Deselect the first selected and add new
-        return [...prev.slice(1), seat.seatNumber];
-      }
-      return [...prev, seat.seatNumber];
-    });
+      return;
+    }
+
+    // Limit exceeded check
+    if (selected.length >= requiredSeats) {
+      toast.info(`You can select a maximum of ${requiredSeats} seat(s).`);
+      return;
+    }
+
+    // Add seat and open drawer
+    setSelected((prev) => [...prev, seatNum]);
+    openPassengerDrawer(seatNum);
   };
 
-  // ── Reserve seats + call onConfirm ─────────────────────────────────────────
+  const openPassengerDrawer = (seatNum) => {
+    const existing = passengerDetails[seatNum] || {};
+    setFormData({
+      name: existing.name || "",
+      age: existing.age || "",
+      gender: existing.gender || "Male",
+      phone: existing.phone || "",
+      emergencyContact: existing.emergencyContact || "",
+      seatPreference: existing.seatPreference || "Window",
+    });
+    setDrawerSeat(seatNum);
+  };
+
+  // ── Save Passenger Form Details ─────────────────────────────────────────────
+  const handleSavePassenger = (e) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      toast.error("Passenger Name is required");
+      return;
+    }
+    if (!formData.age) {
+      toast.error("Passenger Age is required");
+      return;
+    }
+
+    // Save details
+    setPassengerDetails((prev) => ({
+      ...prev,
+      [drawerSeat]: {
+        seatNumber: drawerSeat,
+        ...formData,
+      },
+    }));
+
+    setDrawerSeat(null);
+    toast.success(`Details for Seat ${drawerSeat} saved!`);
+  };
+
+  // ── Confirm Booking & Reservation API Call ─────────────────────────────────
   const handleConfirm = async () => {
-    if (selected.length !== requiredSeats) return;
+    // Check if passenger details are filled for all selected seats
+    const missing = selected.filter((seatNum) => !passengerDetails[seatNum]);
+    if (missing.length > 0) {
+      toast.error(`Please fill passenger details for seat(s): ${missing.join(", ")}`);
+      // Open drawer for the first missing seat
+      openPassengerDrawer(missing[0]);
+      return;
+    }
 
     setReserving(true);
     const token = localStorage.getItem("token");
     const failedSeats = [];
 
+    // Call seats/reserve endpoint sequentially
     for (const seatNumber of selected) {
       try {
         const res = await fetch(getApiUrl("seats/reserve"), {
@@ -265,14 +372,33 @@ const SeatLayoutModal = ({
     if (failedSeats.length > 0) {
       setError(`Seat(s) ${failedSeats.join(", ")} could not be reserved (taken by another user). Please reselect.`);
       setSelected((prev) => prev.filter((s) => !failedSeats.includes(s)));
+      setPassengerDetails((prev) => {
+        const next = { ...prev };
+        failedSeats.forEach((fs) => delete next[fs]);
+        return next;
+      });
       fetchSeats();
       return;
     }
 
-    onConfirm(selected);
+    // Format list of passengers for onConfirm callback
+    const passengersList = selected.map((seatNum) => ({
+      ...passengerDetails[seatNum],
+      seatNumber: seatNum,
+    }));
+
+    onConfirm(selected, passengersList);
   };
 
-  // ── Build rows for rendering ────────────────────────────────────────────────
+  // ── Fare calculations ──────────────────────────────────────────────────────
+  const baseFare = trip.offerPrice || trip.pricePerPerson || 2500;
+  const numSelected = selected.length;
+  const fareSubtotal = baseFare * numSelected;
+  const fareTax = Math.round(fareSubtotal * 0.05);
+  const fareConvenience = numSelected > 0 ? 150 : 0;
+  const fareTotal = fareSubtotal + fareTax + fareConvenience;
+
+  // Build rows for rendering
   const seatsByRow = layout.rows.reduce((acc, row) => {
     acc[row] = seats.filter((s) => s.row === row).sort((a, b) => a.col - b.col);
     return acc;
@@ -285,224 +411,383 @@ const SeatLayoutModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center p-0 md:p-4 overflow-hidden"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-955/80 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal */}
+      {/* Main Seat Dialog Container */}
       <motion.div
-        initial={{ y: 80, opacity: 0 }}
+        initial={{ y: "100%", opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 80, opacity: 0 }}
-        transition={{ type: "spring", damping: 22, stiffness: 300 }}
-        className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
+        exit={{ y: "100%", opacity: 0 }}
+        transition={{ type: "spring", damping: 25, stiffness: 280 }}
+        className="relative w-full max-w-4xl h-full md:h-[88vh] bg-slate-900 border border-slate-800 text-white rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col md:flex-row overflow-hidden"
       >
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 px-5 pt-5 pb-4 flex items-center justify-between rounded-t-3xl">
-          <div>
-            <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Bus size={16} className="text-teal-500" />
-              Select Your Seats
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Select {requiredSeats} seat{requiredSeats > 1 ? "s" : ""} · {trip.title}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-
-          {/* Counters */}
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { label: "Available", value: counters.available, color: "text-emerald-500" },
-              { label: "Male", value: counters.male, color: "text-sky-500" },
-              { label: "Female", value: counters.female, color: "text-pink-500" },
-              { label: "Reserved", value: counters.reserved, color: "text-amber-500" },
-            ].map((c) => (
-              <div key={c.label} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2 text-center border border-slate-100 dark:border-slate-700">
-                <div className={`text-base font-black ${c.color}`}>{c.value ?? 0}</div>
-                <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">{c.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Legend */}
-          <div className="flex flex-wrap gap-x-3 gap-y-1.5 px-1">
-            {[
-              { color: "bg-white border-slate-300", label: "Available" },
-              { color: "bg-blue-500 border-blue-600", label: "Selected" },
-              { color: "bg-sky-100 border-sky-400", label: "Booked (M)" },
-              { color: "bg-pink-100 border-pink-400", label: "Booked (F)" },
-              { color: "bg-amber-100 border-amber-400", label: "Reserved" },
-            ].map((l) => (
-              <div key={l.label} className="flex items-center gap-1.5">
-                <div className={`w-3.5 h-3.5 rounded border-2 ${l.color}`} />
-                <span className="text-[10px] text-slate-500 font-semibold">{l.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Error banner */}
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-rose-50 dark:bg-rose-900/20 rounded-xl border border-rose-200/60 text-rose-600 dark:text-rose-400 text-[11px] font-semibold">
-              <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
+        
+        {/* Left Side: Seat Layout Grid */}
+        <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
+          
+          {/* Header */}
+          <div className="sticky top-0 z-25 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-6 py-4.5 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-black flex items-center gap-2 text-white">
+                <Bus size={18} className="text-teal-400" />
+                Select Passenger Seats
+              </h2>
+              <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider font-bold">
+                Select {requiredSeats} seat{requiredSeats > 1 ? "s" : ""} · {trip.title}
+              </p>
             </div>
-          )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
 
-          {/* Bus Layout */}
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
-              <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
-              <span className="text-xs text-slate-400 font-semibold">Loading seat map...</span>
-            </div>
-          ) : (
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
-
-              {/* Driver Cabin */}
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-dashed border-slate-300 dark:border-slate-600">
-                <div className="flex-1 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center gap-2">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Driver</span>
-                  <div className="w-5 h-5 rounded-full bg-slate-400 dark:bg-slate-500" />
+          <div className="flex-1 p-5 space-y-5 overflow-y-auto">
+            {/* Legend Banner */}
+            <div className="flex flex-wrap gap-x-4 gap-y-2 bg-slate-955/40 border border-slate-800/80 rounded-2xl p-3 justify-center">
+              {[
+                { color: "bg-slate-800 border-slate-700", label: "Available" },
+                { color: "bg-gradient-to-r from-teal-400 to-cyan-500 border-teal-500", label: "Selected" },
+                { color: "bg-sky-955/30 border-sky-500/60", label: "Booked (M)" },
+                { color: "bg-pink-955/30 border-pink-500/50", label: "Booked (F)" },
+                { color: "bg-amber-955/30 border-amber-500/50", label: "Reserved" },
+              ].map((l) => (
+                <div key={l.label} className="flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded border ${l.color}`} />
+                  <span className="text-[10px] text-slate-400 font-bold">{l.label}</span>
                 </div>
-                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800">
-                  <DoorOpen size={10} className="text-emerald-500" />
-                  <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase">Entry</span>
-                </div>
-              </div>
-
-              {/* Seat rows */}
-              <div className="space-y-2">
-                {layout.rows.map((row) => {
-                  const rowSeats = seatsByRow[row] || [];
-                  const leftSeats = rowSeats.filter((s) => s.col <= 2);
-                  const rightSeats = rowSeats.filter((s) => s.col > 2);
-                  return (
-                    <div key={row} className="flex items-center gap-2">
-                      {/* Row label */}
-                      <span className="w-4 text-[9px] font-black text-slate-400 text-center">{row}</span>
-
-                      {/* Left seats */}
-                      <div className="flex gap-1.5">
-                        {leftSeats.map((seat) => (
-                          <SeatCell
-                            key={seat.seatNumber}
-                            seat={seat}
-                            isSelected={selected.includes(seat.seatNumber)}
-                            onClick={handleSeatClick}
-                            disabled={reserving}
-                          />
-                        ))}
-                      </div>
-
-                      {/* Aisle */}
-                      <div className="w-6 border-l-2 border-dashed border-slate-300 dark:border-slate-600 h-8 mx-1" />
-
-                      {/* Right seats */}
-                      <div className="flex gap-1.5">
-                        {rightSeats.map((seat) => (
-                          <SeatCell
-                            key={seat.seatNumber}
-                            seat={seat}
-                            isSelected={selected.includes(seat.seatNumber)}
-                            onClick={handleSeatClick}
-                            disabled={reserving}
-                          />
-                        ))}
-                      </div>
-
-                      {/* Berth indicator */}
-                      <span className="text-[8px] text-slate-300 dark:text-slate-600 ml-auto">
-                        {row <= "E" ? "L" : "U"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Bus tail */}
-              <div className="mt-4 pt-3 border-t border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center">
-                <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                  <div className="h-px w-8 bg-slate-300 dark:bg-slate-600" />
-                  Rear
-                  <div className="h-px w-8 bg-slate-300 dark:bg-slate-600" />
-                </div>
-              </div>
+              ))}
             </div>
-          )}
 
-          {/* Refresh button */}
-          <button
-            onClick={fetchSeats}
-            disabled={loading}
-            className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold mx-auto hover:text-teal-500 transition-colors"
-          >
-            <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
-            Refresh seat map
-          </button>
-
-          {/* Info tip */}
-          <div className="flex items-start gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-            <Info size={12} className="text-blue-400 flex-shrink-0 mt-0.5" />
-            <p className="text-[10px] text-blue-600 dark:text-blue-300 font-medium">
-              Selected seats are temporarily reserved for 10 minutes. Complete payment to confirm.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 px-4 pb-6 pt-3 space-y-3">
-          {/* Progress bar */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-black text-slate-700 dark:text-slate-300">
-                {selected.length} / {requiredSeats} seat{requiredSeats > 1 ? "s" : ""} selected
-              </span>
-              {selected.length > 0 && (
-                <span className="text-[10px] text-teal-500 font-bold">
-                  {selected.join(", ")}
-                </span>
-              )}
-            </div>
-            <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-gradient-to-r from-teal-400 to-blue-500 rounded-full"
-                animate={{ width: `${progress}%` }}
-                transition={{ type: "spring", damping: 20 }}
-              />
-            </div>
-          </div>
-
-          <button
-            onClick={handleConfirm}
-            disabled={selected.length !== requiredSeats || reserving}
-            className={`w-full py-3.5 rounded-2xl font-black text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
-              selected.length === requiredSeats && !reserving
-                ? "bg-gradient-to-r from-teal-500 to-blue-600 text-white shadow-lg shadow-teal-500/30 active:scale-98"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
-            }`}
-          >
-            {reserving ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Reserving seats...
-              </>
-            ) : (
-              <>
-                <Check size={14} />
-                Confirm {selected.length > 0 ? `Seat${selected.length > 1 ? "s" : ""} (${selected.join(", ")})` : "Seats"}
-              </>
+            {/* Error banner */}
+            {error && (
+              <div className="flex items-start gap-2.5 p-3.5 bg-rose-500/10 rounded-2xl border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse">
+                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
             )}
-          </button>
+
+            {/* Bus layout map panel */}
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
+                <Loader2 className="w-9 h-9 text-teal-400 animate-spin" />
+                <span className="text-xs text-slate-400 font-bold tracking-wider">Configuring bus seating matrix...</span>
+              </div>
+            ) : (
+              <div className="bg-slate-955/20 rounded-3xl border border-slate-850/90 p-5 max-w-sm mx-auto shadow-inner">
+                
+                {/* Cabin Head */}
+                <div className="flex items-center justify-between mb-5 pb-4 border-b border-dashed border-slate-800">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700">
+                    <div className="w-5 h-5 rounded-full bg-slate-600 flex items-center justify-center text-[9px] font-black text-white">🎛️</div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Driver Section</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-500/20">
+                    <DoorOpen size={12} className="text-teal-400 animate-pulse" />
+                    <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest">Boarding Door</span>
+                  </div>
+                </div>
+
+                {/* Seating Grid */}
+                <div className="space-y-2.5">
+                  {layout.rows.map((row) => {
+                    const rowSeats = seatsByRow[row] || [];
+                    const leftSeats = rowSeats.filter((s) => s.col <= 2);
+                    const rightSeats = rowSeats.filter((s) => s.col > 2);
+                    return (
+                      <div key={row} className="flex items-center gap-2.5">
+                        {/* Row letter */}
+                        <span className="w-4 text-[10px] font-black text-slate-500 text-center">{row}</span>
+
+                        {/* Left sleepers */}
+                        <div className="flex gap-2">
+                          {leftSeats.map((seat) => (
+                            <SeatCell
+                              key={seat.seatNumber}
+                              seat={seat}
+                              isSelected={selected.includes(seat.seatNumber)}
+                              onClick={handleSeatClick}
+                              disabled={reserving}
+                              passengerInfo={passengerDetails[seat.seatNumber]}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Aisle */}
+                        <div className="flex-1 flex items-center justify-center">
+                          <div className="w-full border-t border-dashed border-slate-800 my-auto h-px" />
+                        </div>
+
+                        {/* Right sleepers */}
+                        <div className="flex gap-2">
+                          {rightSeats.map((seat) => (
+                            <SeatCell
+                              key={seat.seatNumber}
+                              seat={seat}
+                              isSelected={selected.includes(seat.seatNumber)}
+                              onClick={handleSeatClick}
+                              disabled={reserving}
+                              passengerInfo={passengerDetails[seat.seatNumber]}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Upper/Lower indicator */}
+                        <span className="text-[8px] font-black text-slate-600 uppercase w-3.5">
+                          {row <= "E" ? "Lwr" : "Upr"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Back Rear bumper */}
+                <div className="mt-5 pt-3.5 border-t border-dashed border-slate-800 flex items-center justify-center">
+                  <div className="flex items-center gap-2 text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                    <div className="h-px w-6 bg-slate-800" />
+                    Rear End
+                    <div className="h-px w-6 bg-slate-800" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Refresh and Info Strip */}
+            <div className="flex flex-col gap-2.5 max-w-sm mx-auto">
+              <button
+                type="button"
+                onClick={fetchSeats}
+                disabled={loading}
+                className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold mx-auto hover:text-teal-400 transition-colors"
+              >
+                <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
+                Live Seat Status Refresh
+              </button>
+
+              <div className="flex items-start gap-2.5 p-3 bg-blue-500/5 rounded-2xl border border-blue-500/10">
+                <Info size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Seats are locked for <span className="text-teal-400 font-bold">10 minutes</span> upon selection to allow form completion and payment.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Left panel footer */}
+          <div className="sticky bottom-0 bg-slate-900 border-t border-slate-850 px-6 py-4 space-y-4 shrink-0">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
+                  Selection Progress ({selected.length} / {requiredSeats})
+                </span>
+                {selected.length > 0 && (
+                  <span className="text-[11px] text-teal-400 font-black">
+                    Seats: {selected.join(", ")}
+                  </span>
+                )}
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-teal-400 to-cyan-500 rounded-full"
+                  animate={{ width: `${progress}%` }}
+                  transition={{ type: "spring", damping: 20 }}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleConfirm}
+              disabled={selected.length !== requiredSeats || reserving}
+              className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                selected.length === requiredSeats && !reserving
+                  ? "bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/20 active:scale-98"
+                  : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50"
+              }`}
+            >
+              {reserving ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  Locking Bus Seats...
+                </>
+              ) : (
+                <>
+                  <Check size={13} />
+                  Confirm Selection & Proceed (₹{fareTotal.toLocaleString("en-IN")})
+                </>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Right Side: Slide-over Drawer for Passenger Assignment */}
+        <AnimatePresence>
+          {drawerSeat && (
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              className="absolute md:relative top-0 right-0 h-full w-full md:w-[380px] bg-slate-950/95 md:bg-slate-950 border-l border-slate-850 z-30 flex flex-col backdrop-blur-xl rounded-l-[28px]"
+            >
+              {/* Drawer Header */}
+              <div className="p-6 border-b border-slate-850 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black flex items-center gap-2 text-white">
+                    <Sparkles size={14} className="text-teal-400 animate-pulse" />
+                    Passenger Assignment
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Please provide passenger details for verification.</p>
+                </div>
+                <button
+                  onClick={() => setDrawerSeat(null)}
+                  className="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {/* Drawer Body */}
+              <form onSubmit={handleSavePassenger} className="flex-1 overflow-y-auto p-6 space-y-5">
+                
+                {/* Seat Assigned Badge */}
+                <div className="flex items-center justify-between bg-teal-500/10 border border-teal-500/20 rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-teal-400" />
+                    <span className="text-xs font-black text-slate-200">Seat Allocation</span>
+                  </div>
+                  <span className="px-3 py-1 rounded-xl bg-teal-500 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(20,184,166,0.4)]">
+                    Seat {drawerSeat} Assigned
+                  </span>
+                </div>
+
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Enter Full Name"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 focus:shadow-[0_0_12px_rgba(20,184,166,0.15)] transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Age</label>
+                      <input
+                        type="number"
+                        required
+                        min="5"
+                        max="120"
+                        value={formData.age}
+                        onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                        placeholder="Years"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Gender</label>
+                      <select
+                        value={formData.gender}
+                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Phone Number</label>
+                    <input
+                      type="tel"
+                      required
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="Contact Mobile Number"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Emergency Contact</label>
+                    <input
+                      type="tel"
+                      required
+                      value={formData.emergencyContact}
+                      onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
+                      placeholder="Emergency Mobile Number"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Seat Berth Preference</label>
+                    <select
+                      value={formData.seatPreference}
+                      onChange={(e) => setFormData({ ...formData, seatPreference: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                    >
+                      <option value="Window">Window Seat</option>
+                      <option value="Aisle">Aisle Seat</option>
+                      <option value="Sleeper Lower">Lower Berth</option>
+                      <option value="Sleeper Upper">Upper Berth</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Fare Summary Breakdown */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4.5 space-y-2.5">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-2 mb-1 flex items-center gap-1.5">
+                    💳 Fare Breakdown (INR)
+                  </p>
+                  <div className="space-y-1.5 text-xs text-slate-400 font-semibold">
+                    <div className="flex justify-between">
+                      <span>Base Ticket price:</span>
+                      <span className="font-extrabold text-white">₹{baseFare.toLocaleString("en-IN")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>GST & State taxes (5%):</span>
+                      <span className="font-extrabold text-white">₹{Math.round(baseFare * 0.05).toLocaleString("en-IN")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Booking Convenience fee:</span>
+                      <span className="font-extrabold text-white">₹150</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center pt-2.5 border-t border-slate-800 mt-2 text-xs font-black">
+                    <span className="text-white">Total Amount:</span>
+                    <span className="text-teal-400 text-sm">₹{(baseFare + Math.round(baseFare * 0.05) + 150).toLocaleString("en-IN")}</span>
+                  </div>
+                </div>
+
+                {/* Drawer Footer CTA */}
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-teal-500/20 active:scale-98 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Check size={14} />
+                    Save Passenger Details
+                  </button>
+                </div>
+
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </motion.div>
     </motion.div>
   );

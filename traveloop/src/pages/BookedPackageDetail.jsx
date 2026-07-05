@@ -909,23 +909,23 @@ const BookedPackageDetail = () => {
   const isMealIncluded = (m) => includedMeals.some(x => x.toLowerCase().includes(m.toLowerCase()));
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-32" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-[#0F172A] text-slate-100 pb-32" style={{ fontFamily: "'Outfit', sans-serif" }}>
 
       {/* ── HERO ── */}
-      <div className="relative h-64 overflow-hidden bg-gradient-to-br from-teal-500 to-cyan-600">
+      <div className="relative h-64 overflow-hidden bg-gradient-to-br from-[#111827] to-[#0F172A] border-b border-white/5">
         {trip.coverImage && (
           <img
             src={trip.coverImage}
             alt={trip.title}
-            className="absolute inset-0 w-full h-full object-cover opacity-70"
+            className="absolute inset-0 w-full h-full object-cover opacity-40 blur-[1px]"
           />
         )}
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 60%)" }} />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to top, #0F172A 0%, rgba(15,23,42,0.4) 100%)" }} />
 
         {/* Back button */}
         <button
           onClick={() => navigate("/my-trips")}
-          className="absolute top-4 left-4 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white active:scale-95 transition-all"
+          className="absolute top-4 left-4 z-30 w-10 h-10 flex items-center justify-center rounded-full bg-slate-950/40 backdrop-blur-md text-white border border-white/10 active:scale-95 transition-all"
           aria-label="Go back"
         >
           <ArrowLeft size={18} />
@@ -935,60 +935,60 @@ const BookedPackageDetail = () => {
         {userTripId && (
           <button
             onClick={() => navigate(`/build-itinerary/${userTripId}`)}
-            className="absolute top-4 left-16 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-teal-500/90 backdrop-blur-sm text-white text-[11px] font-bold active:scale-95 transition-all shadow"
+            className="absolute top-4 left-16 z-30 flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#14B8A6]/90 backdrop-blur-md text-slate-950 text-xs font-black active:scale-95 transition-all shadow-lg shadow-teal-500/20"
             aria-label="Open full itinerary planner"
           >
-            <ListChecks size={12} />
-            Full Planner
+            <ListChecks size={13} />
+            Full Itinerary Planner
           </button>
         )}
 
         {/* Agency verified chip */}
-        <div className="absolute top-4 right-4 z-30 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500 text-white text-[11px] font-bold shadow">
-          <Shield size={11} />
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold shadow-lg">
+          <Shield size={11} className="text-emerald-400" />
           Agency Verified
         </div>
 
         {/* Title & info */}
-        <div className="absolute bottom-0 left-0 right-0 p-5 z-30">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="absolute bottom-0 left-0 right-0 p-6 z-30">
+          <div className="flex items-center gap-2.5 mb-2">
             <span
-              className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold text-white"
-              style={{ background: "linear-gradient(135deg,#14B8B5,#0D9488)" }}
+              className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black text-slate-950 uppercase tracking-widest bg-gradient-to-r from-teal-400 to-cyan-500 shadow-md"
             >
               <Package size={9} />
               Booked Package
             </span>
-            <span className="text-teal-200 text-[10px] font-mono font-bold">{booking.bookingId}</span>
+            <span className="text-[#0EA5E9] text-[10px] font-mono font-black bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">{booking.bookingId}</span>
           </div>
-          <h1 className="text-white text-2xl font-extrabold leading-tight mb-1">
+          <h1 className="text-white text-2xl font-black leading-tight mb-2 tracking-tight">
             {trip.title || "Your Trip"}
           </h1>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1 text-white/80 text-sm">
-              <MapPin size={13} />
+          <div className="flex items-center gap-4 flex-wrap text-slate-350 text-xs font-semibold">
+            <div className="flex items-center gap-1.5">
+              <MapPin size={14} className="text-teal-400" />
               <span>{dest}</span>
             </div>
             {trip.startDate && (
-              <div className="flex items-center gap-1 text-white/80 text-sm">
-                <CalendarDays size={13} />
+              <div className="flex items-center gap-1.5">
+                <CalendarDays size={14} className="text-[#0EA5E9]" />
                 <span>{fmt(trip.startDate)}</span>
               </div>
             )}
             {trip.duration && (
-              <div className="flex items-center gap-1 text-white/80 text-sm">
-                <Clock size={13} />
+              <div className="flex items-center gap-1.5">
+                <Clock size={14} className="text-cyan-400" />
                 <span>{trip.duration}</span>
               </div>
             )}
           </div>
-          <p className="text-white/60 text-xs mt-1">by {agentName}</p>
+          <p className="text-slate-400 text-xs mt-2 font-medium">Organizer: <span className="text-white font-bold">{agentName}</span></p>
         </div>
       </div>
 
-      {/* ── PREMIUM AIRLINE BOARDING PASS CARD ── */}
-      <div className="px-4 pt-4">
-        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-955 border border-slate-800/80 rounded-3xl p-5 shadow-2xl text-white">
+      {/* ── PREMIUM BOARDING PASS CARD ── */}
+      <div className="px-4 pt-4 max-w-4xl mx-auto space-y-6">
+        
+        <div className="relative overflow-hidden bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-[28px] p-6 shadow-2xl text-white">
           <style>{`
             @keyframes shimmer {
               0% { background-position: 0% 50%; }
@@ -1001,16 +1001,16 @@ const BookedPackageDetail = () => {
             }
           `}</style>
           {/* Glassmorphism background blur effect */}
-          <div className="absolute -right-20 -top-20 w-48 h-48 bg-teal-500/15 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -left-20 -bottom-20 w-48 h-48 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -right-20 -top-20 w-48 h-48 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -left-20 -bottom-20 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
           {/* Card Header: Premium Boarding Pass Style */}
           <div className="flex justify-between items-center border-b border-white/10 pb-4 mb-4">
             <div className="flex items-center gap-2">
-              <span className="text-lg font-black tracking-tight" style={{ background: "linear-gradient(to right, #2DD4BF, #3B82F6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              <span className="text-lg font-black tracking-tight bg-gradient-to-r from-teal-400 to-[#0EA5E9] bg-clip-text text-transparent">
                 TRAVELOOP
               </span>
-              <span className="px-2.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-[9px] font-mono font-bold tracking-widest text-teal-400">BOARDING PASS</span>
+              <span className="px-2.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-[9px] font-mono font-black tracking-widest text-teal-400">BOARDING PASS</span>
             </div>
             
             {/* Travel Status Badge */}
@@ -1033,10 +1033,10 @@ const BookedPackageDetail = () => {
           {/* Verification Badge */}
           <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 mb-4">
             <div className="flex items-center gap-2">
-              <Shield size={16} className="text-teal-400" />
-              <span className="text-xs font-bold text-slate-200">Agency Verified Pass</span>
+              <Shield size={16} className="text-teal-400 animate-pulse" />
+              <span className="text-xs font-bold text-slate-200">Secure Bus Allocation Pass</span>
             </div>
-            <span className="text-[10px] text-teal-450 font-mono font-bold">{booking.bookingId}</span>
+            <span className="text-[10px] text-teal-450 font-mono font-black">{booking.bookingId}</span>
           </div>
 
           {/* Ticket Body: Origin and Destination */}
@@ -1059,115 +1059,61 @@ const BookedPackageDetail = () => {
             <div className="text-right">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest">Destination</p>
               <h4 className="text-xl font-black text-white">{(trip.destinations || [])[0] || "Destination"}</h4>
-              <p className="text-xs text-slate-450 mt-0.5 truncate max-w-32">{trip.dropPoint || "Terminal Drop"}</p>
+              <p className="text-xs text-slate-455 mt-0.5 truncate max-w-32">{trip.dropPoint || "Terminal Drop"}</p>
             </div>
           </div>
 
-          {/* Passenger Details Grid */}
+          {/* Ticket Info Details Grid */}
           <div className="grid grid-cols-2 gap-y-4 gap-x-6 border-b border-dashed border-white/10 pb-5 mb-5 text-xs">
             <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Passenger Name</p>
+              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Primary Passenger</p>
               <p className="text-sm font-bold text-white truncate">{booking.travelerName || "Traveler"}</p>
             </div>
             <div>
-              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Booking ID</p>
+              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Booking Reference ID</p>
               <p className="text-sm font-mono font-bold text-teal-400">{booking.bookingId}</p>
             </div>
             <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Age / Gender</p>
-              <p className="text-sm font-bold text-white">{booking.age || "—"} yrs · {booking.gender || "—"}</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Trip Name</p>
-              <p className="text-sm font-bold text-white truncate">{trip.title || "Your Trip"}</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Pickup Point</p>
-              <p className="text-sm font-bold text-white truncate">{booking.pickupLocation || trip.pickupLocation || "Main Terminal"}</p>
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Seat Number</p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                {(() => {
-                  if (booking.boardingStatus === "boarded") {
-                    return (
-                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-extrabold">
-                        Boarded
-                      </span>
-                    );
-                  }
-                  const hasSeat = booking.assignedSeat || (booking.seatNumbers && booking.seatNumbers.length > 0);
-                  if (hasSeat) {
-                    return (
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-extrabold">
-                        Seat {booking.assignedSeat || booking.seatNumbers?.join(", ")}
-                      </span>
-                    );
-                  }
-                  return (
-                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-extrabold">
-                      Waiting Assignment
-                    </span>
-                  );
-                })()}
-              </div>
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Driver Name</p>
+              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Driver Assignment</p>
               <p className="text-sm font-bold text-white truncate">{trip.driverName || "Not Assigned"}</p>
             </div>
             <div>
-              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Bus Number / Type</p>
+              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Bus Configuration</p>
               <p className="text-sm font-bold text-white truncate">{trip.busNumber || "N/A"} · <span className="text-[10px] text-slate-400">{trip.busType}</span></p>
             </div>
             <div>
               <p className="text-[9px] text-slate-455 uppercase tracking-wider">Total Amount Paid</p>
-              <p className="text-sm font-bold text-teal-400">₹{(booking.pricePaid || booking.amount || 0).toLocaleString()}</p>
+              <p className="text-sm font-bold text-teal-400">₹{(booking.pricePaid || booking.amount || 0).toLocaleString("en-IN")}</p>
             </div>
             <div>
               <p className="text-[9px] text-slate-450 uppercase tracking-wider">Reporting Time</p>
-              <p className="text-sm font-extrabold text-indigo-400">{trip.reportingTime || "N/A"}</p>
+              <p className="text-sm font-extrabold text-[#0EA5E9]">{trip.reportingTime || "N/A"}</p>
             </div>
             <div>
-              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Departure Time</p>
+              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Departure Scheduled</p>
               <p className="text-sm font-extrabold text-teal-400">{trip.departureTime || "N/A"}</p>
             </div>
-            <div className="col-span-2">
-              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Emergency Contact</p>
-              <p className="text-sm font-mono font-bold text-rose-450 mt-0.5">{trip.emergencyContact || "N/A"}</p>
+            <div>
+              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Emergency Helpline</p>
+              <p className="text-sm font-mono font-bold text-rose-400">{trip.emergencyContact || "112"}</p>
             </div>
-
-            {booking.travellers && booking.travellers.length > 0 && (
-              <div className="col-span-2 mt-2 pt-2 border-t border-white/5 space-y-1.5">
-                <p className="text-[9px] text-slate-400 uppercase tracking-wider">Passengers List ({booking.travellers.length})</p>
-                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                  {booking.travellers.map((trav, idx) => (
-                    <div key={`ticket-trav-${idx}`} className="flex justify-between text-[11px] text-white">
-                      <span>{idx + 1}. {trav.name} ({trav.age} yrs · {trav.gender})</span>
-                      <span className="text-teal-400 font-mono">
-                        {booking.seatNumbers?.[idx] ? `Seat ${booking.seatNumbers[idx]}` : "No Seat Assigned"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Ticket Footer / Action Area */}
+          {/* Ticket Footer: Boarding Pass QR Active / Locked Area */}
           <div className="flex flex-col items-center w-full">
             {qrError && (
-              <div className="w-full bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-rose-400 text-xs text-center font-semibold mb-4">
+              <div className="w-full bg-rose-500/15 border border-rose-500/30 rounded-2xl p-3.5 text-rose-400 text-xs text-center font-bold mb-4">
                 ⚠️ {qrError}
               </div>
             )}
+            
             {(() => {
               const state = getBoardingButtonState();
               
               if (state.statusClass === "checked-in") {
                 return (
-                  <div className="w-full text-center py-4 space-y-3 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto text-emerald-450 text-lg font-bold">
+                  <div className="w-full text-center py-4 space-y-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto text-emerald-400 text-lg font-bold">
                       ✓
                     </div>
                     <div className="space-y-1">
@@ -1180,18 +1126,19 @@ const BookedPackageDetail = () => {
               
               if (state.statusClass === "cancelled") {
                 return (
-                  <div className="w-full text-center py-4 bg-rose-500/5 border border-rose-500/10 rounded-2xl text-rose-400">
+                  <div className="w-full text-center py-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400">
                     <p className="text-sm font-bold uppercase tracking-wider">Booking Cancelled</p>
                     <p className="text-xs mt-1">This booking is cancelled. Boarding pass deactivated.</p>
                   </div>
                 );
               }
               
-              if (state.statusClass === "qr-ready") {
+              // Only reveal QR if explicitly unlocked by the driver
+              if (booking.qrUnlocked) {
                 return (
                   <div className="w-full flex flex-col items-center space-y-4 py-2">
-                    <div className="relative p-[2.5px] rounded-[24px] overflow-hidden bg-gradient-to-r from-teal-500 via-indigo-500 to-teal-500 bg-[length:200%_200%] animate-shimmer shadow-[0_0_30px_rgba(20,184,166,0.35)]">
-                      <div className="bg-slate-950/95 rounded-[22px] p-5 backdrop-blur-md flex flex-col items-center">
+                    <div className="relative p-[2.5px] rounded-[24px] overflow-hidden bg-gradient-to-r from-teal-400 via-[#0EA5E9] to-teal-400 bg-[length:200%_200%] animate-shimmer shadow-[0_0_30px_rgba(20,184,166,0.25)]">
+                      <div className="bg-[#0F172A] rounded-[22px] p-5 backdrop-blur-md flex flex-col items-center">
                         <div className="bg-white p-3 rounded-2xl shadow-inner inline-block relative overflow-hidden">
                           {qrImage || booking.qrCode ? (
                             <img
@@ -1210,69 +1157,43 @@ const BookedPackageDetail = () => {
                         </div>
 
                         <div className="mt-3.5 flex items-center gap-1.5">
-                          <span className="px-2.5 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-black bg-teal-500/20 text-teal-400 border border-teal-500/30 animate-pulse">
-                            QR Active
+                          <span className="px-3 py-1 rounded-full text-[9px] uppercase tracking-wider font-black bg-teal-500/20 text-teal-400 border border-teal-500/30 animate-pulse">
+                            QR Active & Unlocked
                           </span>
                         </div>
                       </div>
                     </div>
                     
-                    <p className="text-slate-450 text-[10px] text-center italic">
+                    <p className="text-slate-400 text-[10px] text-center italic">
                       Show this QR code to the driver to scan and verify boarding.
                     </p>
                   </div>
                 );
               }
 
-              if (state.statusClass === "open") {
-                return (
-                  <div className="w-full text-center space-y-3 py-2">
-                    <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-2xl p-4 space-y-2 mb-2">
-                      <p className="text-emerald-400 text-xs font-mono font-bold tracking-wider animate-pulse flex items-center justify-center gap-1.5">
-                        <span>✨</span> Boarding Pass Available
-                      </p>
-                      <p className="text-[11px] text-slate-400">Boarding window is now open. Click below to generate your boarding QR code.</p>
-                    </div>
-                    <button
-                      onClick={handleGenerateQr}
-                      disabled={qrLoading}
-                      className="w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-lg shadow-teal-500/20 active:scale-[0.985] hover:opacity-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      <QrCode size={16} />
-                      {qrLoading ? "Generating Boarding Pass..." : "Generate Boarding Pass"}
-                    </button>
-                  </div>
-                );
-              }
-
-              if (state.statusClass === "closed") {
-                return (
-                  <div className="w-full text-center py-5 bg-rose-500/5 border border-rose-500/15 rounded-2xl text-rose-400">
-                    <p className="text-sm font-bold uppercase tracking-wider">Boarding Closed</p>
-                    <p className="text-xs mt-1 text-slate-400">Boarding has ended. You can no longer generate a boarding pass.</p>
-                  </div>
-                );
-              }
-
-              // countdown or locked status
+              // BEFORE UNLOCK: Show Boarding Pass Locked screen
               return (
                 <div className="w-full text-center space-y-4 py-2">
-                  <div className="bg-slate-900/60 backdrop-blur-md border border-white/5 rounded-2xl p-4 space-y-2">
-                    <div className="flex items-center justify-center gap-1.5 text-amber-400 font-bold text-sm">
+                  <div className="bg-slate-950/60 backdrop-blur-md border border-white/5 rounded-3xl p-5 space-y-2.5">
+                    <div className="flex items-center justify-center gap-2 text-amber-400 font-black text-sm uppercase tracking-wide">
                       <span>🔒</span> Boarding Pass Locked
                     </div>
-                    <p className="text-slate-400 text-[11px] leading-relaxed">
-                      QR will be available before departure.
+                    <p className="text-slate-350 text-xs font-bold leading-normal">
+                      Waiting for Driver Verification
                     </p>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-450 pt-2 border-t border-white/5">
+                    <p className="text-slate-500 text-[10px] leading-relaxed">
+                      Your boarding pass is secured. The driver will unlock your pass at the boarding point once verification starts.
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-[10px] text-slate-400 pt-3 border-t border-white/5 font-semibold">
                       <div>
                         <p className="text-slate-500">Scheduled Departure</p>
-                        <p className="font-bold text-white mt-0.5">{trip.departureTime || "—"}</p>
+                        <p className="font-extrabold text-white mt-0.5">{trip.departureTime || "—"}</p>
                       </div>
                       <div>
                         <p className="text-slate-500">Boarding Status</p>
-                        <p className="font-bold text-amber-400 mt-0.5">
-                          {state.statusClass === "countdown" ? "Starts Soon" : "Not Started"}
+                        <p className="font-extrabold text-amber-500 mt-0.5">
+                          Awaiting Unlock
                         </p>
                       </div>
                     </div>
@@ -1280,57 +1201,90 @@ const BookedPackageDetail = () => {
                   
                   <button
                     disabled
-                    className="w-full py-3.5 rounded-2xl font-bold text-sm bg-white/5 text-slate-500 cursor-not-allowed border border-white/10"
+                    className="w-full py-4 rounded-2xl font-black text-xs uppercase tracking-wider bg-white/5 text-slate-500 cursor-not-allowed border border-white/10"
                   >
-                    {state.label}
+                    Waiting for Driver Unlock
                   </button>
                 </div>
               );
             })()}
 
             {/* Bottom Actions Row */}
-            <div className="grid grid-cols-2 gap-2 w-full mt-5 border-t border-white/10 pt-4 text-xs font-bold text-slate-300">
+            <div className="grid grid-cols-2 gap-2.5 w-full mt-5 border-t border-white/10 pt-4 text-xs font-bold text-slate-300">
               <button
-                onClick={() => alert("Downloading boarding pass receipt PDF...")}
-                className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10"
+                onClick={() => {
+                  if (!booking.qrUnlocked) {
+                    toast.error("Boarding Pass is locked. Cannot download receipt yet.");
+                    return;
+                  }
+                  alert("Downloading boarding pass receipt PDF...");
+                }}
+                disabled={!booking.qrUnlocked}
+                className={`py-3 rounded-xl flex items-center justify-center gap-1.5 border transition-all ${
+                  booking.qrUnlocked
+                    ? "bg-white/5 hover:bg-white/10 border-white/10 active:scale-[0.98]"
+                    : "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed"
+                }`}
               >
                 📥 Download Pass
               </button>
               <button
                 onClick={() => {
+                  if (!booking.qrUnlocked) {
+                    toast.error("Boarding Pass is locked. Cannot share pass yet.");
+                    return;
+                  }
                   if (navigator.share) {
                     navigator.share({ title: "Boarding Pass", text: `Boarding Pass for ${trip.title}`, url: window.location.href });
                   } else {
                     alert("Share Link Copied: " + window.location.href);
                   }
                 }}
-                className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10"
+                disabled={!booking.qrUnlocked}
+                className={`py-3 rounded-xl flex items-center justify-center gap-1.5 border transition-all ${
+                  booking.qrUnlocked
+                    ? "bg-white/5 hover:bg-white/10 border-white/10 active:scale-[0.98]"
+                    : "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed"
+                }`}
               >
                 🔗 Share Pass
               </button>
               <button
-                onClick={() => alert("Saving pass screenshot to gallery...")}
-                className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10 col-span-2"
+                onClick={() => {
+                  if (!booking.qrUnlocked) {
+                    toast.error("Boarding Pass is locked. Cannot save image yet.");
+                    return;
+                  }
+                  alert("Saving pass screenshot to gallery...");
+                }}
+                disabled={!booking.qrUnlocked}
+                className={`py-3 rounded-xl flex items-center justify-center gap-1.5 border col-span-2 transition-all ${
+                  booking.qrUnlocked
+                    ? "bg-white/5 hover:bg-white/10 border-white/10 active:scale-[0.98]"
+                    : "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed"
+                }`}
               >
                 🖼️ Save Image
               </button>
+              
               <button
                 onClick={() => setShowAddPassengerModal(true)}
-                className="py-2.5 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-teal-500/30 col-span-2 font-bold"
+                className="py-3 rounded-xl bg-[#14B8A6]/20 hover:bg-[#14B8A6]/30 text-teal-400 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-[#14B8A6]/30 col-span-2 font-bold"
               >
                 👤 Add Passenger
               </button>
+              
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.pickupLocation || trip.pickupLocation || "")}`}
                 target="_blank"
                 rel="noreferrer"
-                className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10 text-center"
+                className="py-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10 text-center"
               >
                 🗺️ View Route
               </a>
               <a
                 href={`tel:${trip.emergencyContact || "112"}`}
-                className="py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-450 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-rose-500/30"
+                className="py-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-450 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-rose-500/30"
               >
                 🚨 Emergency SOS
               </a>
@@ -1338,11 +1292,77 @@ const BookedPackageDetail = () => {
 
           </div>
         </div>
+
+        {/* ── REDESIGNED PASSENGERS SUMMARY CARDS SECTION ── */}
+        {booking.travellers && booking.travellers.length > 0 && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-black uppercase tracking-wider text-slate-400 pl-1">
+              Passengers & Booking Info ({booking.travellers.length})
+            </h3>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {booking.travellers.map((trav, idx) => {
+                const seatNo = booking.seatNumbers?.[idx] || "TBD";
+                const initials = trav.name
+                  ? trav.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
+                  : "?";
+                
+                return (
+                  <div
+                    key={`pkg-trav-${idx}`}
+                    className="bg-slate-900/60 backdrop-blur-md rounded-3xl p-5 border border-white/10 shadow-xl flex flex-col justify-between space-y-4"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm text-slate-950 ${
+                          trav.gender === "Female"
+                            ? "bg-pink-400 shadow-[0_0_15px_rgba(244,114,182,0.3)]"
+                            : "bg-teal-400 shadow-[0_0_15px_rgba(45,212,191,0.3)]"
+                        }`}
+                      >
+                        {initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-black text-white truncate">{trav.name}</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{trav.gender} · {trav.age} years</p>
+                      </div>
+                      <span className="px-3 py-1 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 text-xs font-black">
+                        Seat {seatNo}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/5 text-[9px] text-slate-500 font-black uppercase tracking-wider">
+                      <div>
+                        <span>Booking</span>
+                        <p className="text-xs text-white font-extrabold mt-0.5">Confirmed</p>
+                      </div>
+                      <div>
+                        <span>Payment</span>
+                        <p className="text-xs text-emerald-400 font-extrabold mt-0.5">Paid</p>
+                      </div>
+                      <div>
+                        <span>Boarded</span>
+                        <p
+                          className={`text-xs font-extrabold mt-0.5 ${
+                            booking.boardingStatus === "boarded" ? "text-emerald-400" : "text-amber-500"
+                          }`}
+                        >
+                          {booking.boardingStatus === "boarded" ? "Checked In" : "Pending"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* ── MODULE TAB BAR ── */}
-      <div className="bg-white border-b border-slate-100 shadow-sm sticky top-0 z-20">
-        <div ref={tabRef} className="flex gap-0 overflow-x-auto scrollbar-none">
+      <div className="bg-[#111827] border-b border-white/5 sticky top-0 z-20 shadow-lg mt-8">
+        <div ref={tabRef} className="flex gap-0 overflow-x-auto scrollbar-none max-w-4xl mx-auto">
           {MODULE_TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -1351,13 +1371,13 @@ const BookedPackageDetail = () => {
                 key={tab.key}
                 data-active={isActive ? "true" : "false"}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex-shrink-0 flex flex-col items-center gap-1 px-4 py-3 text-xs font-semibold border-b-2 transition-all ${
+                className={`flex-shrink-0 flex flex-col items-center gap-1.5 px-5 py-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                   isActive
-                    ? "border-teal-500 text-teal-600"
-                    : "border-transparent text-slate-400 hover:text-slate-600"
+                    ? "border-teal-400 text-teal-400 bg-slate-900/30"
+                    : "border-transparent text-slate-450 hover:text-slate-200"
                 }`}
               >
-                <Icon size={16} />
+                <Icon size={15} />
                 <span>{tab.label}</span>
               </button>
             );
