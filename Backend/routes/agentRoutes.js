@@ -10,6 +10,10 @@ import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
 import Driver from "../models/Driver.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
+import { checkAgentKYC } from "../middleware/kycMiddleware.js";
+import { sendOtpEmail } from "../services/emailService.js";
+import uploadMiddleware from "../middleware/uploadMiddleware.js";
+import UploadService from "../services/uploadService.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -420,6 +424,351 @@ router.put("/profile", protectAgent, async (req, res) => {
   }
 });
 
+// @route   POST /api/agent/profile/create
+// @desc    Create/initialize agent profile (KYC Step 1-3)
+router.post("/profile/create", protectAgent, async (req, res) => {
+  try {
+    const { name, dob, mobile, state, country, companyName, gstNo, companyLogo, agentPhoto } = req.body;
+
+    if (!name || !dob || !mobile || !state || !country || !companyName || !gstNo || !companyLogo || !agentPhoto) {
+      return res.status(400).json({ success: false, message: "All profile fields are required" });
+    }
+
+    if (!/^[0-9]{10}$/.test(mobile)) {
+      return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
+    }
+
+    const fieldsToUpdate = {
+      displayName: name,
+      dob,
+      mobile,
+      state,
+      country,
+      companyName,
+      gstNo,
+      gstNumber: gstNo,
+      companyLogo,
+      logo: companyLogo,
+      agentPhoto,
+      profileImage: agentPhoto,
+    };
+
+    const agent = await Agent.findById(req.agent._id);
+    const emailVerified = agent.emailVerified || req.agent.emailVerified;
+    const mobileVerified = agent.mobileVerified || req.agent.mobileVerified;
+
+    if (emailVerified && mobileVerified) {
+      fieldsToUpdate.kycStatus = "KYC_COMPLETED";
+      fieldsToUpdate.profileCompleted = true;
+    } else if (mobileVerified) {
+      fieldsToUpdate.kycStatus = "MOBILE_VERIFIED";
+    } else if (emailVerified) {
+      fieldsToUpdate.kycStatus = "EMAIL_VERIFIED";
+    } else {
+      fieldsToUpdate.kycStatus = "PENDING";
+    }
+
+    const updatedAgent = await Agent.findByIdAndUpdate(
+      req.agent._id,
+      { $set: fieldsToUpdate },
+      { returnDocument: "after", runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "KYC Profile initiated successfully",
+      agent: updatedAgent,
+    });
+  } catch (error) {
+    console.error("Create profile error:", error);
+    res.status(500).json({ success: false, message: "Failed to initialize KYC profile" });
+  }
+});
+
+// @route   PUT /api/agent/profile/update
+// @desc    Update agent profile details
+router.put("/profile/update", protectAgent, async (req, res) => {
+  try {
+    const { name, dob, mobile, state, country, companyName, gstNo, companyLogo, agentPhoto } = req.body;
+
+    const fieldsToUpdate = {};
+    if (name !== undefined) fieldsToUpdate.displayName = name;
+    if (dob !== undefined) fieldsToUpdate.dob = dob;
+    if (mobile !== undefined) {
+      if (!/^[0-9]{10}$/.test(mobile)) {
+        return res.status(400).json({ success: false, message: "Mobile number must be exactly 10 digits" });
+      }
+      fieldsToUpdate.mobile = mobile;
+    }
+    if (state !== undefined) fieldsToUpdate.state = state;
+    if (country !== undefined) fieldsToUpdate.country = country;
+    if (companyName !== undefined) fieldsToUpdate.companyName = companyName;
+    if (gstNo !== undefined) {
+      fieldsToUpdate.gstNo = gstNo;
+      fieldsToUpdate.gstNumber = gstNo;
+    }
+    if (companyLogo !== undefined) {
+      fieldsToUpdate.companyLogo = companyLogo;
+      fieldsToUpdate.logo = companyLogo;
+    }
+    if (agentPhoto !== undefined) {
+      fieldsToUpdate.agentPhoto = agentPhoto;
+      fieldsToUpdate.profileImage = agentPhoto;
+    }
+
+    const agent = await Agent.findById(req.agent._id);
+    const emailVerified = agent.emailVerified || req.agent.emailVerified;
+    const mobileVerified = agent.mobileVerified || req.agent.mobileVerified;
+
+    const currentName = name !== undefined ? name : agent.displayName;
+    const currentDob = dob !== undefined ? dob : agent.dob;
+    const currentMobile = mobile !== undefined ? mobile : agent.mobile;
+    const currentState = state !== undefined ? state : agent.state;
+    const currentCountry = country !== undefined ? country : agent.country;
+    const currentCompanyName = companyName !== undefined ? companyName : agent.companyName;
+    const currentGstNo = gstNo !== undefined ? gstNo : (agent.gstNo || agent.gstNumber);
+    const currentCompanyLogo = companyLogo !== undefined ? companyLogo : (agent.companyLogo || agent.logo);
+    const currentAgentPhoto = agentPhoto !== undefined ? agentPhoto : (agent.agentPhoto || agent.profileImage);
+
+    const allFieldsFilled = !!(currentName && currentDob && currentMobile && currentState && currentCountry && currentCompanyName && currentGstNo && currentCompanyLogo && currentAgentPhoto);
+
+    if (emailVerified && mobileVerified && allFieldsFilled) {
+      fieldsToUpdate.kycStatus = "KYC_COMPLETED";
+      fieldsToUpdate.profileCompleted = true;
+    } else if (mobileVerified) {
+      fieldsToUpdate.kycStatus = "MOBILE_VERIFIED";
+    } else if (emailVerified) {
+      fieldsToUpdate.kycStatus = "EMAIL_VERIFIED";
+    } else {
+      fieldsToUpdate.kycStatus = "PENDING";
+    }
+
+    const updatedAgent = await Agent.findByIdAndUpdate(
+      req.agent._id,
+      { $set: fieldsToUpdate },
+      { returnDocument: "after", runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      agent: updatedAgent,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ success: false, message: "Failed to update profile details" });
+  }
+});
+
+// @route   POST /api/agent/send-email-otp
+// @desc    Generate + Send email verification OTP
+router.post("/send-email-otp", protectAgent, async (req, res) => {
+  try {
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    const email = agent.email;
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    agent.emailOtp = otp;
+    agent.emailOtpExpiry = expiry;
+    await agent.save();
+
+    console.log(`[KYC Email OTP] Generated OTP for ${email}: ${otp}`);
+
+    try {
+      await sendOtpEmail(email, agent.displayName || "Agent", otp);
+    } catch (err) {
+      console.warn("[KYC Email OTP] Nodemailer failed, falling back to log:", err.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Email OTP sent successfully",
+      otp: process.env.NODE_ENV === "production" ? undefined : otp,
+    });
+  } catch (error) {
+    console.error("Send email OTP error:", error);
+    res.status(500).json({ success: false, message: "Failed to send email OTP" });
+  }
+});
+
+// @route   POST /api/agent/verify-email-otp
+// @desc    Verify email OTP and advance kycStatus
+router.post("/verify-email-otp", protectAgent, async (req, res) => {
+  try {
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({ success: false, message: "OTP is required" });
+    }
+
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    if (agent.emailOtp !== otp || !agent.emailOtpExpiry || agent.emailOtpExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    agent.emailVerified = true;
+    agent.emailOtp = "";
+    agent.emailOtpExpiry = null;
+
+    if (agent.kycStatus === "PENDING") {
+      agent.kycStatus = "EMAIL_VERIFIED";
+    }
+    await agent.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Email verified successfully",
+      agent,
+    });
+  } catch (error) {
+    console.error("Verify email OTP error:", error);
+    res.status(500).json({ success: false, message: "Failed to verify email OTP" });
+  }
+});
+
+// @route   POST /api/agent/send-mobile-otp
+// @desc    Generate + Send mobile verification OTP (simulated)
+router.post("/send-mobile-otp", protectAgent, async (req, res) => {
+  try {
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    if (!agent.mobile) {
+      return res.status(400).json({ success: false, message: "Mobile number is required before sending OTP" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    agent.mobileOtp = otp;
+    agent.mobileOtpExpiry = expiry;
+    await agent.save();
+
+    console.log(`[KYC Mobile OTP] Generated OTP for ${agent.mobile}: ${otp}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Mobile OTP sent successfully (simulated)",
+      otp,
+    });
+  } catch (error) {
+    console.error("Send mobile OTP error:", error);
+    res.status(500).json({ success: false, message: "Failed to send mobile OTP" });
+  }
+});
+
+// @route   POST /api/agent/verify-mobile-otp
+// @desc    Verify mobile OTP and transition to KYC_COMPLETED
+router.post("/verify-mobile-otp", protectAgent, async (req, res) => {
+  try {
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({ success: false, message: "OTP is required" });
+    }
+
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    if (agent.mobileOtp !== otp || !agent.mobileOtpExpiry || agent.mobileOtpExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    agent.mobileVerified = true;
+    agent.mobileOtp = "";
+    agent.mobileOtpExpiry = null;
+
+    const hasGst = agent.gstNo || agent.gstNumber;
+    const hasLogo = agent.companyLogo || agent.logo;
+    const hasPhoto = agent.agentPhoto || agent.profileImage;
+    const allFieldsFilled = !!(agent.displayName && agent.dob && agent.mobile && agent.state && agent.country && agent.companyName && hasGst && hasLogo && hasPhoto);
+
+    if (agent.emailVerified && allFieldsFilled) {
+      agent.kycStatus = "KYC_COMPLETED";
+      agent.profileCompleted = true;
+    } else {
+      agent.kycStatus = "MOBILE_VERIFIED";
+    }
+
+    await agent.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Mobile verified successfully",
+      agent,
+    });
+  } catch (error) {
+    console.error("Verify mobile OTP error:", error);
+    res.status(500).json({ success: false, message: "Failed to verify mobile OTP" });
+  }
+});
+
+// @route   POST /api/agent/upload-company-logo
+// @desc    Upload company logo to Cloudinary
+router.post("/upload-company-logo", protectAgent, (req, res) => {
+  uploadMiddleware.single("file")(req, res, async (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    let url = req.body.url;
+    if (req.file) {
+      try {
+        const result = await UploadService.uploadToCloudinary(req.file.buffer, "logos");
+        url = result.secure_url;
+      } catch (uploadErr) {
+        return res.status(500).json({ success: false, message: "Upload to Cloudinary failed" });
+      }
+    }
+    if (!url) return res.status(400).json({ success: false, message: "No file or URL provided" });
+
+    try {
+      const agent = await Agent.findById(req.agent._id);
+      agent.companyLogo = url;
+      agent.logo = url;
+      await agent.save();
+      return res.status(200).json({ success: true, url, agent });
+    } catch (saveErr) {
+      return res.status(500).json({ success: false, message: "Database update failed" });
+    }
+  });
+});
+
+// @route   POST /api/agent/upload-agent-photo
+// @desc    Upload agent identity photo to Cloudinary
+router.post("/upload-agent-photo", protectAgent, (req, res) => {
+  uploadMiddleware.single("file")(req, res, async (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message });
+    let url = req.body.url;
+    if (req.file) {
+      try {
+        const result = await UploadService.uploadToCloudinary(req.file.buffer, "profiles");
+        url = result.secure_url;
+      } catch (uploadErr) {
+        return res.status(500).json({ success: false, message: "Upload to Cloudinary failed" });
+      }
+    }
+    if (!url) return res.status(400).json({ success: false, message: "No file or URL provided" });
+
+    try {
+      const agent = await Agent.findById(req.agent._id);
+      agent.agentPhoto = url;
+      agent.profileImage = url;
+      await agent.save();
+      return res.status(200).json({ success: true, url, agent });
+    } catch (saveErr) {
+      return res.status(500).json({ success: false, message: "Database update failed" });
+    }
+  });
+});
 
 /* ==========================================
    TRIP MANAGEMENT ENDPOINTS
@@ -456,7 +805,7 @@ const handleDriverCreation = async (tripData, agentId) => {
 
 // @route   POST /api/agent/trips/create
 // @desc    Create a new trip (Checking security verification flags)
-router.post("/trips/create", protectAgent, async (req, res) => {
+router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
   // ── Debug logging ────────────────────────────────────────────────
   console.log("[CreateTrip] Incoming request body:", req.body);
   console.log("[CreateTrip] Incoming body keys:", Object.keys(req.body));
@@ -767,7 +1116,7 @@ router.get(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
 // @route   PUT /api/agent/trip/:id or /api/agent/trips/:id
 // @desc    Update trip by ID
-router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
+router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req, res) => {
   try {
     let trip;
 
@@ -997,7 +1346,7 @@ router.get(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
 // @route   PUT /api/agent/trip/:id or /api/agent/trips/:id
 // @desc    Update trip by ID
-router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
+router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req, res) => {
   try {
     let trip;
 
@@ -1121,7 +1470,7 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
 
 // @route   PUT /api/agent/trip/:id/publish or /api/agent/trips/:id/publish
 // @desc    Publish a trip by ID
-router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, async (req, res) => {
+router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgentKYC, async (req, res) => {
   try {
     let trip;
 
@@ -1937,7 +2286,7 @@ router.patch(["/trips/:id/draft", "/trips/draft"], protectAgent, async (req, res
 
 // @route   POST /api/agent/trips/publish or /api/agent/trips/:id/publish
 // @desc    Explicitly publish a trip (Requires 100% completion)
-router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], protectAgent, async (req, res) => {
+router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], protectAgent, checkAgentKYC, async (req, res) => {
   try {
     const id = req.params.id || req.body.id || req.body._id || req.body.tripId;
     if (!id) {

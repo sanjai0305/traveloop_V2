@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Compass,
@@ -25,28 +26,32 @@ import { OnboardingWizard } from "../features/auth/components/OnboardingWizard";
 
 export const Dashboard: React.FC = () => {
   const { agent } = useAuthStore();
+  const navigate = useNavigate();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+
+  const kycStatus = agent?.kycStatus || "PENDING";
+  const isKycIncomplete = kycStatus !== "KYC_COMPLETED" && kycStatus !== "APPROVED";
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["analytics"],
     queryFn: getAnalytics,
-    enabled: !!agent?.profileCompleted, // Disable query fetching if profile is not completed
+    enabled: !isKycIncomplete, // Disable query fetching if KYC is not completed
     refetchInterval: 10000,
   });
 
   const { data: agentMetricsData } = useQuery({
     queryKey: ["agent-metrics"],
     queryFn: getAgentMetrics,
-    enabled: !!agent?.profileCompleted,
+    enabled: !isKycIncomplete,
     refetchInterval: 10000,
   });
 
   if (!agent) return null;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // LOCKED DASHBOARD STATE (profileCompleted = false)
+  // LOCKED DASHBOARD STATE (kycStatus incomplete)
   // ─────────────────────────────────────────────────────────────────────────
-  if (!agent.profileCompleted) {
+  if (isKycIncomplete) {
     return (
       <div className="space-y-8 animate-fade-in">
         {/* Banner */}
@@ -85,7 +90,7 @@ export const Dashboard: React.FC = () => {
               </p>
             </div>
             <div className="mt-8 border-t border-slate-100 dark:border-slate-800 pt-4">
-              <Button onClick={() => setOnboardingOpen(true)} className="w-full flex items-center justify-center gap-2">
+              <Button onClick={() => navigate("/complete-profile")} className="w-full flex items-center justify-center gap-2">
                 <FileCheck className="w-4 h-4" /> Complete Profile
               </Button>
             </div>

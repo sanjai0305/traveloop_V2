@@ -38,6 +38,18 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  const agent = useAuthStore.getState().agent;
+  const kycStatus = agent?.kycStatus || "PENDING";
+  
+  if (
+    kycStatus !== "KYC_COMPLETED" &&
+    kycStatus !== "APPROVED" &&
+    location.pathname !== "/complete-profile"
+  ) {
+    console.log(`[ProtectedRoute] KYC incomplete (${kycStatus}) — redirecting to /complete-profile`);
+    return <Navigate to="/complete-profile" replace />;
+  }
+
   // Authenticated → always render children
   return <>{children}</>;
 };

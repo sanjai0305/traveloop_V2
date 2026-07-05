@@ -511,7 +511,7 @@ export const getAgents = async (req, res) => {
 
 export const updateAgent = async (req, res) => {
   const { id } = req.params;
-  const { status, commissionRate } = req.body;
+  const { status, commissionRate, kycStatus } = req.body;
 
   try {
     const agent = await Agent.findById(id);
@@ -524,6 +524,17 @@ export const updateAgent = async (req, res) => {
         return res.status(400).json({ success: false, message: "Invalid status value" });
       }
       agent.status = status;
+    }
+
+    if (kycStatus !== undefined) {
+      if (!["PENDING", "EMAIL_VERIFIED", "MOBILE_VERIFIED", "KYC_COMPLETED", "APPROVED"].includes(kycStatus)) {
+        return res.status(400).json({ success: false, message: "Invalid kycStatus value" });
+      }
+      agent.kycStatus = kycStatus;
+      if (kycStatus === "APPROVED") {
+        agent.status = "approved";
+        agent.profileCompleted = true;
+      }
     }
 
     if (commissionRate !== undefined) {

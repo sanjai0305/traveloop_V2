@@ -178,7 +178,8 @@ export const Trips: React.FC = () => {
   const [publishModalTrip, setPublishModalTrip] = useState<AgentTrip | null>(null);
   const [publishConfirmInput, setPublishConfirmInput] = useState("");
 
-  const isProfileCompleted = !!agent?.profileCompleted;
+  const kycStatus = agent?.kycStatus || "PENDING";
+  const isProfileCompleted = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
 
   // ── Close editor: clears all state AND sessionStorage so the restore
   // useEffect does NOT re-open the editor on next data refetch.
@@ -790,13 +791,13 @@ export const Trips: React.FC = () => {
           <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
-              Complete your profile before creating trips
+              Please complete your profile verification before creating trips.
             </p>
             <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-              Your agent profile must be completed before you can create and publish trips on Traveloop.
+              Your agent profile must be completed and verified before you can create and publish trips on Traveloop.
             </p>
           </div>
-          <Button size="sm" onClick={() => navigate("/profile")} className="shrink-0">
+          <Button size="sm" onClick={() => navigate("/complete-profile")} className="shrink-0">
             Complete Profile
           </Button>
         </div>
@@ -2126,7 +2127,7 @@ export const Trips: React.FC = () => {
                 <Plus className="w-4 h-4 mr-2" /> Create Trip Now
               </Button>
             ) : (
-              <Button onClick={() => navigate("/profile")} className="mt-4">
+              <Button onClick={() => navigate("/complete-profile")} className="mt-4">
                 <User className="w-4 h-4 mr-2" /> Complete Profile
               </Button>
             )}

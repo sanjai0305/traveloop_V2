@@ -90,6 +90,51 @@ const agentSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    dob: {
+      type: String,
+      default: "",
+    },
+    mobile: {
+      type: String,
+      default: "",
+    },
+    mobileVerified: {
+      type: Boolean,
+      default: false,
+    },
+    gstNo: {
+      type: String,
+      default: "",
+    },
+    companyLogo: {
+      type: String,
+      default: "",
+    },
+    agentPhoto: {
+      type: String,
+      default: "",
+    },
+    kycStatus: {
+      type: String,
+      enum: ["PENDING", "EMAIL_VERIFIED", "MOBILE_VERIFIED", "KYC_COMPLETED", "APPROVED"],
+      default: "PENDING",
+    },
+    emailOtp: {
+      type: String,
+      default: "",
+    },
+    emailOtpExpiry: {
+      type: Date,
+      default: null,
+    },
+    mobileOtp: {
+      type: String,
+      default: "",
+    },
+    mobileOtpExpiry: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -34,4 +34,13 @@ export interface Agent {
   profilePhotoUrl?: string;
   isVerified?: boolean;
   documents?: DocumentUpload[];
+
+  // KYC Fields
+  kycStatus?: "PENDING" | "EMAIL_VERIFIED" | "MOBILE_VERIFIED" | "KYC_COMPLETED" | "APPROVED";
+  dob?: string;
+  mobile?: string;
+  mobileVerified?: boolean;
+  agentPhoto?: string;
+  companyLogo?: string;
+  gstNo?: string;
 }
