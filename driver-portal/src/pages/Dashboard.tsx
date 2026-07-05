@@ -35,12 +35,13 @@ export default function Dashboard() {
   const [updateMessage, setUpdateMessage] = useState('')
   const [updateSending, setUpdateSending] = useState(false)
 
-  const status = (trip?.boardingStatus || "LOCKED").toUpperCase();
+  const status = (trip?.boardingStatus || "CLOSED").toUpperCase();
   const isBoardingOpen = status === "OPEN";
-  const isBoardingClosed = status === "CLOSED" || status === "LOCKED";
+  const isBoardingClosed = status === "CLOSED" || status === "LOCKED" || status === "PENDING";
 
-  console.log("boardingStatus", trip?.boardingStatus);
-  console.log("normalized", status);
+  console.log("boardingStatus raw:", trip?.boardingStatus);
+  console.log("boardingStatus normalized:", status);
+  console.log("isBoardingOpen:", isBoardingOpen, "| isBoardingClosed:", isBoardingClosed);
 
   const handleOpenBoarding = async (tripId: string) => {
     try {
@@ -236,16 +237,39 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {/* Manifest */}
                   <button
                     onClick={() => navigate(`/manifest/${trip._id}`)}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 text-slate-300 text-sm font-semibold hover:bg-white/10 transition-colors"
                   >
                     <List size={15} /> Manifest
                   </button>
+
+                  {/* Unlock Boarding — shown when CLOSED or LOCKED */}
+                  {isBoardingClosed && (
+                    <button
+                      onClick={() => handleOpenBoarding(trip._id)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-emerald-500 hover:bg-emerald-600 active:scale-95 transition-all shadow-md"
+                    >
+                      <QrCode size={15} /> Unlock Boarding
+                    </button>
+                  )}
+
+                  {/* Close Boarding — shown when OPEN */}
+                  {isBoardingOpen && (
+                    <button
+                      onClick={() => handleCloseBoarding(trip._id)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-rose-500 hover:bg-rose-600 transition-all"
+                    >
+                      Close Boarding
+                    </button>
+                  )}
+
+                  {/* Scan QR — enabled only when OPEN */}
                   <button
                     disabled={!isBoardingOpen}
-                    onClick={() => navigate('/scan')}
+                    onClick={() => isBoardingOpen && navigate('/scan')}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold transition-all"
                     style={
                       isBoardingOpen
@@ -254,24 +278,10 @@ export default function Dashboard() {
                     }
                   >
                     <QrCode size={15} />
-                    {isBoardingOpen ? "Scan QR" : "Unlock Boarding First"}
+                    {isBoardingOpen ? "Scan QR" : "Unlock First"}
                   </button>
-                  {isBoardingClosed && (
-                    <button
-                      onClick={() => handleOpenBoarding(trip._id)}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-emerald-500 hover:bg-emerald-600 transition-colors flex items-center justify-center"
-                    >
-                      <QrCode size={15} /> Unlock Boarding
-                    </button>
-                  )}
-                  {isBoardingOpen && (
-                    <button
-                      onClick={() => handleCloseBoarding(trip._id)}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-rose-500 hover:bg-rose-600 transition-colors"
-                    >
-                      Close Boarding
-                    </button>
-                  )}
+
+                  {/* Post Update */}
                   <button
                     onClick={() => setShowUpdateModal(true)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-bold hover:bg-amber-500/30 transition-colors"
