@@ -218,14 +218,14 @@ export default function Dashboard() {
                         >
                           Close Boarding
                         </button>
-                      ) : trip.boardingStatus !== "CLOSED" ? (
+                      ) : (
                         <button
                           onClick={() => handleOpenBoarding(trip._id)}
                           className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
                         >
                           <QrCode size={13} /> Unlock Boarding
                         </button>
-                      ) : null}
+                      )}
                     </div>
                   </div>
 
@@ -254,11 +254,17 @@ export default function Dashboard() {
                     <List size={15} /> Manifest
                   </button>
                   <button
+                    disabled={trip.boardingStatus !== "OPEN"}
                     onClick={() => navigate('/scan')}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold"
-                    style={{ background: 'linear-gradient(135deg,#14B8A6,#0D9488)' }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold transition-all"
+                    style={
+                      trip.boardingStatus === "OPEN"
+                        ? { background: 'linear-gradient(135deg,#14B8A6,#0D9488)' }
+                        : { background: '#1e293b', color: '#64748b', opacity: 0.5, cursor: 'not-allowed' }
+                    }
                   >
-                    <QrCode size={15} /> Scan QR
+                    <QrCode size={15} />
+                    {trip.boardingStatus === "OPEN" ? "Scan QR" : "Unlock Boarding First"}
                   </button>
                   <button
                     onClick={() => setShowUpdateModal(true)}
