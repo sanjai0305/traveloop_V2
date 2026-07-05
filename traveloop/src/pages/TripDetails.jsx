@@ -319,19 +319,23 @@ export const TripDetails = () => {
         theme: {
           color: "#14B8A6", // teal-500
         },
-        modal: {
-          ondismiss: () => {
-            toast.info("Payment cancelled.");
-            setBookingStage("confirm");
-          },
+      options.modal = {
+        ondismiss: () => {
+          toast.info("Payment cancelled.");
+          setBookingStage("confirm");
         },
       };
 
+      console.log("[Razorpay Checkout Init] Using Key:", options.key);
       const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (response) => {
+        console.error("[Razorpay Checkout Failed Callback]:", response.error);
+        toast.error(`Payment failed: ${response.error.description} (Code: ${response.error.code})`);
+      });
       rzp.open();
     } catch (err) {
       console.error("[Razorpay Checkout Error]:", err);
-      toast.error("Failed to connect to checkout gateway.");
+      toast.error(`Failed to connect to checkout gateway: ${err.message || err}`);
       setBookingStage("confirm");
     }
   };
