@@ -866,6 +866,32 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
     originalPrice ||
     0;
 
+  // ── Auto-generate description (no dedicated Description field in UX) ──────
+  // Built from: Trip Name + Tagline + Short Description + Itinerary Summary + Route
+  const itinerarySummary = Array.isArray(itinerary) && itinerary.length > 0
+    ? itinerary
+        .map((day, i) => {
+          const dayLabel = day.date || `Day ${i + 1}`;
+          const place    = day.reachCity || day.startCity || day.destination || "";
+          const notes    = day.notes     || day.description || "";
+          return [dayLabel, place, notes].filter(Boolean).join(" — ");
+        })
+        .join(" | ")
+    : "";
+
+  const autoDescription =
+    description ||
+    [
+      title,
+      tagline || shortDescription,
+      itinerarySummary,
+      pickupLocation ? `Pickup: ${pickupLocation}` : "",
+      req.body.dropPoint ? `Drop: ${req.body.dropPoint}` : "",
+    ]
+      .filter(Boolean)
+      .join(" • ") ||
+    (title ? `${title} — Group Tour Package` : "");
+
   // ── Profile / verification gate (simplified — checkAgentKYC middleware handles full KYC) ──
   const isEmailVerified = !!req.agent.emailVerified;
 
@@ -884,10 +910,10 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
 
 
   // ── Required field check with detailed missingFields response ────
+  // Note: description is NOT required — it is auto-generated from title/tagline/itinerary.
   const missingFields = [];
   if (!title)             missingFields.push("title (Trip Name)");
   if (!shortDescription)  missingFields.push("shortDescription / subtitle");
-  if (!description)       missingFields.push("description");
   if (!destinations || (Array.isArray(destinations) ? destinations.length === 0 : !destinations)) missingFields.push("destinations");
   if (!duration)          missingFields.push("duration");
   if (!startDate)         missingFields.push("startDate");
@@ -946,8 +972,9 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
 
     const tripData = {
       ...bodyData,
-      shortDescription,            // resolved above
-      pricePerPerson: Number(pricePerPerson),  // resolved above
+      shortDescription,                          // resolved above
+      description: autoDescription,              // auto-generated if not supplied
+      pricePerPerson: Number(pricePerPerson),    // resolved above
       destinations: Array.isArray(destinations) ? destinations : [destinations],
       totalSeats: Number(totalSeats),
       availableSeats: Number(totalSeats),
