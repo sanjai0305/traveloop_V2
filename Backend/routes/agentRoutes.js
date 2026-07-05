@@ -1138,20 +1138,54 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
       // 1. Check bookings count/capacity lock rules
       const currentBooked = trip.bookedSeats || 0;
       if (currentBooked > 0) {
-        // Disallow editing startDate, endDate
-        if (req.body.startDate !== undefined && req.body.startDate !== trip.startDate) {
-          return res.status(400).json({ success: false, message: "Cannot edit start date after bookings have been made." });
+        // Disallow editing restricted fields
+        const restrictedFields = [
+          "pricePerPerson", "offerPrice", "originalPrice", "gstPercentage", "gst", 
+          "convenienceFee", "totalSeats", "pickupLocation", "dropPoint", 
+          "duration", "category", "tripType"
+        ];
+        for (const field of restrictedFields) {
+          if (req.body[field] !== undefined && req.body[field] !== trip[field]) {
+            return res.status(400).json({
+              success: false,
+              message: `Editing restricted field '${field}' is not allowed when bookings exist.`
+            });
+          }
         }
-        if (req.body.endDate !== undefined && req.body.endDate !== trip.endDate) {
-          return res.status(400).json({ success: false, message: "Cannot edit end date after bookings have been made." });
-        }
-        // Disallow deleting selected activities
-        if (req.body.selectedActivities !== undefined) {
-          const currentActs = trip.selectedActivities || [];
-          const newActs = req.body.selectedActivities || [];
-          const missingAct = currentActs.find(a => !newActs.includes(a));
-          if (missingAct) {
-            return res.status(400).json({ success: false, message: `Cannot remove booked activity: ${missingAct}` });
+
+        // Validate Date Changes via Email OTP
+        const dateChanged = 
+          (req.body.startDate !== undefined && req.body.startDate !== trip.startDate) ||
+          (req.body.endDate !== undefined && req.body.endDate !== trip.endDate) ||
+          (req.body.bookingDeadline !== undefined && req.body.bookingDeadline !== trip.bookingDeadline);
+
+        if (dateChanged) {
+          const { dateChangeOtp } = req.body;
+          if (!dateChangeOtp) {
+            const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+            const OtpModel = await import("../models/Otp.js").then(m => m.default);
+            await OtpModel.findOneAndUpdate(
+              { email: req.agent.email },
+              { otp: otpCode, expiresAt: new Date(Date.now() + 10 * 60 * 1000), resendAvailableAt: new Date() },
+              { upsert: true, new: true }
+            );
+            await sendOtpEmail(req.agent.email, req.agent.displayName || "Agent", otpCode);
+
+            return res.status(200).json({
+              success: false,
+              code: "OTP_REQUIRED",
+              message: "An OTP has been sent to your email to verify date changes."
+            });
+          } else {
+            const OtpModel = await import("../models/Otp.js").then(m => m.default);
+            const savedOtp = await OtpModel.findOne({ email: req.agent.email });
+            if (!savedOtp || savedOtp.otp !== dateChangeOtp || savedOtp.expiresAt < new Date()) {
+              return res.status(400).json({
+                success: false,
+                message: "Invalid or expired OTP for date changes."
+              });
+            }
+            await OtpModel.deleteOne({ email: req.agent.email });
           }
         }
       }
@@ -1178,7 +1212,6 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
             message: `Cannot reduce total seats below currently booked seats: ${currentBooked}`
           });
         }
-        // Recalculate availableSeats
         req.body.availableSeats = totalSeatsVal - currentBooked;
       }
 
@@ -1554,21 +1587,41 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
       const bookingCount = activeBookings.length;
 
       if (bookingCount > 0) {
-        const isCancelled = trip.status === "cancelled";
-        // Check if all booked users confirmed cancellation
-        const bookedUserIds = [...new Set(activeBookings.map(b => b.userId.toString()))];
-        const confirmedUserIds = new Set((trip.cancellationConfirmations || []).map(c => c.userId.toString()));
-        const allUsersConfirmed = bookedUserIds.length > 0 && bookedUserIds.every(uid => confirmedUserIds.has(uid));
-
-        if (!isCancelled || !allUsersConfirmed) {
+        if (trip.status !== "Refund Completed") {
           return res.status(400).json({
             success: false,
-            code: "DELETION_BLOCKED",
-            message: "Trips with active bookings cannot be deleted immediately. You must request trip cancellation first and wait for all travelers to confirm.",
-            bookingCount,
-            tripStatus: trip.status,
-            allUsersConfirmed
+            code: "REFUNDS_PENDING",
+            message: "This trip has active bookings. You must refund all passengers before deleting the trip.",
+            bookingCount
           });
+        }
+
+        const { agentOtp } = req.body;
+        if (!agentOtp) {
+          const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+          const OtpModel = await import("../models/Otp.js").then(m => m.default);
+          await OtpModel.findOneAndUpdate(
+            { email: req.agent.email },
+            { otp: otpCode, expiresAt: new Date(Date.now() + 10 * 60 * 1000), resendAvailableAt: new Date() },
+            { upsert: true, new: true }
+          );
+          await sendOtpEmail(req.agent.email, req.agent.displayName || "Agent", otpCode);
+
+          return res.status(200).json({
+            success: false,
+            code: "AGENT_OTP_REQUIRED",
+            message: "An Email OTP has been sent to you to confirm trip deletion."
+          });
+        } else {
+          const OtpModel = await import("../models/Otp.js").then(m => m.default);
+          const savedOtp = await OtpModel.findOne({ email: req.agent.email });
+          if (!savedOtp || savedOtp.otp !== agentOtp || savedOtp.expiresAt < new Date()) {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid or expired Agent OTP for deletion."
+            });
+          }
+          await OtpModel.deleteOne({ email: req.agent.email });
         }
       }
 
@@ -2539,6 +2592,154 @@ router.get(["/trips/metrics", "/metrics"], protectAgent, async (req, res) => {
   } catch (error) {
     console.error("Get metrics error:", error);
     res.status(500).json({ success: false, message: error.message || "Server Error fetching metrics" });
+  }
+});
+
+// ─── BOOKING Lock, Refund & Delete FLOW ───
+
+router.get("/trips/:id/bookings-check", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const trip = await AgentTrip.findById(req.params.id);
+    if (!trip) return res.status(404).json({ success: false, message: "Trip not found" });
+    const bookings = await Booking.find({ tripId: req.params.id, status: { $ne: "cancelled" } });
+    res.status(200).json({ success: true, count: bookings.length, bookings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/trips/:id/start-refund", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const trip = await AgentTrip.findById(req.params.id);
+    if (!trip) return res.status(404).json({ success: false, message: "Trip not found" });
+    
+    const bookings = await Booking.find({ tripId: req.params.id, status: { $ne: "cancelled" } });
+    if (bookings.length === 0) {
+      return res.status(400).json({ success: false, message: "No active bookings found for this trip." });
+    }
+
+    for (const b of bookings) {
+      b.refundStatus = "Pending";
+      const travelerOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      b.assignedSeat = travelerOtp; // Simulated traveler OTP storage
+      b.otpVerified = false;
+      await b.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Refunds processing initiated. Traveler OTPs generated.",
+      bookings: bookings.map(b => ({
+        bookingId: b.bookingId,
+        _id: b._id,
+        travelerName: b.travelerName,
+        pricePaid: b.pricePaid,
+        otp: b.assignedSeat
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/trips/:id/verify-traveler-otp", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const { bookingId, otp } = req.body;
+    if (!bookingId || !otp) {
+      return res.status(400).json({ success: false, message: "bookingId and otp are required" });
+    }
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    if (booking.assignedSeat !== otp) {
+      return res.status(400).json({ success: false, message: "Invalid traveler OTP code" });
+    }
+
+    booking.refundStatus = "Refund Completed";
+    booking.otpVerified = true;
+    await booking.save();
+
+    const trip = await AgentTrip.findById(req.params.id);
+    const activeBookings = await Booking.find({ tripId: req.params.id, status: { $ne: "cancelled" } });
+    const allRefunded = activeBookings.every(b => b.refundStatus === "Refund Completed");
+
+    if (allRefunded) {
+      trip.status = "Refund Completed";
+      await trip.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Traveler refund verified successfully.",
+      booking,
+      tripStatus: trip.status
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── AGENT WALLET & WITHDRAWALS ───
+
+router.get("/wallet/stats", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const WalletModel = await import("../models/Wallet.js").then(m => m.default);
+    let wallet = await WalletModel.findOne({ agentId: req.agent._id });
+    if (!wallet) {
+      wallet = new WalletModel({ agentId: req.agent._id });
+      await wallet.save();
+    }
+    res.status(200).json({ success: true, wallet });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post("/wallet/withdraw", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, message: "Valid withdrawal amount is required" });
+    }
+    const WalletModel = await import("../models/Wallet.js").then(m => m.default);
+    let wallet = await WalletModel.findOne({ agentId: req.agent._id });
+    if (!wallet) {
+      return res.status(400).json({ success: false, message: "Wallet not found" });
+    }
+
+    if (wallet.withdrawableBalance < Number(amount)) {
+      return res.status(400).json({ success: false, message: "Insufficient withdrawable balance" });
+    }
+
+    wallet.withdrawableBalance -= Number(amount);
+    wallet.pendingBalance += Number(amount);
+    await wallet.save();
+
+    const WithdrawalModel = await import("../models/Withdrawal.js").then(m => m.default);
+    const withdrawal = await WithdrawalModel.create({
+      agentId: req.agent._id,
+      amount: Number(amount),
+      status: "Pending"
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Withdrawal request submitted successfully. Awaiting Admin approval.",
+      withdrawal,
+      wallet
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get("/wallet/withdrawals", protectAgent, checkAgentKYC, async (req, res) => {
+  try {
+    const WithdrawalModel = await import("../models/Withdrawal.js").then(m => m.default);
+    const withdrawals = await WithdrawalModel.find({ agentId: req.agent._id }).sort({ createdAt: -1 });
+    res.status(200).json({ success: true, withdrawals });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

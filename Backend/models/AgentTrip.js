@@ -402,6 +402,28 @@ const agentTripSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    transportImages: {
+      frontImage: { type: String, default: "" },
+      backImage: { type: String, default: "" },
+      interiorImages: { type: [String], default: [] },
+      seatImages: { type: [String], default: [] },
+    },
+    commissionPercentage: {
+      type: Number,
+      default: 10,
+    },
+    bookingCount: {
+      type: Number,
+      default: 0,
+    },
+    occupancyRate: {
+      type: Number,
+      default: 0,
+    },
+    walletAmount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

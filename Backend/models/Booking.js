@@ -174,6 +174,22 @@ const bookingSchema = new mongoose.Schema(
     seatNumber: {
       type: String,
     },
+    refundStatus: {
+      type: String,
+      default: "",
+    },
+    otpVerified: {
+      type: Boolean,
+      default: false,
+    },
+    adminCommission: {
+      type: Number,
+      default: 0,
+    },
+    bookingAmount: {
+      type: Number,
+      default: 0,
+    },
     passengers: [
       {
         name: String,

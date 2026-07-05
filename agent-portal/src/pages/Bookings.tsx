@@ -360,18 +360,20 @@ export const Bookings: React.FC = () => {
     });
 
     // Populate seat map
-    const seatMap: Record<string, { bookingId: string; travelerName: string; status: "occupied" | "reserved" | "cancelled" }> = {};
+    const seatMap: Record<string, { bookingId: string; travelerName: string; status: "occupied" | "reserved" | "cancelled"; gender?: string; paymentStatus?: string }> = {};
     tripBookings.forEach((b) => {
       const seats = b.seatNumbers && b.seatNumbers.length > 0 ? b.seatNumbers : b.assignedSeat ? [b.assignedSeat] : [];
       seats.forEach((seat) => {
         if (!seat) return;
-        if (b.paymentStatus === "Cancelled") {
-          seatMap[seat] = { bookingId: b.bookingId, travelerName: b.travelerName, status: "cancelled" };
+        if (b.paymentStatus === "Cancelled" || (b as any).status === "Cancelled") {
+          seatMap[seat] = { bookingId: b.bookingId, travelerName: b.travelerName, status: "cancelled", gender: b.gender, paymentStatus: b.paymentStatus };
         } else {
           seatMap[seat] = { 
             bookingId: b.bookingId, 
             travelerName: b.travelerName, 
-            status: b.boardingStatus === "boarded" ? "occupied" : "reserved" 
+            status: b.boardingStatus === "boarded" ? "occupied" : "reserved",
+            gender: b.gender,
+            paymentStatus: b.paymentStatus
           };
         }
       });
@@ -642,6 +644,68 @@ export const Bookings: React.FC = () => {
           </GlassCard>
         )}
 
+        {/* Seat Statistics & Progress Bar Dashboard */}
+        {tripId && selectedTrip && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <GlassCard className="p-4">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">
+                Total Capacity
+              </span>
+              <h4 className="text-xl font-extrabold text-slate-850 dark:text-slate-100 mt-1">
+                {selectedTrip.totalSeats || 40} Seats
+              </h4>
+              <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 overflow-hidden">
+                <div className="h-full bg-primary rounded-full" style={{ width: "100%" }} />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-4">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">
+                Booked Seats
+              </span>
+              <h4 className="text-xl font-extrabold text-slate-850 dark:text-slate-100 mt-1">
+                {totalBookedSeats} Seats
+              </h4>
+              <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 overflow-hidden">
+                <div 
+                  className="h-full bg-sky-400 rounded-full transition-all" 
+                  style={{ width: `${selectedTrip.totalSeats > 0 ? (totalBookedSeats / selectedTrip.totalSeats) * 100 : 0}%` }} 
+                />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-4">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">
+                Available Seats
+              </span>
+              <h4 className="text-xl font-extrabold text-slate-850 dark:text-slate-100 mt-1">
+                {Math.max(0, (selectedTrip.totalSeats || 40) - totalBookedSeats)} Seats
+              </h4>
+              <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-500 rounded-full transition-all" 
+                  style={{ width: `${selectedTrip.totalSeats > 0 ? (Math.max(0, (selectedTrip.totalSeats || 40) - totalBookedSeats) / selectedTrip.totalSeats) * 100 : 0}%` }} 
+                />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-4">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider font-extrabold block">
+                Occupancy Rate
+              </span>
+              <h4 className="text-xl font-extrabold text-slate-850 dark:text-slate-100 mt-1">
+                {occupancyPercent}%
+              </h4>
+              <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 overflow-hidden">
+                <div 
+                  className="h-full bg-teal-500 rounded-full transition-all" 
+                  style={{ width: `${occupancyPercent}%` }} 
+                />
+              </div>
+            </GlassCard>
+          </div>
+        )}
+
         {/* ─── GRID CONTENT SPLIT: MAIN PANEL (Left) & SIDEBAR (Right) ─── */}
         <div className="flex flex-col lg:flex-row gap-6">
           
@@ -668,24 +732,44 @@ export const Bookings: React.FC = () => {
               })}
             </div>
 
-            {/* Search Input Bar */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search by Passenger Name, Booking ID, Phone Number or Seat Number..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs font-semibold placeholder-slate-450 focus:outline-hidden focus:border-teal-500 focus:ring-1 focus:ring-teal-500 shadow-xs"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600"
+            {/* Search Input Bar & Export Actions */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by Passenger Name, Booking ID, Phone Number or Seat Number..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-xs font-semibold placeholder-slate-400 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 shadow-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={downloadExcel}
+                  variant="outline"
+                  className="flex items-center gap-1.5 text-xs px-4 py-2"
                 >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
+                  Export CSV
+                </Button>
+                <Button
+                  onClick={exportPDF}
+                  variant="outline"
+                  className="flex items-center gap-1.5 text-xs px-4 py-2"
+                >
+                  <FileDown className="w-4 h-4 text-rose-500" />
+                  Export PDF
+                </Button>
+              </div>
             </div>
 
             {/* Passenger Roster List */}
@@ -992,16 +1076,25 @@ export const Bookings: React.FC = () => {
                       
                       const seatId = `${rowNum}${col}`;
                       const occupant = seatMap[seatId];
+                      const isSelected = selectedPassenger && (selectedPassenger.seatNumbers.includes(seatId) || selectedPassenger.assignedSeat === seatId);
                       
-                      let seatBg = "bg-slate-100 dark:bg-slate-855 hover:bg-slate-200 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-350";
+                      let seatBg = "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800";
                       
-                      if (occupant) {
-                        if (occupant.status === "occupied") {
-                          seatBg = "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-650";
-                        } else if (occupant.status === "reserved") {
-                          seatBg = "bg-amber-400 hover:bg-amber-505 text-slate-800 border-amber-500";
+                      if (isSelected) {
+                        seatBg = "bg-blue-600 text-white border-blue-700 hover:bg-blue-700";
+                      } else if (occupant) {
+                        if (occupant.paymentStatus?.toUpperCase() === "PENDING" || occupant.status === "reserved") {
+                          seatBg = "bg-amber-500 text-white border-amber-600 hover:bg-amber-600";
                         } else if (occupant.status === "cancelled") {
-                          seatBg = "bg-rose-500 hover:bg-rose-600 text-white border-rose-600";
+                          seatBg = "bg-rose-500 text-white border-rose-600 hover:bg-rose-600";
+                        } else {
+                          if (occupant.gender?.toLowerCase() === "male") {
+                            seatBg = "bg-sky-400 text-white border-sky-500 hover:bg-sky-500";
+                          } else if (occupant.gender?.toLowerCase() === "female") {
+                            seatBg = "bg-pink-400 text-white border-pink-500 hover:bg-pink-500";
+                          } else {
+                            seatBg = "bg-slate-400 text-white border-slate-500 hover:bg-slate-500";
+                          }
                         }
                       }
                       
@@ -1022,20 +1115,24 @@ export const Bookings: React.FC = () => {
                 {/* Color code reference */}
                 <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-500 border-t border-slate-100 dark:border-slate-850 pt-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm border border-emerald-600" />
-                    <span>Boarded (Checked In)</span>
+                    <span className="w-2.5 h-2.5 bg-sky-400 rounded-sm border border-sky-500" />
+                    <span>Booked Male</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 bg-amber-400 rounded-sm border border-amber-500" />
-                    <span>Booked (Pending)</span>
+                    <span className="w-2.5 h-2.5 bg-pink-400 rounded-sm border border-pink-500" />
+                    <span>Booked Female</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 bg-slate-100 dark:bg-slate-800 rounded-sm border border-slate-200 dark:border-slate-700" />
-                    <span>Empty (Available)</span>
+                    <span className="w-2.5 h-2.5 bg-amber-500 rounded-sm border border-amber-600" />
+                    <span>Reserved/Pending</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 bg-rose-500 rounded-sm border border-rose-600" />
-                    <span>Cancelled</span>
+                    <span className="w-2.5 h-2.5 bg-blue-600 rounded-sm border border-blue-700" />
+                    <span>Selected Traveler</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 col-span-2">
+                    <span className="w-2.5 h-2.5 bg-white dark:bg-slate-900 rounded-sm border border-slate-200 dark:border-slate-800" />
+                    <span>Available Seat</span>
                   </div>
                 </div>
               </div>

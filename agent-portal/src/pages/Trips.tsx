@@ -36,7 +36,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
-import { GlassCard, Button, Input, ImageUploadBox } from "../components/ui";
+import { GlassCard, Button, Input, ImageUploadBox, Modal } from "../components/ui";
 import { getMyTrips, createTrip, updateTrip, deleteTrip, saveDraft, publishTrip, getMasterData, createMasterEntry } from "../services/tripService";
 import { formatCurrency, formatDate } from "../utils";
 import { useAuthStore } from "../store/authStore";
@@ -111,6 +111,12 @@ interface TripFormData {
   driverLicenseNumber: string;
   busNumber: string;
   busAmenities: string[];
+  transportImages?: {
+    frontImage?: string;
+    backImage?: string;
+    interiorImages?: string[];
+    seatImages?: string[];
+  };
 
   // Step 7 Activities
   activities: string[];
@@ -221,6 +227,22 @@ export const Trips: React.FC = () => {
   const [newActivity, setNewActivity] = useState("");
   const [newPackingItem, setNewPackingItem] = useState("");
 
+  // Date Change OTP verification modal states
+  const [dateOtpModalOpen, setDateOtpModalOpen] = useState(false);
+  const [dateOtpCode, setDateOtpCode] = useState("");
+  const [dateOtpError, setDateOtpError] = useState("");
+
+  // Deletion refund OTP wizard states
+  const [deleteWizardOpen, setDeleteWizardOpen] = useState(false);
+  const [deletingTrip, setDeletingTrip] = useState<any>(null);
+  const [deleteStep, setDeleteStep] = useState<1 | 2 | 3>(1);
+  const [travelerRefundBookings, setTravelerRefundBookings] = useState<any[]>([]);
+  const [travelerOtpInputs, setTravelerOtpInputs] = useState<Record<string, string>>({});
+  const [travelerVerifyingMap, setTravelerVerifyingMap] = useState<Record<string, boolean>>({});
+  const [agentOtpInput, setAgentOtpInput] = useState("");
+  const [deleteWizardError, setDeleteWizardError] = useState("");
+  const [deleteWizardSuccess, setDeleteWizardSuccess] = useState("");
+
   const kycStatus = agent?.kycStatus || "PENDING";
   const isProfileCompleted = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
 
@@ -238,6 +260,7 @@ export const Trips: React.FC = () => {
     reset,
     setValue,
     watch,
+    getValues,
     trigger,
     formState: { errors },
   } = useForm<TripFormData>({
@@ -324,6 +347,11 @@ export const Trips: React.FC = () => {
   const watchActivities = watch("activities") || [];
   const watchPackingChecklist = watch("packingChecklist") || [];
   const watchCancellationPolicy = watch("cancellationPolicy");
+  const watchTransportImages = (watch("transportImages") as any) || {};
+  const hasBookings = !!(
+    editingTripId &&
+    trips?.find((t: any) => t._id === editingTripId)?.bookedSeats > 0
+  );
 
   // Auto-calculate Duration
   useEffect(() => {
@@ -413,7 +441,11 @@ export const Trips: React.FC = () => {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => updateTrip(id, data),
-    onSuccess: () => {
+    onSuccess: (resData: any) => {
+      if (resData && resData.success === false && resData.code === "OTP_REQUIRED") {
+        setDateOtpModalOpen(true);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
       closeEditor();
       alert("Trip updated successfully");
@@ -423,13 +455,120 @@ export const Trips: React.FC = () => {
     }
   });
 
+  const handleVerifyDateOtp = () => {
+    setDateOtpError("");
+    if (!dateOtpCode || dateOtpCode.length < 6) {
+      setDateOtpError("Please enter a valid 6-digit OTP");
+      return;
+    }
+    const formData = getValues();
+    const payload = {
+      ...getPayload(formData, false),
+      dateChangeOtp: dateOtpCode
+    };
+    updateMutation.mutate({ id: editingTripId!, data: payload });
+    setDateOtpModalOpen(false);
+    setDateOtpCode("");
+  };
+
   const deleteMutation = useMutation({
-    mutationFn: deleteTrip,
-    onSuccess: () => {
+    mutationFn: ({ id, otp }: { id: string; otp?: string }) => deleteTrip(id, otp),
+    onSuccess: (resData: any) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      alert("Trip deleted successfully");
+      if (deleteWizardOpen) {
+        setDeleteWizardSuccess("Trip deleted successfully!");
+        setTimeout(() => {
+          setDeleteWizardOpen(false);
+          setDeletingTrip(null);
+          setDeleteStep(1);
+          setDeleteWizardSuccess("");
+          setAgentOtpInput("");
+        }, 2000);
+      } else {
+        alert("Trip deleted successfully");
+      }
+    },
+    onError: (err: any) => {
+      if (deleteWizardOpen) {
+        setDeleteWizardError(err.response?.data?.message || "Deletion failed.");
+      } else {
+        alert(err.response?.data?.message || "Deletion failed");
+      }
     }
   });
+
+  const handleDeleteClick = (trip: any) => {
+    if (!trip.bookedSeats || trip.bookedSeats === 0) {
+      if (confirm("Are you sure you want to delete this trip?")) {
+        deleteMutation.mutate({ id: trip._id });
+      }
+    } else {
+      setDeletingTrip(trip);
+      setDeleteStep(1);
+      setDeleteWizardOpen(true);
+      setDeleteWizardError("");
+      setDeleteWizardSuccess("");
+      setTravelerRefundBookings([]);
+      setTravelerOtpInputs({});
+      setTravelerVerifyingMap({});
+      setAgentOtpInput("");
+    }
+  };
+
+  const handleStartRefunds = async () => {
+    setDeleteWizardError("");
+    try {
+      const res = await api.post(`/agent/trips/${deletingTrip._id}/start-refund`);
+      if (res.data.success) {
+        setTravelerRefundBookings(res.data.bookings || []);
+        const otps: Record<string, string> = {};
+        res.data.bookings.forEach((b: any) => {
+          otps[b._id] = "";
+        });
+        setTravelerOtpInputs(otps);
+        setDeleteStep(2);
+      } else {
+        setDeleteWizardError(res.data.message || "Failed to initiate refunds.");
+      }
+    } catch (err: any) {
+      setDeleteWizardError(err.response?.data?.message || "Error processing refunds.");
+    }
+  };
+
+  const handleVerifyTravelerOtp = async (bookingId: string) => {
+    setDeleteWizardError("");
+    setTravelerVerifyingMap(prev => ({ ...prev, [bookingId]: true }));
+    try {
+      const otpCode = travelerOtpInputs[bookingId];
+      const res = await api.post(`/agent/trips/${deletingTrip._id}/verify-traveler-otp`, {
+        bookingId,
+        otp: otpCode
+      });
+      if (res.data.success) {
+        setTravelerRefundBookings(prev => prev.map(b => b._id === bookingId ? { ...b, verified: true } : b));
+        const updated = travelerRefundBookings.map(b => b._id === bookingId ? { ...b, verified: true } : b);
+        const allOk = updated.every(b => b.verified);
+        if (allOk) {
+          setDeleteStep(3);
+        }
+      } else {
+        setDeleteWizardError(res.data.message || "Invalid OTP code.");
+      }
+    } catch (err: any) {
+      setDeleteWizardError(err.response?.data?.message || "OTP verification failed.");
+    } finally {
+      setTravelerVerifyingMap(prev => ({ ...prev, [bookingId]: false }));
+    }
+  };
+
+  const handleConfirmAgentDelete = () => {
+    setDeleteWizardError("");
+    if (!agentOtpInput || agentOtpInput.length < 6) {
+      setDeleteWizardError("Please enter a valid 6-digit Agent OTP.");
+      return;
+    }
+    deleteMutation.mutate({ id: deletingTrip._id, otp: agentOtpInput });
+  };
 
   const publishMutation = useMutation({
     mutationFn: (id: string) => publishTrip(id),
@@ -719,7 +858,8 @@ export const Trips: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Trip Type *</label>
                         <select
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500"
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500 disabled:opacity-50"
+                          disabled={hasBookings}
                           {...register("tripType")}
                         >
                           {TRIP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -728,7 +868,8 @@ export const Trips: React.FC = () => {
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Trip Category *</label>
                         <select
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500"
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-sm outline-none focus:border-teal-500 disabled:opacity-50"
+                          disabled={hasBookings}
                           {...register("category")}
                         >
                           {TRIP_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -762,12 +903,14 @@ export const Trips: React.FC = () => {
                       <Input
                         label="Pickup Point *"
                         placeholder="e.g. Majestic Bus Stand"
+                        disabled={hasBookings}
                         {...register("pickupLocation", { required: "Pickup Point is required" })}
                         error={errors.pickupLocation?.message}
                       />
                       <Input
                         label="Pickup Google Maps URL *"
                         placeholder="https://maps.app.goo.gl/..."
+                        disabled={hasBookings}
                         {...register("pickupMapsLink", {
                           required: "Pickup Maps URL is required",
                           validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
@@ -779,27 +922,31 @@ export const Trips: React.FC = () => {
                       <Input
                         label="Departure City *"
                         placeholder="e.g. Bangalore"
+                        disabled={hasBookings}
                         {...register("originCity", { required: "Departure City is required" })}
                         error={errors.originCity?.message}
                       />
                       <Input
                         label="Destination City *"
                         placeholder="e.g. Salem"
+                        disabled={hasBookings}
                         {...register("destinationCity", { required: "Destination City is required" })}
                         error={errors.destinationCity?.message}
                       />
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-850 pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-855 pt-4">
                       <Input
                         label="Drop Point *"
                         placeholder="e.g. Salem Bus Stand"
+                        disabled={hasBookings}
                         {...register("dropPoint", { required: "Drop Point is required" })}
                         error={errors.dropPoint?.message}
                       />
                       <Input
                         label="Drop Point Google Maps URL *"
                         placeholder="https://maps.app.goo.gl/..."
+                        disabled={hasBookings}
                         {...register("dropMapsLink", {
                           required: "Drop Maps URL is required",
                           validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
@@ -1106,6 +1253,37 @@ export const Trips: React.FC = () => {
                         })}
                       </div>
                     </div>
+
+                    {/* Transport Image Uploads */}
+                    <div className="border-t border-slate-105/50 dark:border-slate-800 pt-4 space-y-4">
+                      <h4 className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">Transport Images</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <ImageUploadBox
+                          label="Bus Front Image *"
+                          folder="transport"
+                          value={watchTransportImages?.frontImage || ""}
+                          onChange={(url) => setValue("transportImages.frontImage", url)}
+                        />
+                        <ImageUploadBox
+                          label="Bus Back Image *"
+                          folder="transport"
+                          value={watchTransportImages?.backImage || ""}
+                          onChange={(url) => setValue("transportImages.backImage", url)}
+                        />
+                      </div>
+                      <MultipleImageUpload
+                        label="Bus Interior Images"
+                        folder="transport"
+                        values={watchTransportImages?.interiorImages || []}
+                        onChange={(urls) => setValue("transportImages.interiorImages", urls)}
+                      />
+                      <MultipleImageUpload
+                        label="Seat Layout Images"
+                        folder="transport"
+                        values={watchTransportImages?.seatImages || []}
+                        onChange={(urls) => setValue("transportImages.seatImages", urls)}
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -1188,14 +1366,14 @@ export const Trips: React.FC = () => {
                   <div className="space-y-4 animate-page">
                     <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Pricing & Seat Capacities</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Input label="Original Price (₹) *" type="number" {...register("originalPrice", { required: "Original Price required" })} error={errors.originalPrice?.message} />
-                      <Input label="Offer Price (₹) *" type="number" {...register("offerPrice", { required: "Offer Price required" })} error={errors.offerPrice?.message} />
-                      <Input label="GST (%)" type="number" {...register("gstPercentage")} />
+                      <Input label="Original Price (₹) *" type="number" disabled={hasBookings} {...register("originalPrice", { required: "Original Price required" })} error={errors.originalPrice?.message} />
+                      <Input label="Offer Price (₹) *" type="number" disabled={hasBookings} {...register("offerPrice", { required: "Offer Price required" })} error={errors.offerPrice?.message} />
+                      <Input label="GST (%)" type="number" disabled={hasBookings} {...register("gstPercentage")} />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input label="Convenience Fee (₹)" type="number" {...register("convenienceFee")} />
-                      <Input label="Seat Capacity *" type="number" {...register("totalSeats", { required: "Seat capacity required" })} error={errors.totalSeats?.message} />
+                      <Input label="Convenience Fee (₹)" type="number" disabled={hasBookings} {...register("convenienceFee")} />
+                      <Input label="Seat Capacity *" type="number" disabled={hasBookings} {...register("totalSeats", { required: "Seat capacity required" })} error={errors.totalSeats?.message} />
                     </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-850 pt-4">
@@ -1502,11 +1680,7 @@ export const Trips: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            if (confirm("Delete this trip?")) {
-                              deleteMutation.mutate(trip._id);
-                            }
-                          }}
+                          onClick={() => handleDeleteClick(trip)}
                           className="text-rose-500 p-2"
                         >
                           <Trash2 size={14} />
@@ -1546,6 +1720,142 @@ export const Trips: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Date Change OTP Verification Modal */}
+      <Modal
+        isOpen={dateOtpModalOpen}
+        onClose={() => setDateOtpModalOpen(false)}
+        title="Verify Date Changes"
+      >
+        <div className="space-y-4">
+          <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+            Active bookings exist for this trip. Changing the departure/return date or deadline requires email OTP verification. An OTP has been sent to your registered agency email address.
+          </p>
+
+          <Input
+            label="Enter Email OTP *"
+            placeholder="6-digit verification code"
+            maxLength={6}
+            value={dateOtpCode}
+            onChange={(e) => setDateOtpCode(e.target.value)}
+          />
+
+          {dateOtpError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-500 text-xs font-bold">
+              {dateOtpError}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" onClick={() => setDateOtpModalOpen(false)} className="flex-1">
+              Cancel
+            </Button>
+            <Button onClick={handleVerifyDateOtp} className="flex-1">
+              Verify & Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Trip & Refund Wizard Modal */}
+      <Modal
+        isOpen={deleteWizardOpen}
+        onClose={() => setDeleteWizardOpen(false)}
+        title="Delete Trip & Process Refunds"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-2">
+            <span className="text-[10px] uppercase font-extrabold tracking-wider text-primary">
+              Step {deleteStep} of 3
+            </span>
+            <span className="text-[10px] font-bold text-slate-400">
+              {deleteStep === 1 && "Process Full Refund"}
+              {deleteStep === 2 && "Traveler Verification"}
+              {deleteStep === 3 && "Agent Confirmation"}
+            </span>
+          </div>
+
+          {deleteStep === 1 && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 text-amber-700 text-xs font-bold leading-relaxed">
+                Active bookings exist for this trip. Deleting this trip will automatically cancel all tickets and process a 100% full refund to all travelers.
+              </div>
+              <Button onClick={handleStartRefunds} className="w-full flex items-center justify-center gap-2">
+                Initiate Full Refunds
+              </Button>
+            </div>
+          )}
+
+          {deleteStep === 2 && (
+            <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+              <p className="text-[11px] font-semibold text-slate-500">
+                Enter the OTP sent to each traveler to confirm refund receipt:
+              </p>
+              {travelerRefundBookings.map((b) => (
+                <div key={b._id} className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-extrabold text-slate-700 dark:text-slate-205">{b.travelerName}</span>
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold">Simulated OTP: {b.otp}</span>
+                  </div>
+                  {b.verified ? (
+                    <div className="text-[10px] text-emerald-500 font-extrabold flex items-center gap-1">
+                      ✓ Refund Completed
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Traveler OTP"
+                        maxLength={6}
+                        value={travelerOtpInputs[b._id] || ""}
+                        onChange={(e) => setTravelerOtpInputs(prev => ({ ...prev, [b._id]: e.target.value }))}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-855 text-xs font-bold bg-white dark:bg-slate-900 w-24"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleVerifyTravelerOtp(b._id)}
+                        disabled={travelerVerifyingMap[b._id]}
+                      >
+                        {travelerVerifyingMap[b._id] ? "Verifying..." : "Verify"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {deleteStep === 3 && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500 text-xs font-bold">
+                All traveler refunds have been successfully verified and completed!
+              </div>
+              <Input
+                label="Enter Agent Email OTP *"
+                placeholder="6-digit verification code"
+                maxLength={6}
+                value={agentOtpInput}
+                onChange={(e) => setAgentOtpInput(e.target.value)}
+              />
+              <Button onClick={handleConfirmAgentDelete} className="w-full bg-rose-500 hover:bg-rose-600 text-white font-extrabold">
+                Confirm & Permanently Delete Trip
+              </Button>
+            </div>
+          )}
+
+          {deleteWizardError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-500 text-xs font-bold">
+              {deleteWizardError}
+            </div>
+          )}
+
+          {deleteWizardSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-955/20 text-emerald-500 text-xs font-bold">
+              {deleteWizardSuccess}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

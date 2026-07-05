@@ -8,6 +8,7 @@ import { Analytics } from "./pages/Analytics";
 import { Profile } from "./pages/Profile";
 import { Settings } from "./pages/Settings";
 import { CompleteProfile } from "./pages/CompleteProfile";
+import { Wallet } from "./pages/Wallet";
 import { MainLayout } from "./components/layout";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
 import { useAuthStore } from "./store/authStore";
@@ -98,6 +99,16 @@ export const App: React.FC = () => {
               <ProtectedRoute>
                 <MainLayout>
                   <Analytics />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/wallet"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Wallet />
                 </MainLayout>
               </ProtectedRoute>
             }

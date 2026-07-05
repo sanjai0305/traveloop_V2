@@ -26,8 +26,8 @@ export const updateTrip = async (id: string, tripData: Partial<AgentTrip>): Prom
   return response.data;
 };
 
-export const deleteTrip = async (id: string): Promise<{ success: boolean; message: string }> => {
-  const response = await api.delete(`/agent/trip/${id}`);
+export const deleteTrip = async (id: string, agentOtp?: string): Promise<{ success: boolean; message: string; code?: string }> => {
+  const response = await api.delete(`/agent/trip/${id}`, { data: { agentOtp } });
   return response.data;
 };
 

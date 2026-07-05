@@ -9,6 +9,7 @@ import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
 import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
+import Wallet from "../models/Wallet.js";
 
 // ─── HELPERS FOR USER TRIP CLONING ────────────────────────────────────────────
 
@@ -203,11 +204,12 @@ export class BookingService {
     const agent = await Agent.findById(trip.agentId || trip.agent);
     const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
     const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
-    const commissionRate = agent ? (agent.commissionRate !== undefined ? agent.commissionRate : defaultRate) : defaultRate;
+    
+    // Check if trip has commissionPercentage stored, else fallback
+    const commRate = trip.commissionPercentage !== undefined ? trip.commissionPercentage : defaultRate;
 
-    const commissionAmount = totalAmount * (commissionRate / 100);
-    const gatewayFee = totalAmount * 0.02;
-    const agentAmount = totalAmount - commissionAmount - gatewayFee;
+    const commissionAmount = totalAmount * (commRate / 100);
+    const agentAmount = totalAmount - commissionAmount;
 
     // 4. Normalize gender helper
     const normalizeGender = (g) => {
@@ -255,8 +257,9 @@ export class BookingService {
       adults: Number(adults || 1),
       children: Number(children || 0),
       commissionAmount,
-      gatewayFee,
+      adminCommission: commissionAmount,
       agentAmount,
+      bookingAmount: totalAmount,
       pickupLocation,
       token: crypto.randomUUID(),
     });
@@ -271,7 +274,33 @@ export class BookingService {
     // occupancy rate calculation is also performed in AgentTrip's pre-save hook
     const totalS = trip.totalSeats || 40;
     trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+    
+    // Set custom database attributes
+    trip.bookingCount = (trip.bookingCount || 0) + 1;
+    trip.occupancyRate = trip.occupancy;
+    trip.walletAmount = (trip.walletAmount || 0) + agentAmount;
     await trip.save();
+
+    // Update Wallet balance & transactional ledger
+    const targetAgentId = trip.agentId || trip.agent;
+    if (targetAgentId) {
+      let wallet = await Wallet.findOne({ agentId: targetAgentId });
+      if (!wallet) {
+        wallet = new Wallet({ agentId: targetAgentId });
+      }
+      wallet.balance += agentAmount;
+      wallet.withdrawableBalance += agentAmount;
+      wallet.transactions.push({
+        date: new Date(),
+        bookingId: bookingId,
+        customerName: travelersNormalized[0]?.name || "Traveler",
+        amount: totalAmount,
+        commission: commissionAmount,
+        netEarnings: agentAmount,
+        status: "Completed",
+      });
+      await wallet.save();
+    }
 
     // 7. Update Agent aggregated statistics
     if (agent) {

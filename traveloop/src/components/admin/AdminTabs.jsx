@@ -1,6 +1,4 @@
-// src/components/admin/AdminTabs.jsx
-
-import React, { useState } from "react";
+import React from "react";
 
 import {
   LayoutDashboard,
@@ -8,6 +6,7 @@ import {
   MapPinned,
   Star,
   BarChart3,
+  Settings,
 } from "lucide-react";
 
 const tabs = [
@@ -40,13 +39,15 @@ const tabs = [
     label: "Analytics",
     icon: BarChart3,
   },
+
+  {
+    id: 6,
+    label: "Settings",
+    icon: Settings,
+  },
 ];
 
-const AdminTabs = () => {
-  
-  // ACTIVE TAB
-  const [activeTab, setActiveTab] =
-    useState("Overview");
+const AdminTabs = ({ activeTab, setActiveTab }) => {
 
   return (
     <div

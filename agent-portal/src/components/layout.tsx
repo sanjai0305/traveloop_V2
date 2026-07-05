@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Lock,
+  Wallet,
 } from "lucide-react";
 import { useAuthStore } from "../store/authStore";
 
@@ -56,6 +57,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     { label: "Trips", path: "/trips", icon: Compass },
     { label: "Bookings", path: "/bookings", icon: CalendarCheck2 },
     { label: "Analytics", path: "/analytics", icon: BarChart3 },
+    { label: "Wallet", path: "/wallet", icon: Wallet },
     { label: "Profile", path: "/profile", icon: User },
     { label: "Settings", path: "/settings", icon: Settings },
   ];

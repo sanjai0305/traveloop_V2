@@ -81,6 +81,62 @@ router.patch("/settlements/:id", verifyFinance, updateSettlement);
 router.get("/notifications", verifyAdmin, getNotifications);
 router.patch("/notifications/:id/read", verifyAdmin, markNotificationRead);
 
+// Withdrawal Approval Routes
+router.get("/withdrawals", verifyAdmin, async (req, res) => {
+  try {
+    const Withdrawal = await import("../models/Withdrawal.js").then(m => m.default);
+    const Agent = await import("../models/Agent.js").then(m => m.default);
+    const withdrawals = await Withdrawal.find().populate({ path: "agentId", model: Agent }).sort({ createdAt: -1 });
+    res.status(200).json({ success: true, withdrawals });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch("/withdrawals/:id", verifyAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!["Approved", "Rejected", "Completed"].includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    const Withdrawal = await import("../models/Withdrawal.js").then(m => m.default);
+    const Wallet = await import("../models/Wallet.js").then(m => m.default);
+
+    const withdrawal = await Withdrawal.findById(req.params.id);
+    if (!withdrawal) {
+      return res.status(404).json({ success: false, message: "Withdrawal request not found" });
+    }
+
+    if (withdrawal.status !== "Pending") {
+      return res.status(400).json({ success: false, message: "Withdrawal request already processed" });
+    }
+
+    const wallet = await Wallet.findOne({ agentId: withdrawal.agentId });
+    if (!wallet) {
+      return res.status(404).json({ success: false, message: "Agent wallet not found" });
+    }
+
+    if (status === "Approved" || status === "Completed") {
+      wallet.pendingBalance = Math.max(0, wallet.pendingBalance - withdrawal.amount);
+      wallet.balance = Math.max(0, wallet.balance - withdrawal.amount);
+      withdrawal.status = status;
+      withdrawal.approvedAt = new Date();
+    } else if (status === "Rejected") {
+      wallet.pendingBalance = Math.max(0, wallet.pendingBalance - withdrawal.amount);
+      wallet.withdrawableBalance += withdrawal.amount;
+      withdrawal.status = "Rejected";
+    }
+
+    await wallet.save();
+    await withdrawal.save();
+
+    res.status(200).json({ success: true, message: `Withdrawal request status updated to ${status}`, withdrawal });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Dev only mock seeder
 router.post("/seed", seedMockData);
 
