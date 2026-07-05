@@ -12,17 +12,24 @@ export const checkAgentKYC = (req, res, next) => {
 
   // ── Diagnostic logs ────────────────────────────────────────────────────────
   console.log("\n[KYC Middleware] Verifying agent permissions for:", req.method, req.originalUrl);
-  console.log("  Agent ID      :", agent._id);
-  console.log("  Email         :", agent.email);
-  console.log("  KYC Status    :", agent.kycStatus);
-  console.log("  Email Verified:", agent.emailVerified);
+  console.log("  Agent ID       :", agent._id);
+  console.log("  Email          :", agent.email);
+  console.log("  KYC Status     :", agent.kycStatus);
+  console.log("  Email Verified :", agent.emailVerified);
   console.log("  Mobile Verified:", agent.mobileVerified);
-  console.log("  Approved      :", agent.isApproved ?? agent.status);
+  console.log("  isApproved     :", agent.isApproved);
+  console.log("  profileCompleted:", agent.profileCompleted);
+  console.log("  status         :", agent.status);
 
-  const kycStatus     = agent.kycStatus    || "PENDING";
-  const emailVerified = agent.emailVerified === true;
-  const mobileVerified = agent.mobileVerified === true;
-  const kycPassed     = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+  const kycStatus       = agent.kycStatus || "PENDING";
+  const emailVerified   = agent.emailVerified === true;
+  const mobileVerified  = agent.mobileVerified === true;
+  const kycPassed       = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+
+  // ── Permissive fallback: allow agents approved by admin or seeder ──────────
+  // These agents have profileCompleted=true and status=approved but may still
+  // have a stale kycStatus="PENDING" in legacy data.
+  const adminApproved   = agent.profileCompleted === true && agent.status === "approved";
 
   // ── Check 1: Email not verified ────────────────────────────────────────────
   if (!emailVerified) {
@@ -35,20 +42,9 @@ export const checkAgentKYC = (req, res, next) => {
     });
   }
 
-  // ── Check 2: Mobile not verified ───────────────────────────────────────────
-  if (!mobileVerified) {
-    console.warn("  [KYC Middleware] ❌ REJECTED — mobileVerified is false");
-    return res.status(403).json({
-      success: false,
-      reason: "MOBILE_NOT_VERIFIED",
-      message: "Verify your mobile number before creating trips",
-      kycStatus,
-    });
-  }
-
-  // ── Check 3: KYC status not completed ─────────────────────────────────────
-  if (!kycPassed) {
-    // Distinguish between "never submitted" vs "submitted but not yet approved"
+  // ── Check 2: KYC status gate (with profileCompleted fallback) ─────────────
+  if (!kycPassed && !adminApproved) {
+    // Distinguish "submitted but awaiting admin" vs "never completed"
     const isAdminPendingApproval = kycStatus === "MOBILE_VERIFIED" || kycStatus === "EMAIL_VERIFIED";
 
     if (isAdminPendingApproval) {
@@ -71,9 +67,12 @@ export const checkAgentKYC = (req, res, next) => {
   }
 
   // ── All checks passed ──────────────────────────────────────────────────────
-  console.log("  [KYC Middleware] ✅ ALLOWED — agent is verified and KYC_COMPLETED");
+  if (adminApproved && !kycPassed) {
+    console.log("  [KYC Middleware] ✅ ALLOWED via adminApproved fallback (profileCompleted + status=approved)");
+  } else {
+    console.log("  [KYC Middleware] ✅ ALLOWED — agent KYC status:", kycStatus);
+  }
   next();
 };
 
 export default checkAgentKYC;
-

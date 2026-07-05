@@ -258,7 +258,12 @@ export const Trips: React.FC = () => {
   const [deleteWizardSuccess, setDeleteWizardSuccess] = useState("");
 
   const kycStatus = agent?.kycStatus || "PENDING";
-  const isProfileCompleted = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+  // Synchronized with backend kycMiddleware: allow KYC_COMPLETED/APPROVED,
+  // AND also allow agents with profileCompleted=true + status=approved (admin/seeder created)
+  const kycPassed = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+  const adminApproved = agent?.profileCompleted === true && (agent?.status === "approved" || agent?.status === "APPROVED");
+  const isProfileCompleted = kycPassed || adminApproved;
+
 
   const { data, isLoading } = useQuery({
     queryKey: ["my-trips"],

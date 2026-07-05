@@ -24,8 +24,12 @@ export interface Agent {
   profileImage: string;
   profileCompleted: boolean;
   emailVerified: boolean;
+  status?: "approved" | "pending" | "suspended" | string;
+  role?: string;
+  isApproved?: boolean;
   createdAt?: string;
   updatedAt?: string;
+
 
   // Legacy compat fields
   agentName?: string;
