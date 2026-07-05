@@ -1,5 +1,5 @@
 // src/pages/TripDetails.jsx — Published Group Trip Details & Booking Flow
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -10,6 +10,10 @@ import {
 import MainLayout from "../layouts/MainLayout";
 import { getApiUrl } from "../utils/api";
 import { useToast } from "../components/mobile/MobileToast";
+import SeatLayoutModal from "../components/trip/SeatLayoutModal";
+import PassengerFormModal from "../components/trip/PassengerFormModal";
+import UPIPaymentModal from "../components/trip/UPIPaymentModal";
+import TicketModal from "../components/trip/TicketModal";
 
 export const TripDetails = () => {
   const { id } = useParams();
@@ -33,9 +37,16 @@ export const TripDetails = () => {
 
   // Booking Flow States
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [bookingStage, setBookingStage] = useState("form"); // "form" | "seats" | "confirm" | "payment" | "success"
+  // stages: "seat_select" | "passenger_form" | "confirm" | "upi_payment" | "ticket" | "form" | "seats" | "payment" | "success"
+  const [bookingStage, setBookingStage] = useState("seat_select");
   const [bookingDetails, setBookingDetails] = useState(null);
   const [bookedSeats, setBookedSeats] = useState([]);
+
+  // New seat-reservation flow state
+  const [selectedSeats, setSelectedSeatsList] = useState([]);
+  const [passengers, setPassengers] = useState([]);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
+  const [ticketData, setTicketData] = useState(null);
 
   // Form Fields
   const [firstName, setFirstName] = useState("");
@@ -115,15 +126,158 @@ export const TripDetails = () => {
   }, []);
 
   const handleOpenBooking = () => {
-    // Check if user is logged in
     const token = localStorage.getItem("token");
     if (!token) {
       toast.error("Please login to book this trip.");
       navigate("/login");
       return;
     }
-    setBookingStage("form");
+    // New flow: open seat selection first
+    setBookingStage("seat_select");
+    setSelectedSeatsList([]);
+    setPassengers([]);
+    setConfirmedBooking(null);
+    setTicketData(null);
     setShowBookingModal(true);
+  };
+
+  // Called when SeatLayoutModal confirms seat selection
+  const handleSeatsConfirmed = (seats) => {
+    setSelectedSeatsList(seats);
+    setBookingStage("passenger_form");
+  };
+
+  // Called when PassengerFormModal submits all passenger data
+  const handlePassengersConfirmed = async (passengerList) => {
+    setPassengers(passengerList);
+
+    // Calculate amounts
+    const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
+    const tax = Math.round(basePrice * passengerList.length * 0.05);
+    const convenienceFee = 150;
+    const total = basePrice * passengerList.length + tax + convenienceFee;
+
+    const maleCount = passengerList.filter(p => p.gender === "Male").length;
+    const femaleCount = passengerList.filter(p => p.gender === "Female").length;
+
+    // Create booking on backend before showing payment modal
+    try {
+      const token = localStorage.getItem("token");
+      const bookingRes = await fetch(getApiUrl("bookings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          tripId: trip._id,
+          travellers: passengerList,
+          seats: passengerList.length,
+          seatNumbers: selectedSeats,
+          totalAmount: total,
+          maleCount,
+          femaleCount,
+          adults: passengerList.length,
+          children: 0,
+          pickupLocation: trip.pickupLocation || "",
+        }),
+      });
+      const bookingData = await bookingRes.json();
+
+      const bookingRef = bookingData.bookingId || bookingData.booking?.bookingId;
+      const bookingMongoId = bookingData.booking?._id || bookingData.bookingId;
+
+      setConfirmedBooking({
+        bookingId: bookingRef,
+        _id: bookingMongoId,
+        tripTitle: trip.title,
+        totalAmount: total,
+        startDate: trip.startDate,
+        pickupLocation: trip.pickupLocation || "",
+      });
+      setBookingStage("upi_payment");
+    } catch (err) {
+      toast.error("Failed to create booking. Please try again.");
+      setBookingStage("passenger_form");
+    }
+  };
+
+  // Release all reserved seats (on payment cancel)
+  const releaseSelectedSeats = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    for (const seatNumber of selectedSeats) {
+      try {
+        await fetch(getApiUrl("seats/release"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ tripId: trip._id, seatNumber }),
+        });
+      } catch {}
+    }
+  }, [selectedSeats, trip?._id]);
+
+  // Called after successful payment
+  const handlePaymentSuccess = async (bookingId) => {
+    // Confirm seats on backend (creates Passenger docs)
+    const token = localStorage.getItem("token");
+    for (let i = 0; i < passengers.length; i++) {
+      const passenger = passengers[i];
+      try {
+        await fetch(getApiUrl("seats/confirm"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            tripId: trip._id,
+            seatNumber: passenger.seatNumber,
+            bookingId: confirmedBooking?.bookingId,
+            passengerData: passenger,
+          }),
+        });
+      } catch {}
+    }
+
+    // Fetch ticket data
+    try {
+      const res = await fetch(
+        getApiUrl(`bookings/ticket/${confirmedBooking?.bookingId || bookingId}`),
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (data.success) {
+        setTicketData(data);
+      }
+    } catch {}
+
+    // Synthesize ticket data from local state if API unavailable
+    if (!ticketData) {
+      setTicketData({
+        booking: confirmedBooking,
+        passengers: passengers.map((p, i) => ({
+          ...p,
+          qrPayload: {
+            bookingId: confirmedBooking?.bookingId,
+            tripId: trip._id,
+            passenger: p.name,
+            seat: p.seatNumber,
+            gender: p.gender,
+            age: p.age,
+          },
+          qrString: JSON.stringify({
+            bookingId: confirmedBooking?.bookingId,
+            passenger: p.name,
+            seat: p.seatNumber,
+            gender: p.gender,
+            age: p.age,
+          }),
+        })),
+      });
+    }
+
+    toast.success("Booking confirmed! Your QR ticket is ready.");
+    setBookingStage("ticket");
+  };
+
+  const handleCancelPayment = async () => {
+    await releaseSelectedSeats();
+    setBookingStage("seat_select");
+    toast.info("Payment cancelled. Seats have been released.");
   };
 
   const handleFormSubmit = (e) => {
@@ -1284,6 +1438,53 @@ export const TripDetails = () => {
             </>
           )}
         </AnimatePresence>
+        {/* ═══════════════════════════════════════════════════════════════
+            NEW BOOKING FLOW: Seat Select → Passenger Form → UPI → Ticket
+            ═══════════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {showBookingModal && bookingStage === "seat_select" && trip && (
+            <SeatLayoutModal
+              trip={trip}
+              requiredSeats={totalBookingSeats || 1}
+              onConfirm={handleSeatsConfirmed}
+              onClose={() => { setShowBookingModal(false); }}
+            />
+          )}
+
+          {showBookingModal && bookingStage === "passenger_form" && trip && (
+            <PassengerFormModal
+              selectedSeats={selectedSeats}
+              trip={trip}
+              onConfirm={handlePassengersConfirmed}
+              onBack={() => setBookingStage("seat_select")}
+              onClose={() => { releaseSelectedSeats(); setShowBookingModal(false); }}
+            />
+          )}
+
+          {showBookingModal && bookingStage === "upi_payment" && confirmedBooking && (
+            <UPIPaymentModal
+              booking={confirmedBooking}
+              passengers={passengers}
+              trip={trip}
+              onSuccess={handlePaymentSuccess}
+              onCancel={handleCancelPayment}
+              onClose={() => { handleCancelPayment(); setShowBookingModal(false); }}
+            />
+          )}
+
+          {showBookingModal && bookingStage === "ticket" && ticketData && (
+            <TicketModal
+              bookingSummary={ticketData?.booking || confirmedBooking}
+              passengers={ticketData?.passengers || passengers}
+              trip={trip}
+              onClose={() => {
+                setShowBookingModal(false);
+                navigate("/my-trips");
+              }}
+            />
+          )}
+        </AnimatePresence>
+
       </div>
     </MainLayout>
   );

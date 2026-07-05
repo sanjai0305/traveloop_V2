@@ -44,6 +44,7 @@ import adminRoutes from "./routes/adminRoutes.js";
 import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
+import seatRoutes from "./routes/seatRoutes.js";
 
 // Multi-Model Database Additions
 import healthRoutes from "./routes/healthRoutes.js";
@@ -120,6 +121,20 @@ io.on("connection", (socket) => {
     if (userId) {
       socket.join(`user_${userId}`);
       console.log(`[Socket.io] Client ${socket.id} joined user room: user_${userId}`);
+    }
+  });
+
+  // Seat map real-time room — scoped per trip
+  socket.on("join_trip_seats", (tripId) => {
+    if (tripId) {
+      socket.join(`trip_${tripId}`);
+      console.log(`[Socket.io] Client ${socket.id} joined seat room: trip_${tripId}`);
+    }
+  });
+
+  socket.on("leave_trip_seats", (tripId) => {
+    if (tripId) {
+      socket.leave(`trip_${tripId}`);
     }
   });
 
@@ -272,6 +287,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/driver-updates", driverUpdatesRoutes);
 app.use("/api/trip-members", tripMembersRoutes);
+app.use("/api/seats", seatRoutes);
 
 /* -----------------------------
    404

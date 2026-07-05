@@ -27,6 +27,15 @@ export const getApiUrl = (path) => {
   return `${API_BASE_URL}/${cleanPath}`;
 };
 
+// WebSocket base URL (strips /api suffix for socket.io)
+export const getSocketUrl = () => {
+  const base = API_BASE_URL.endsWith("/api")
+    ? API_BASE_URL.slice(0, -4)
+    : API_BASE_URL;
+  return base || "http://localhost:5000";
+};
+
+
 // ─── GLOBAL FETCH INTERCEPTOR (BRIDGED TO AXIOS CLIENT) ────────────────────────
 // This monkeypatches window.fetch so that all existing fetch calls automatically
 // execute through our central Axios client instance.

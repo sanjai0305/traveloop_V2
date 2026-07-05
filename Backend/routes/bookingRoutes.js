@@ -8,8 +8,10 @@ import Itinerary from "../models/Itinerary.js";
 import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
+import Passenger from "../models/Passenger.js";
 
 const router = express.Router();
+
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -416,6 +418,70 @@ router.get("/my", protect, async (req, res) => {
   } catch (error) {
     console.error("[Get Confirmed Bookings] Error:", error);
     res.status(500).json({ success: false, message: "Server Error retrieving bookings" });
+  }
+});
+
+// GET /api/bookings/ticket/:bookingId
+// Returns booking + per-passenger QR payloads for ticket rendering
+router.get("/ticket/:bookingId", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    }).populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const passengers = await Passenger.find({ bookingId: booking._id }).lean();
+    const trip = booking.tripId;
+
+    // Synthesize from booking.travellers if no Passenger docs exist (legacy bookings)
+    let finalPassengers = passengers;
+    if (finalPassengers.length === 0 && booking.travellers?.length > 0) {
+      finalPassengers = booking.travellers.map((t, idx) => {
+        const seatNum = (booking.seatNumbers || [])[idx] || `S${idx + 1}`;
+        const payload = {
+          bookingId: booking.bookingId,
+          tripId: String(booking.tripId?._id || booking.tripId),
+          passenger: t.name,
+          seat: seatNum,
+          gender: t.gender,
+          age: t.age,
+        };
+        return {
+          name: t.name,
+          age: t.age,
+          gender: t.gender,
+          phone: t.phone || "",
+          seatNumber: seatNum,
+          qrPayload: payload,
+          qrString: JSON.stringify(payload),
+        };
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      booking: {
+        bookingId: booking.bookingId,
+        _id: booking._id,
+        tripTitle: trip?.title || "Bus Trip",
+        startDate: trip?.startDate,
+        pickupLocation: booking.pickupLocation || trip?.pickupLocation || "",
+        totalAmount: booking.pricePaid || booking.amount || 0,
+        paymentStatus: booking.paymentStatus,
+      },
+      passengers: finalPassengers,
+      passengerCount: finalPassengers.length,
+    });
+  } catch (error) {
+    console.error("[Ticket Fetch] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error fetching ticket" });
   }
 });
 
