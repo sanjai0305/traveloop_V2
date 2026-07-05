@@ -35,6 +35,13 @@ export default function Dashboard() {
   const [updateMessage, setUpdateMessage] = useState('')
   const [updateSending, setUpdateSending] = useState(false)
 
+  const status = (trip?.boardingStatus || "LOCKED").toUpperCase();
+  const isBoardingOpen = status === "OPEN";
+  const isBoardingClosed = status === "CLOSED" || status === "LOCKED";
+
+  console.log("boardingStatus", trip?.boardingStatus);
+  console.log("normalized", status);
+
   const handleOpenBoarding = async (tripId: string) => {
     try {
       setLoading(true)
@@ -195,11 +202,11 @@ export default function Dashboard() {
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Boarding Status</p>
                       <div className="flex items-center gap-1.5 mt-1">
-                        {trip.boardingStatus === "OPEN" ? (
+                        {isBoardingOpen ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-450" /> Boarding Open
                           </span>
-                        ) : trip.boardingStatus === "CLOSED" ? (
+                        ) : isBoardingClosed ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-455 border border-rose-500/30">
                             Boarding Closed
                           </span>
@@ -210,26 +217,9 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
-                    <div>
-                      {trip.boardingStatus === "OPEN" ? (
-                        <button
-                          onClick={() => handleCloseBoarding(trip._id)}
-                          className="px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-colors shadow-sm"
-                        >
-                          Close Boarding
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleOpenBoarding(trip._id)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
-                        >
-                          <QrCode size={13} /> Unlock Boarding
-                        </button>
-                      )}
-                    </div>
                   </div>
 
-                  {trip.boardingStatus === "OPEN" && (
+                  {isBoardingOpen && (
                     <div className="grid grid-cols-2 gap-2 text-xs border-t border-white/5 pt-2.5">
                       <div>
                         <span className="text-[9px] text-slate-500 block uppercase font-bold tracking-wide">Boarding Started</span>
@@ -254,18 +244,34 @@ export default function Dashboard() {
                     <List size={15} /> Manifest
                   </button>
                   <button
-                    disabled={trip.boardingStatus !== "OPEN"}
+                    disabled={!isBoardingOpen}
                     onClick={() => navigate('/scan')}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold transition-all"
                     style={
-                      trip.boardingStatus === "OPEN"
+                      isBoardingOpen
                         ? { background: 'linear-gradient(135deg,#14B8A6,#0D9488)' }
                         : { background: '#1e293b', color: '#64748b', opacity: 0.5, cursor: 'not-allowed' }
                     }
                   >
                     <QrCode size={15} />
-                    {trip.boardingStatus === "OPEN" ? "Scan QR" : "Unlock Boarding First"}
+                    {isBoardingOpen ? "Scan QR" : "Unlock Boarding First"}
                   </button>
+                  {isBoardingClosed && (
+                    <button
+                      onClick={() => handleOpenBoarding(trip._id)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-emerald-500 hover:bg-emerald-600 transition-colors flex items-center justify-center"
+                    >
+                      <QrCode size={15} /> Unlock Boarding
+                    </button>
+                  )}
+                  {isBoardingOpen && (
+                    <button
+                      onClick={() => handleCloseBoarding(trip._id)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-bold bg-rose-500 hover:bg-rose-600 transition-colors"
+                    >
+                      Close Boarding
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowUpdateModal(true)}
                     className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-bold hover:bg-amber-500/30 transition-colors"
