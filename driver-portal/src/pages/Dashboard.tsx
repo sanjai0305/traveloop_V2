@@ -221,9 +221,9 @@ export default function Dashboard() {
                       ) : trip.boardingStatus !== "CLOSED" ? (
                         <button
                           onClick={() => handleOpenBoarding(trip._id)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-colors shadow-sm"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
                         >
-                          Open Boarding
+                          <QrCode size={13} /> Unlock Boarding
                         </button>
                       ) : null}
                     </div>

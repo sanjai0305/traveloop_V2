@@ -80,23 +80,16 @@ router.post("/generate-qr", protect, async (req, res) => {
     const expiry = Math.floor(tripEndOfDay.getTime() / 1000);
 
     const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET;
-    const uniqueToken = crypto.randomBytes(16).toString("hex");
     const qrToken = jwt.sign(
       {
         bookingId: booking._id.toString(),
-        userId: req.user._id.toString(),
         tripId: trip._id.toString(),
-        seatNumber: booking.assignedSeat || "Waiting For Driver Assignment",
-        tripDate: trip.startDate,
-        boardingPoint: trip.pickupLocation || "",
-        pickupLocation: trip.pickupLocation || "",
-        travelerName: "",
-        timestamp: new Date().toISOString(),
-        encryptedToken: uniqueToken,
-        expiryTime: expiry,
+        seatNumber: booking.assignedSeat || booking.seatNumber || "Waiting Assignment",
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
       },
       qrSecret,
-      { expiresIn: "24h" }
+      { expiresIn: "2h" }
     );
 
     console.log("Generated QR Token:", qrToken);

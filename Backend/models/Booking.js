@@ -43,7 +43,9 @@ const bookingSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      default: "Paid",
+      enum: ["PENDING", "PAID", "FAILED"],
+      default: "PENDING",
+      set: v => v ? v.toUpperCase() : v
     },
     status: {
       type: String,
@@ -55,7 +57,9 @@ const bookingSchema = new mongoose.Schema(
     },
     boardingStatus: {
       type: String,
-      default: "Pending",
+      enum: ["LOCKED", "OPEN", "BOARDED", "CLOSED"],
+      default: "LOCKED",
+      set: v => v ? v.toUpperCase() : v
     },
     paymentVerified: {
       type: Boolean,
@@ -146,6 +150,35 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    qrUnlocked: {
+      type: Boolean,
+      default: false,
+    },
+    boardingUnlockedAt: {
+      type: Date,
+    },
+    boardingUnlockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+    },
+    boardingWindowOpen: {
+      type: Boolean,
+      default: false,
+    },
+    boardedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Driver",
+    },
+    seatNumber: {
+      type: String,
+    },
+    passengers: [
+      {
+        name: String,
+        age: Number,
+        gender: String,
+      }
+    ],
   },
   {
     timestamps: true,

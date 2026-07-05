@@ -1395,22 +1395,30 @@ router.get("/trips/:id/manifest", protectAgent, async (req, res) => {
     });
 
     // Compute stats
-    const activeBookings = bookings.filter(b =>
-      b.paymentStatus !== "Cancelled" &&
-      b.paymentStatus !== "cancelled"
-    );
-    const paidBookings = bookings.filter(b =>
-      b.paymentStatus === "Paid"
-    );
-    const cancelledBookings = bookings.filter(b =>
-      b.paymentStatus === "Cancelled" || b.paymentStatus === "cancelled"
-    );
-    const boardedBookings = activeBookings.filter(b =>
-      b.boardingStatus === "boarded"
-    );
-    const pendingBoardingBookings = activeBookings.filter(b =>
-      b.boardingStatus !== "boarded"
-    );
+    const activeBookings = bookings.filter(b => {
+      const ps = (b.paymentStatus || "").toUpperCase();
+      return ps !== "CANCELLED" && ps !== "FAILED";
+    });
+    const paidBookings = bookings.filter(b => {
+      const ps = (b.paymentStatus || "").toUpperCase();
+      return ps === "PAID" || ps === "CONFIRMED";
+    });
+    const unpaidBookings = bookings.filter(b => {
+      const ps = (b.paymentStatus || "").toUpperCase();
+      return ps === "PENDING" || ps === "";
+    });
+    const cancelledBookings = bookings.filter(b => {
+      const ps = (b.paymentStatus || "").toUpperCase();
+      return ps === "CANCELLED";
+    });
+    const boardedBookings = activeBookings.filter(b => {
+      const bs = (b.boardingStatus || "").toUpperCase();
+      return bs === "BOARDED";
+    });
+    const pendingBoardingBookings = activeBookings.filter(b => {
+      const bs = (b.boardingStatus || "").toUpperCase();
+      return bs !== "BOARDED";
+    });
 
     const totalSeats = tripData.totalSeats || 0;
     const bookedSeatsCount = activeBookings.reduce((sum, b) => sum + (b.seats || 1), 0);
@@ -1449,6 +1457,7 @@ router.get("/trips/:id/manifest", protectAgent, async (req, res) => {
     const tripStats = {
       passengerCount: activeBookings.length,
       paidCount: paidBookings.length,
+      unpaidCount: unpaidBookings.length,
       cancelledCount: cancelledBookings.length,
       boardedCount: boardedBookings.length,
       pendingBoardingCount: pendingBoardingBookings.length,
@@ -1462,8 +1471,8 @@ router.get("/trips/:id/manifest", protectAgent, async (req, res) => {
       grossRevenue,
       commissionAmount,
       netRevenue,
-      pendingRevenue: bookings.filter(b => b.paymentStatus === "Pending").reduce((sum, b) => sum + (b.pricePaid || 0), 0),
-      refundedAmount: cancelledBookings.reduce((sum, b) => sum + (b.pricePaid || 0), 0),
+      pendingRevenue: bookings.filter(b => (b.paymentStatus || "").toUpperCase() === "PENDING").reduce((sum, b) => sum + (b.pricePaid || b.amount || 0), 0),
+      refundedAmount: cancelledBookings.reduce((sum, b) => sum + (b.pricePaid || b.amount || 0), 0),
     };
 
     res.status(200).json({

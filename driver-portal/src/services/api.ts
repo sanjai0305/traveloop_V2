@@ -46,7 +46,7 @@ export const boardPassenger = (bookingId: string, seatNumber: string, boardingPa
   api.post(`/driver/board/${bookingId}`, { seatNumber, boardingPassId })
 export const markNoShow   = (bookingId: string) => api.post(`/driver/no-show/${bookingId}`)
 export const getSeats     = (tripId: string)    => api.get(`/driver/seats/${tripId}`)
-export const openBoarding = (tripId: string)    => api.post(`/driver/trips/${tripId}/open-boarding`)
+export const openBoarding = (tripId: string)    => api.post(`/driver/trips/${tripId}/unlock-boarding`)
 export const closeBoarding = (tripId: string)   => api.post(`/driver/trips/${tripId}/close-boarding`)
 
 export default api

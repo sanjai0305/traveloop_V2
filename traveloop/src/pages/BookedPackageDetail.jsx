@@ -259,15 +259,26 @@ const BookedPackageDetail = () => {
   const getBoardingButtonState = () => {
     if (!booking || !trip) return { label: "Not Available", disabled: true, statusClass: "locked" };
 
-    if (booking.boardingStatus === "boarded" || booking.boardingStatus === "Boarded") {
+    if (booking.boardingStatus === "boarded" || booking.boardingStatus === "Boarded" || booking.boardingStatus === "BOARDED") {
       return { label: "Successfully Checked In", disabled: true, statusClass: "checked-in" };
     }
 
-    if (booking.status === "cancelled" || booking.paymentStatus === "Cancelled" || booking.status === "Cancelled") {
+    if (booking.status === "cancelled" || booking.paymentStatus === "Cancelled" || booking.status === "Cancelled" || booking.paymentStatus === "CANCELLED") {
       return { label: "Booking Cancelled", disabled: true, statusClass: "cancelled" };
     }
 
     if (trip.status === "completed" || trip.publishStatus === "completed" || trip.boardingStatus === "COMPLETED") {
+      return { label: "Boarding Closed", disabled: true, statusClass: "closed" };
+    }
+
+    if (booking.qrUnlocked || booking.boardingWindowOpen || trip.boardingStatus === "OPEN") {
+      if (qrToken || booking.token || booking.qrCode) {
+        return { label: "QR Active", disabled: false, statusClass: "qr-ready" };
+      }
+      return { label: "Generate Boarding Pass", disabled: false, statusClass: "open" };
+    }
+
+    if (trip.boardingStatus === "CLOSED") {
       return { label: "Boarding Closed", disabled: true, statusClass: "closed" };
     }
 
@@ -276,17 +287,6 @@ const BookedPackageDetail = () => {
 
     if (!trip.driver || trip.status === "cancelled" || trip.status === "Cancelled" || isBeforeTravelDay) {
       return { label: "Not Available", disabled: true, statusClass: "locked" };
-    }
-
-    if (trip.boardingStatus === "CLOSED") {
-      return { label: "Boarding Closed", disabled: true, statusClass: "closed" };
-    }
-
-    if (trip.boardingStatus === "OPEN") {
-      if (qrToken || booking.token) {
-        return { label: "QR Active", disabled: false, statusClass: "qr-ready" };
-      }
-      return { label: "Generate Boarding Pass", disabled: false, statusClass: "open" };
     }
 
     const departureTimeStr = trip.departureTime || "00:00";
@@ -681,17 +681,35 @@ const BookedPackageDetail = () => {
         fetchBooking();
       }
     };
+    const handleBoardingQrUnlocked = (data) => {
+      if (data.tripId === trip._id) {
+        setBooking(prev => ({ ...prev, qrUnlocked: true }));
+        fetchBooking();
+      }
+    };
+    const handleBoardingClosedRealtime = (data) => {
+      if (data.tripId === trip._id) {
+        setBooking(prev => ({ ...prev, qrUnlocked: false }));
+        fetchBooking();
+      }
+    };
 
     socket.on("boarding-opened", handleBoardingOpened);
     socket.on("boarding-closed", handleBoardingClosed);
     socket.on("passenger_boarded", handlePassengerBoarded);
     socket.on("booking_updated", handleBookingUpdated);
+    socket.on("boarding_qr_unlocked", handleBoardingQrUnlocked);
+    socket.on("boarding_closed", handleBoardingClosedRealtime);
+    socket.on("boarding_completed", handleBoardingClosedRealtime);
 
     return () => {
       socket.off("boarding-opened", handleBoardingOpened);
       socket.off("boarding-closed", handleBoardingClosed);
       socket.off("passenger_boarded", handlePassengerBoarded);
       socket.off("booking_updated", handleBookingUpdated);
+      socket.off("boarding_qr_unlocked", handleBoardingQrUnlocked);
+      socket.off("boarding_closed", handleBoardingClosedRealtime);
+      socket.off("boarding_completed", handleBoardingClosedRealtime);
     };
   }, [bookingId, trip?._id, fetchBooking]);
 

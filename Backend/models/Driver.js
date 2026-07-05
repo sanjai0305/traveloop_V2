@@ -34,6 +34,11 @@ const driverSchema = new mongoose.Schema(
       ref: "Agent",
       default: null,
     },
+    activeBoardingTrip: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AgentTrip",
+      default: null,
+    },
   },
   {
     timestamps: true,

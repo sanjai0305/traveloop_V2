@@ -150,83 +150,80 @@ export default function PassengerCard() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-5"
+          className="glass-card p-5 space-y-4"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '24px' }}
         >
-          <div className="flex items-center gap-4 mb-4">
-            {p.photo ? (
-              <img
-                src={p.photo}
-                alt={p.travelerName}
-                className="w-14 h-14 rounded-2xl object-cover border border-teal-500/20 flex-shrink-0"
-                onError={(e: any) => { e.target.src = ""; }} // Fallback to initial/emoji on broken image
-              />
-            ) : (
-              <div className="w-14 h-14 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-3xl flex-shrink-0">
-                {p.gender === 'Female' ? '👩' : p.gender === 'Male' ? '👨' : '🧑'}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-white font-extrabold text-lg leading-tight">{p.travelerName}</p>
-              <div className="flex flex-wrap gap-2 mt-1.5">
-                <span className="chip bg-blue-500/10 text-blue-400">{p.gender}</span>
-                <span className="chip bg-violet-500/10 text-violet-400">Age {p.age}</span>
-                <span className="chip bg-teal-500/10 text-teal-400 font-extrabold uppercase border border-teal-500/20">
-                  {p.paymentStatus?.toUpperCase() === 'PAID' ? 'PAID' : 'PAID'}
-                </span>
-                <span className="chip bg-amber-500/10 text-amber-400">
-                  {p.adults} Adult{p.adults > 1 ? 's' : ''}
-                </span>
-                {p.children > 0 && (
-                  <span className="chip bg-pink-500/10 text-pink-400">
-                    {p.children} Child{p.children > 1 ? 'ren' : ''}
-                  </span>
-                )}
-              </div>
+          <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Passenger</p>
+              <p className="text-white font-extrabold text-lg mt-0.5">{p.travelerName}</p>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/5 rounded-xl p-3">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide mb-1 flex items-center gap-1">
-                <Ticket size={10} /> Booking ID
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Seat</p>
+              <p className="text-teal-400 font-black text-lg mt-0.5">{selectedSeat || p.assignedSeat || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Payment</p>
+              <p className="text-emerald-400 font-extrabold text-sm flex items-center gap-1 mt-0.5">
+                {(p.paymentStatus || 'PAID').toUpperCase()} 🟢
               </p>
-              <p className="text-white font-bold text-sm font-mono">{p.bookingId}</p>
             </div>
-            {p.pickupLocation && (
-              <div className="bg-white/5 rounded-xl p-3">
-                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide mb-1 flex items-center gap-1">
-                  <MapPin size={10} /> Pickup
-                </p>
-                <p className="text-white font-bold text-sm truncate">{p.pickupLocation}</p>
-              </div>
-            )}
-            {p.phone && (
-              <div className="bg-white/5 rounded-xl p-3">
-                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide mb-1 flex items-center gap-1">
-                  <Phone size={10} /> Phone
-                </p>
-                <a href={`tel:${p.phone}`} className="text-teal-400 font-bold text-sm">{p.phone}</a>
-              </div>
-            )}
-            {t.busNumber && (
-              <div className="bg-white/5 rounded-xl p-3">
-                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide mb-1 flex items-center gap-1">
-                  <Bus size={10} /> Bus
-                </p>
-                <p className="text-white font-bold text-sm">{t.busNumber}</p>
-              </div>
-            )}
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Passengers</p>
+              <p className="text-white font-bold text-sm mt-0.5">{p.seats || 1}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Departure</p>
+              <p className="text-white font-bold text-sm mt-0.5">{t.departureTime || '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Trip</p>
+              <p className="text-white font-bold text-sm mt-0.5 truncate">{t.title}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Vehicle</p>
+              <p className="text-white font-mono font-bold text-sm mt-0.5">{t.busNumber || '—'}</p>
+            </div>
+            <div className="col-span-2 border-t border-white/10 pt-3">
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide">Status</p>
+              <p className="text-teal-400 font-extrabold text-sm mt-0.5">
+                {(success || p.boardingStatus === 'Boarded' || p.boardingStatus === 'boarded') ? 'BOARDED' : 'PENDING'}
+              </p>
+            </div>
           </div>
         </motion.div>
+
+        {/* Passenger List */}
+        {((result as any).passengers || p.travellers || []).length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="glass-card p-4 space-y-3"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px' }}
+          >
+            <p className="text-white font-bold text-sm border-b border-white/5 pb-2">Passenger List</p>
+            <div className="space-y-2">
+              {((result as any).passengers || p.travellers || []).map((pass: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center text-xs text-slate-300">
+                  <span>{idx + 1}. {pass.name} ({pass.gender || '—'})</span>
+                  <span className="text-teal-400 font-mono font-bold">
+                    {result.passenger.assignedSeat || result.passenger.seatNumbers?.[idx] ? `Seat ${result.passenger.assignedSeat || result.passenger.seatNumbers[idx]}` : `Seat A${12 + idx}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Seat selection */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.15 }}
           className="glass-card p-4"
         >
-          <p className="text-white font-bold text-sm mb-3">Assign Seat</p>
+          <p className="text-white font-bold text-sm mb-3">Assign / Change Seat</p>
 
           {/* Legend */}
           <div className="flex gap-3 mb-4">
@@ -283,10 +280,11 @@ export default function PassengerCard() {
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleBoard}
-          disabled={loading}
+          disabled={loading || success}
           className="flex-2 flex-1 teal-btn"
+          style={success ? { background: '#1e293b', color: '#64748b', cursor: 'not-allowed' } : {}}
         >
-          {loading ? 'Boarding…' : selectedSeat ? `Board (Seat ${selectedSeat})` : 'Board Passenger'}
+          {loading ? 'Boarding…' : success ? 'Already Boarded' : 'Confirm Boarding'}
         </motion.button>
       </div>
     </div>

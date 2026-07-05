@@ -309,6 +309,84 @@ router.post("/trips/:tripId/open-boarding", protectDriver, async (req, res) => {
   }
 });
 
+// POST /api/driver/trips/:tripId/unlock-boarding
+router.post("/trips/:tripId/unlock-boarding", protectDriver, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(tripId)) {
+      return res.status(400).json({ success: false, message: "Invalid trip ID format" });
+    }
+
+    const trip = await AgentTrip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    const driverIdStr = req.driver._id.toString();
+    const isAssigned = (trip.driverId && trip.driverId.toString() === driverIdStr) || 
+                       (trip.driver && trip.driver.toString() === driverIdStr);
+    
+    if (!isAssigned) {
+      return res.status(403).json({ success: false, message: "Only the assigned driver can unlock boarding." });
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    if (trip.startDate !== today) {
+      return res.status(400).json({ success: false, message: "Boarding can only be unlocked on the departure date." });
+    }
+
+    if (trip.status === "cancelled" || trip.status === "completed") {
+      return res.status(400).json({ success: false, message: "Cannot unlock boarding for inactive or completed trips." });
+    }
+
+    const now = new Date();
+    const closesAt = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours
+
+    // Update Trip boarding details
+    trip.boardingStatus = "OPEN";
+    trip.boardingOpenedAt = now;
+    trip.boardingClosesAt = closesAt;
+    await trip.save();
+
+    // Update all bookings for this trip
+    await Booking.updateMany(
+      { tripId },
+      {
+        qrUnlocked: true,
+        boardingWindowOpen: true,
+        boardingUnlockedAt: now,
+        boardingUnlockedBy: req.driver._id,
+        boardingStatus: "OPEN"
+      }
+    );
+
+    // Update driver active trip
+    await Driver.findByIdAndUpdate(req.driver._id, { activeBoardingTrip: trip._id });
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("boarding_qr_unlocked", { tripId });
+      io.to(tripId.toString()).emit("boarding-opened", {
+        tripId,
+        boardingStatus: "OPEN",
+        openedAt: now,
+        closedAt: closesAt,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Boarding window unlocked successfully.",
+      boardingStatus: "OPEN",
+      openedAt: now,
+      closedAt: closesAt,
+    });
+  } catch (err) {
+    console.error("[Driver unlock-boarding]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 // POST /api/driver/trips/:tripId/close-boarding
 router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => {
   try {
@@ -318,43 +396,61 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
     }
 
     const trip = await AgentTrip.findById(tripId);
-
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
+    const driverIdStr = req.driver._id.toString();
+    const isAssigned = (trip.driverId && trip.driverId.toString() === driverIdStr) || 
+                       (trip.driver && trip.driver.toString() === driverIdStr);
+    
+    if (!isAssigned) {
+      return res.status(403).json({ success: false, message: "Only the assigned driver can close boarding." });
+    }
+
     const now = new Date();
 
-    const updatedTrip = await AgentTrip.findByIdAndUpdate(
-      tripId,
+    trip.boardingStatus = "CLOSED";
+    trip.boardingClosedAt = now;
+    trip.boardingClosesAt = now;
+    await trip.save();
+
+    // Lock passenger QR codes and mark remaining as no_show
+    await Booking.updateMany(
+      { tripId },
       {
-        boardingStatus: "CLOSED",
-        boardingClosesAt: now,
-      },
-      { new: true }
+        qrUnlocked: false,
+        boardingWindowOpen: false,
+        boardingStatus: "CLOSED"
+      }
     );
 
-    // Auto mark remaining Pending/not_boarded as No Show
+    // Auto mark remaining Pending/not_boarded as No Show in database for stats
     await Booking.updateMany(
       {
         tripId,
-        boardingStatus: { $in: ["Pending", "not_boarded"] }
+        boardingStatus: { $in: ["LOCKED", "OPEN", "Pending", "not_boarded"] }
       },
       { boardingStatus: "no_show" }
     );
 
+    // Clear active trip for driver
+    await Driver.findByIdAndUpdate(req.driver._id, { activeBoardingTrip: null });
+
     const io = req.app.get("io");
     if (io) {
-      io.to(tripId).emit("boarding-closed", {
+      io.emit("boarding_closed", { tripId });
+      io.to(tripId.toString()).emit("boarding-closed", {
         tripId,
         boardingStatus: "CLOSED",
         closedAt: now,
       });
+      io.emit("boarding_completed", { tripId });
     }
 
     res.json({
       success: true,
-      message: "Boarding window is now closed. Unboarded passengers marked as No Show.",
+      message: "Boarding window is now closed.",
       boardingStatus: "CLOSED",
       closedAt: now,
     });
@@ -364,52 +460,182 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
   }
 });
 
-// POST /api/driver/trips/:tripId/check-in
-router.post("/trips/:tripId/check-in", protectDriver, async (req, res) => {
+// POST /api/driver/scan-boarding and POST /api/driver/scan
+const scanBoardingHandler = async (req, res) => {
   try {
-    const { tripId } = req.params;
     const { qrToken } = req.body;
-
     if (!qrToken) {
       return res.status(400).json({ success: false, message: "qrToken required" });
     }
 
     const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET;
-    const decoded = jwt.verify(qrToken, qrSecret);
+    let decoded;
+    try {
+      decoded = jwt.verify(qrToken, qrSecret);
+    } catch (err) {
+      return res.status(400).json({ success: false, code: "INVALID_QR", message: "Invalid or expired QR code" });
+    }
 
     if (!decoded.bookingId) {
-      return res.status(400).json({ success: false, message: "Invalid token payload" });
+      return res.status(400).json({ success: false, code: "INVALID_QR", message: "Invalid token payload" });
     }
 
-    const booking = await Booking.findByIdAndUpdate(
-      decoded.bookingId,
-      { boardingStatus: "boarded" },
-      { new: true }
-    );
+    const booking = await Booking.findById(decoded.bookingId)
+      .populate("userId")
+      .populate("tripId");
 
     if (!booking) {
-      return res.status(400).json({ success: false, message: "Booking not found or update failed" });
+      return res.status(404).json({ success: false, code: "BOOKING_NOT_FOUND", message: "Booking not found" });
     }
+
+    // Verify paymentStatus
+    const pStatus = (booking.paymentStatus || "").toUpperCase();
+    if (pStatus !== "PAID" && pStatus !== "CONFIRMED") {
+      return res.status(400).json({
+        success: false,
+        code: "PAYMENT_PENDING",
+        message: "Payment not completed"
+      });
+    }
+
+    // Check if already boarded
+    const bStatus = (booking.boardingStatus || "").toUpperCase();
+    if (bStatus === "BOARDED" || bStatus === "BOARDED") {
+      return res.status(400).json({
+        success: false,
+        code: "ALREADY_BOARDED",
+        message: `Passenger already boarded\nTime: ${booking.boardedAt ? new Date(booking.boardedAt).toLocaleTimeString("en-IN") : "N/A"}\nSeat: ${booking.assignedSeat || booking.seatNumber || "N/A"}`
+      });
+    }
+
+    const trip = booking.tripId;
+    const user = booking.userId;
+
+    res.json({
+      success: true,
+      boardingPassId: booking._id.toString(),
+      bookingId: booking._id.toString(),
+      tripName: trip.title,
+      travelerName: booking.travelerName || (user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : "Traveler"),
+      phone: booking.contactNumber || (user ? user.phone : ""),
+      seatNumber: booking.assignedSeat || booking.seatNumber || "",
+      paymentStatus: booking.paymentStatus,
+      boardingStatus: booking.boardingStatus,
+      passengerCount: booking.seats || 1,
+      passengers: booking.travellers || booking.passengers || [],
+      departureTime: trip.departureTime,
+      vehicle: trip.busNumber,
+      bookingAmount: booking.pricePaid || booking.amountPaid || 0,
+      passenger: {
+        bookingId: booking._id.toString(),
+        travelerName: booking.travelerName || (user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : "Traveler"),
+        gender: booking.gender || "Male",
+        age: booking.age || 25,
+        phone: booking.contactNumber || (user ? user.phone : ""),
+        seats: booking.seats || 1,
+        pickupLocation: booking.pickupLocation || trip.pickupLocation || "",
+        assignedSeat: booking.assignedSeat || booking.seatNumber || "",
+        boardingStatus: booking.boardingStatus,
+        adults: booking.adults || 1,
+        children: booking.children || 0,
+        paymentStatus: booking.paymentStatus,
+        boardedAt: booking.boardedAt,
+      },
+      trip: {
+        _id: trip._id.toString(),
+        title: trip.title,
+        busNumber: trip.busNumber,
+        departureTime: trip.departureTime,
+        destinations: trip.destinations,
+      }
+    });
+  } catch (err) {
+    console.error("[Driver scan-boarding]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+router.post("/scan-boarding", protectDriver, scanBoardingHandler);
+router.post("/scan", protectDriver, scanBoardingHandler);
+
+// POST /api/driver/board/:bookingId
+router.post("/board/:bookingId", protectDriver, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { seatNumber } = req.body;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const now = new Date();
+    booking.boardingStatus = "BOARDED";
+    booking.boardedAt = now;
+    booking.boardedBy = req.driver._id;
+    if (seatNumber) {
+      booking.assignedSeat = seatNumber;
+      booking.seatNumber = seatNumber;
+    }
+    await booking.save();
 
     const io = req.app.get("io");
     if (io) {
-      io.to(tripId).emit("passenger-boarded", {
+      io.emit("boarding_scanned", { bookingId, tripId: booking.tripId });
+      io.to(booking.tripId.toString()).emit("passenger-boarded", {
         bookingId: booking.bookingId,
-        boardingStatus: "boarded",
+        boardingStatus: "BOARDED",
       });
     }
 
     res.json({
       success: true,
-      message: "Passenger successfully checked-in and boarded.",
-      booking: {
-        ...booking.toObject(),
-        _id: booking._id,
-      },
+      message: "Passenger successfully marked as boarded.",
+      travelerName: booking.travelerName,
+      seatNumber: booking.assignedSeat,
+      paymentStatus: "PAID",
+      boardingStatus: "BOARDED"
     });
   } catch (err) {
-    console.error("[Driver check-in]", err);
-    res.status(400).json({ success: false, message: "Invalid or expired QR code" });
+    console.error("[Driver board]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// POST /api/driver/no-show/:bookingId
+router.post("/no-show/:bookingId", protectDriver, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await Booking.findByIdAndUpdate(
+      bookingId,
+      { boardingStatus: "no_show" },
+      { new: true }
+    );
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+    res.json({ success: true, message: "Passenger marked as no show." });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// GET /api/driver/seats/:tripId
+router.get("/seats/:tripId", protectDriver, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const bookings = await Booking.find({
+      tripId,
+      paymentStatus: { $ne: "Cancelled" },
+      assignedSeat: { $ne: "" }
+    });
+    const occupiedSeats = bookings.map(b => ({
+      seat: b.assignedSeat || b.seatNumber,
+      status: b.boardingStatus
+    }));
+    res.json({ success: true, occupiedSeats });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
