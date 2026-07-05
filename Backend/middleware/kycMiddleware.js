@@ -1,7 +1,20 @@
+/**
+ * kycMiddleware.js
+ *
+ * Authorization guard for agent trip operations.
+ *
+ * ALLOW if:   emailVerified === true
+ *             AND mobileVerified === true
+ *             AND (kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED")
+ *             OR  (profileCompleted === true && status === "approved")   ← legacy fallback
+ *
+ * DENY with a descriptive reason code.
+ */
+
 export const checkAgentKYC = (req, res, next) => {
   const agent = req.agent;
 
-  // ── Guard: agent must be on request (set by protectAgent) ─────────────────
+  // ── Guard ──────────────────────────────────────────────────────────────────
   if (!agent) {
     return res.status(401).json({
       success: false,
@@ -10,67 +23,79 @@ export const checkAgentKYC = (req, res, next) => {
     });
   }
 
-  // ── Diagnostic logs ────────────────────────────────────────────────────────
-  console.log("\n[KYC Middleware] Verifying agent permissions for:", req.method, req.originalUrl);
-  console.log("  Agent ID       :", agent._id);
-  console.log("  Email          :", agent.email);
-  console.log("  KYC Status     :", agent.kycStatus);
-  console.log("  Email Verified :", agent.emailVerified);
-  console.log("  Mobile Verified:", agent.mobileVerified);
-  console.log("  isApproved     :", agent.isApproved);
-  console.log("  profileCompleted:", agent.profileCompleted);
-  console.log("  status         :", agent.status);
+  // ── Full diagnostic dump (always printed) ─────────────────────────────────
+  const debugFields = {
+    emailVerified:    agent.emailVerified,
+    mobileVerified:   agent.mobileVerified,
+    kycStatus:        agent.kycStatus,
+    isApproved:       agent.isApproved,
+    profileCompleted: agent.profileCompleted,
+    status:           agent.status,
+  };
+  console.log("\n[KYC Middleware]", req.method, req.originalUrl);
+  console.log(debugFields);
 
-  const kycStatus       = agent.kycStatus || "PENDING";
-  const emailVerified   = agent.emailVerified === true;
-  const mobileVerified  = agent.mobileVerified === true;
-  const kycPassed       = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+  // ── Derive booleans ────────────────────────────────────────────────────────
+  const emailVerified    = agent.emailVerified    === true;
+  const mobileVerified   = agent.mobileVerified   === true;
+  const kycStatus        = agent.kycStatus        || "PENDING";
+  const profileCompleted = agent.profileCompleted === true;
+  const status           = (agent.status          || "").toLowerCase();
 
-  // ── Permissive fallback: allow agents approved by admin or seeder ──────────
-  // These agents have profileCompleted=true and status=approved but may still
-  // have a stale kycStatus="PENDING" in legacy data.
-  const adminApproved   = agent.profileCompleted === true && agent.status === "approved";
+  const kycPassed     = kycStatus === "KYC_COMPLETED" || kycStatus === "APPROVED";
+  const adminApproved = profileCompleted && status === "approved";   // legacy fallback
 
   // ── Check 1: Email not verified ────────────────────────────────────────────
   if (!emailVerified) {
-    console.warn("  [KYC Middleware] ❌ REJECTED — emailVerified is false");
+    console.warn("  ❌ BLOCKED — emailVerified is false");
     return res.status(403).json({
       success: false,
       reason: "EMAIL_NOT_VERIFIED",
       message: "Verify your email address before creating trips",
-      kycStatus,
+      ...debugFields,
     });
   }
 
-  // ── Check 2: KYC status gate (with profileCompleted fallback) ─────────────
-  if (!kycPassed && !adminApproved) {
-    // Distinguish "submitted but awaiting admin" vs "never completed"
-    const isAdminPendingApproval = kycStatus === "MOBILE_VERIFIED" || kycStatus === "EMAIL_VERIFIED";
+  // ── Check 2: Mobile not verified ───────────────────────────────────────────
+  if (!mobileVerified) {
+    console.warn("  ❌ BLOCKED — mobileVerified is false");
+    return res.status(403).json({
+      success: false,
+      reason: "MOBILE_NOT_VERIFIED",
+      message: "Verify your mobile number before creating trips",
+      ...debugFields,
+    });
+  }
 
-    if (isAdminPendingApproval) {
-      console.warn("  [KYC Middleware] ❌ REJECTED — kycStatus is", kycStatus, "(awaiting admin approval)");
+  // ── Check 3: KYC / profile gate ───────────────────────────────────────────
+  if (!kycPassed && !adminApproved) {
+    const isPendingApproval =
+      kycStatus === "MOBILE_VERIFIED" || kycStatus === "EMAIL_VERIFIED";
+
+    if (isPendingApproval) {
+      console.warn("  ❌ BLOCKED — kycStatus =", kycStatus, "(awaiting admin)");
       return res.status(403).json({
         success: false,
-        reason: "ADMIN_APPROVAL_REQUIRED",
-        message: "Your profile is under review. Waiting for admin approval.",
-        kycStatus,
+        reason: "ADMIN_APPROVAL_PENDING",
+        message: "Your profile is under admin review. Please wait for approval.",
+        ...debugFields,
       });
     }
 
-    console.warn("  [KYC Middleware] ❌ REJECTED — kycStatus is PENDING (profile incomplete)");
+    console.warn("  ❌ BLOCKED — kycStatus =", kycStatus, "(profile incomplete)");
     return res.status(403).json({
       success: false,
-      reason: "KYC_NOT_COMPLETED",
-      message: "Complete profile verification before creating trips",
-      kycStatus,
+      reason: "PROFILE_INCOMPLETE",
+      message: "Complete your KYC profile before creating trips",
+      ...debugFields,
     });
   }
 
   // ── All checks passed ──────────────────────────────────────────────────────
-  if (adminApproved && !kycPassed) {
-    console.log("  [KYC Middleware] ✅ ALLOWED via adminApproved fallback (profileCompleted + status=approved)");
+  if (!kycPassed && adminApproved) {
+    console.log("  ✅ ALLOWED via adminApproved fallback (profileCompleted + status=approved)");
   } else {
-    console.log("  [KYC Middleware] ✅ ALLOWED — agent KYC status:", kycStatus);
+    console.log("  ✅ ALLOWED — kycStatus:", kycStatus);
   }
   next();
 };

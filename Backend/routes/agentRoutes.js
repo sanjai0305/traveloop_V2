@@ -866,19 +866,22 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
     originalPrice ||
     0;
 
-  // ── Profile / verification gate ──────────────────────────────────
-  const hasGst = !!req.agent.gstNumber;
-  const hasPhone = !!req.agent.phone;
-  const isProfileCompleted = !!req.agent.profileCompleted;
+  // ── Profile / verification gate (simplified — checkAgentKYC middleware handles full KYC) ──
   const isEmailVerified = !!req.agent.emailVerified;
 
-  if (!isProfileCompleted || !isEmailVerified || !hasGst || !hasPhone) {
+  if (!isEmailVerified) {
     return res.status(403).json({
       success: false,
-      code: "PROFILE_INCOMPLETE",
-      message: "Complete your Agent Profile to start publishing trips.",
+      reason: "EMAIL_NOT_VERIFIED",
+      message: "Verify your email address before creating trips.",
+      emailVerified: req.agent.emailVerified,
+      mobileVerified: req.agent.mobileVerified,
+      kycStatus: req.agent.kycStatus,
+      profileCompleted: req.agent.profileCompleted,
+      isApproved: req.agent.isApproved,
     });
   }
+
 
   // ── Required field check with detailed missingFields response ────
   const missingFields = [];
