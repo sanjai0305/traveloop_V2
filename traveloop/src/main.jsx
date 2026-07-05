@@ -5,9 +5,10 @@ import ReactDOM from "react-dom/client";
 
 // Validate Environment Loading
 console.log("=== [Traveloop Env Validation] ===");
-console.log("VITE_API_URL:", import.meta.env.VITE_API_URL);
+console.log("API URL", import.meta.env.VITE_API_URL);
+console.log("Socket URL", import.meta.env.VITE_SOCKET_URL);
+console.log("Mode", import.meta.env.MODE);
 console.log("Firebase Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
-console.log("App Mode:", import.meta.env.MODE);
 if (!import.meta.env.VITE_API_URL) {
   console.warn("⚠️ VITE_API_URL is not set! API calls may fall back to root.");
 }

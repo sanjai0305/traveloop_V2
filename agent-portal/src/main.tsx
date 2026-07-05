@@ -4,6 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 
+console.log("=== [Agent Portal Env Validation] ===");
+console.log("API URL", import.meta.env.VITE_API_URL);
+console.log("Socket URL", import.meta.env.VITE_SOCKET_URL);
+console.log("Mode", import.meta.env.MODE);
+console.log("=====================================");
+
 // Global broken image fallback listener (capture phase)
 window.addEventListener(
   "error",

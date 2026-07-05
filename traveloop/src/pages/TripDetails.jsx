@@ -772,7 +772,7 @@ export const TripDetails = () => {
               )}
 
               {/* Vehicle Photos */}
-              {((trip.transportImages && (trip.transportImages.frontImage || trip.transportImages.backImage || (trip.transportImages.interiorImages || []).length > 0 || (trip.transportImages.seatImages || []).length > 0)) || (trip.busImages && trip.busImages.length > 0)) && (
+              {((trip?.transportImages && (trip.transportImages?.frontImage || trip.transportImages?.backImage || (trip.transportImages?.interiorImages || []).length > 0 || (trip.transportImages?.seatImages || []).length > 0)) || (trip?.busImages && trip.busImages?.length > 0)) && (
                 <div className="border-t border-slate-50 dark:border-slate-750 pt-4 space-y-2">
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Vehicle Photos</span>
                   <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar">
@@ -930,10 +930,14 @@ export const TripDetails = () => {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  })
+                ) : (
+                  <div className="text-xs text-slate-550 dark:text-slate-450 text-center py-4">
+                    No itinerary available for this trip.
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Hotels / Stays Details */}
             <div className="space-y-2">
