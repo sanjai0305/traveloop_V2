@@ -127,17 +127,14 @@ router.post("/auth/verify-otp", async (req, res) => {
 });
 
 // GET /api/driver/me — Driver profile + today's trip
+// GET /api/driver/me — Driver profile + today's trip
 router.get("/me", protectDriver, async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-
-    // Find today's trip assigned to this driver
     const driverId = req.driver._id || req.driver.id;
     const todayTrip = await AgentTrip.findOne({
-      driverId,
-      startDate: today,
-      status: { $in: ["published", "ongoing"] }
-    });
+      $or: [{ driverId }, { driver: driverId }],
+      status: { $nin: ["completed", "cancelled", "Completed", "Cancelled"] }
+    }).sort({ startDate: 1 });
 
     res.json({
       success: true,
@@ -161,13 +158,16 @@ router.get("/me", protectDriver, async (req, res) => {
 // GET /api/driver/dashboard — Stats for today's trip
 router.get("/dashboard", protectDriver, async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0];
     const driverId = req.driver._id || req.driver.id;
 
     const trip = await AgentTrip.findOne({
-      driverId,
-      startDate: today
-    });
+      $or: [{ driverId }, { driver: driverId }],
+      status: { $nin: ["completed", "cancelled", "Completed", "Cancelled"] }
+    }).sort({ startDate: 1 });
+
+    console.log("Driver:", req.driver);
+    console.log("DriverId:", driverId);
+    console.log("Found Trip:", trip);
 
     if (!trip) {
       return res.json({ success: true, trip: null, stats: null, boardingLog: [] });

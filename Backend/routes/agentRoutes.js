@@ -600,6 +600,7 @@ router.post("/trips/create", protectAgent, async (req, res) => {
       totalSeats: Number(totalSeats),
       availableSeats: Number(totalSeats),
       driver: driverId,
+      driverId: driverId,
       bookingDeadline: resolvedBookingDeadline,
       status: "draft",
       publishStatus: "draft",
@@ -843,6 +844,7 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
           emergencyContact: req.body.emergencyContact || trip.emergencyContact
         }, req.agent._id);
         req.body.driver = driverId;
+        req.body.driverId = driverId;
       }
 
       trip = await AgentTrip.findByIdAndUpdate(req.params.id, req.body, {
