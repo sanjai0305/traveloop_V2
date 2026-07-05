@@ -9,6 +9,9 @@ import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
 import Passenger from "../models/Passenger.js";
+import SeatBooking from "../models/SeatBooking.js";
+import redisClient from "../config/redis.js";
+
 
 const router = express.Router();
 
@@ -475,6 +478,7 @@ router.get("/ticket/:bookingId", protect, async (req, res) => {
         pickupLocation: booking.pickupLocation || trip?.pickupLocation || "",
         totalAmount: booking.pricePaid || booking.amount || 0,
         paymentStatus: booking.paymentStatus,
+        qrUnlocked: booking.qrUnlocked,
       },
       passengers: finalPassengers,
       passengerCount: finalPassengers.length,
@@ -482,6 +486,152 @@ router.get("/ticket/:bookingId", protect, async (req, res) => {
   } catch (error) {
     console.error("[Ticket Fetch] Error:", error);
     res.status(500).json({ success: false, message: "Server Error fetching ticket" });
+  }
+});
+
+/**
+ * GET /api/bookings/:bookingId
+ * Returns booking details.
+ */
+router.get("/:bookingId", protect, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
+      ].filter(Boolean)
+    }).populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    res.status(200).json({ success: true, booking });
+  } catch (error) {
+    console.error("[Booking Fetch] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error fetching booking" });
+  }
+});
+
+/**
+ * POST /api/bookings/confirm
+ * Confirms all passengers and seats for a booking in one request.
+ * Accepts: { bookingId, travellers, tripId }
+ */
+router.post("/confirm", protect, async (req, res) => {
+  const { bookingId, travellers, tripId } = req.body;
+  const userId = req.user._id || req.user.id;
+
+  if (!bookingId || !tripId || !travellers) {
+    return res.status(400).json({ success: false, message: "bookingId, tripId, and travellers are required" });
+  }
+
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    // Update booking status
+    booking.paymentStatus = "Paid";
+    booking.status = "Paid";
+    booking.bookingStatus = "confirmed";
+    booking.paymentVerified = true;
+    booking.paymentDate = new Date();
+    await booking.save();
+
+    const createdPassengers = [];
+
+    for (let i = 0; i < travellers.length; i++) {
+      const pData = travellers[i];
+      const seatNumber = pData.seatNumber;
+
+      if (!seatNumber) continue;
+
+      // 1. Create/update Passenger document
+      const passenger = await Passenger.findOneAndUpdate(
+        { bookingId: booking._id, seatNumber },
+        {
+          bookingId: booking._id,
+          bookingRef: booking.bookingId,
+          tripId,
+          userId,
+          name: pData.name || "",
+          age: Number(pData.age) || 0,
+          gender: pData.gender || "Other",
+          phone: pData.phone || "",
+          emergencyContact: pData.emergencyContact || "",
+          seatNumber,
+          seatPreference: pData.seatPreference || "No Preference",
+          specialRequest: pData.specialRequest || "",
+          status: "active",
+          paymentStatus: "completed",
+          qrPayload: {
+            bookingId: booking.bookingId || String(booking._id),
+            tripId: String(tripId),
+            passenger: pData.name,
+            seat: seatNumber,
+            gender: pData.gender,
+            age: pData.age,
+            timestamp: new Date().toISOString(),
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      createdPassengers.push(passenger);
+
+      // 2. Mark SeatBooking as booked
+      await SeatBooking.updateOne(
+        { tripId, seatNumber },
+        {
+          status: "booked",
+          bookingId: booking._id,
+          passengerId: passenger._id,
+          passengerName: pData.name || "",
+          gender: pData.gender || "Other",
+          age: Number(pData.age) || 0,
+          paymentStatus: "completed",
+          reservedUntil: null,
+        }
+      );
+
+      // 3. Clear Redis lock if it exists
+      if (redisClient) {
+        const key = `seat_lock:${tripId}:${seatNumber}`;
+        await redisClient.del(key);
+      }
+
+      // 4. Emit live seat update
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`trip_${tripId}`).emit("seat_update", {
+          tripId,
+          seatNumber,
+          status: "booked",
+          gender: pData.gender || "Other",
+          passengerName: pData.name || "",
+          age: pData.age || 0,
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      booking,
+      passengers: createdPassengers,
+      message: "Booking and seat reservations confirmed successfully",
+    });
+  } catch (error) {
+    console.error("[Booking Confirm] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error confirming booking" });
   }
 });
 

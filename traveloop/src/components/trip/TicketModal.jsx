@@ -260,16 +260,26 @@ const TicketModal = ({
                   {/* QR Code section */}
                   <div className="flex flex-col items-center gap-2 pt-1">
                     <p className="text-[10px] text-slate-400 font-black uppercase tracking-wide">Scan at Boarding</p>
-                    <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-inner">
-                      <QRCodeCanvas
-                        id={`qr-canvas-${activeIdx}`}
-                        value={qrString}
-                        size={140}
-                        level="H"
-                        includeMargin
-                        fgColor="#0f172a"
-                      />
-                    </div>
+                    {bookingSummary?.qrUnlocked ? (
+                      <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-inner">
+                        <QRCodeCanvas
+                          id={`qr-canvas-${activeIdx}`}
+                          value={qrString}
+                          size={140}
+                          level="H"
+                          includeMargin
+                          fgColor="#0f172a"
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center w-full max-w-[200px] flex flex-col items-center gap-2 my-2 select-none">
+                        <span className="text-2xl">🔒</span>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">QR Code Locked</p>
+                        <p className="text-[9px] text-slate-400 leading-normal">
+                          QR will be available before departure.
+                        </p>
+                      </div>
+                    )}
                     <p className="text-[9px] text-slate-400 font-medium text-center max-w-[180px] leading-relaxed">
                       Show this QR to the driver for boarding verification
                     </p>

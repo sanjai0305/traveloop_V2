@@ -61,10 +61,10 @@ router.post("/generate-qr", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "Trip is not active or has been cancelled" });
     }
 
-    if (trip.boardingStatus !== "OPEN") {
+    if (!bookingRow.qrUnlocked) {
       return res.status(400).json({
         success: false,
-        message: "Boarding Pass Locked. Waiting for Driver to open boarding.",
+        message: "Boarding Pass Locked. QR will be available before departure.",
       });
     }
 

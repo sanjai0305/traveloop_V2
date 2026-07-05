@@ -220,8 +220,8 @@ router.get("/dashboard", protectDriver, async (req, res) => {
   }
 });
 
-// GET /api/driver/trips/:tripId/manifest
-router.get("/trips/:tripId/manifest", protectDriver, async (req, res) => {
+// Unified manifest handler
+const getManifestHandler = async (req, res) => {
   try {
     const { tripId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(tripId)) {
@@ -245,15 +245,60 @@ router.get("/trips/:tripId/manifest", protectDriver, async (req, res) => {
       success: true,
       manifest: bookings.map(b => ({
         bookingId:      b.bookingId,
-        travelerName:   "",
+        _id:            b._id,
+        travelerName:   b.travelerName || b.travellers?.[0]?.name || "Traveler",
         seats:          b.seats,
-        assignedSeat:   b.assignedSeat,
+        assignedSeat:   b.assignedSeat || b.seatNumbers?.[0] || "",
         boardingStatus: b.boardingStatus,
         paymentStatus:  b.paymentStatus,
+        qrUnlocked:     b.qrUnlocked || false,
       })),
     });
   } catch (err) {
     console.error("[Driver manifest]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// GET /api/driver/trips/:tripId/manifest
+router.get("/trips/:tripId/manifest", protectDriver, getManifestHandler);
+// GET /api/driver/trip/:tripId/manifest
+router.get("/trip/:tripId/manifest", protectDriver, getManifestHandler);
+
+/**
+ * POST /api/driver/unlock-qr
+ * Unlocks boarding QR pass for an individual booking.
+ */
+router.post("/unlock-qr", protectDriver, async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      return res.status(400).json({ success: false, message: "bookingId is required" });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    booking.qrUnlocked = true;
+    booking.boardingWindowOpen = true;
+    booking.boardingStatus = "OPEN";
+    await booking.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("boarding_qr_unlocked", { tripId: booking.tripId, bookingId: booking._id });
+      io.emit("booking_updated", { tripId: booking.tripId, bookingId: booking._id });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Passenger QR unlocked successfully",
+      booking
+    });
+  } catch (err) {
+    console.error("[Driver unlock-qr]", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });

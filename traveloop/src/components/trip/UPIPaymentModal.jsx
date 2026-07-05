@@ -85,6 +85,7 @@ const UPIPaymentModal = ({
   const [error, setError] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [copiedUPI, setCopiedUPI] = useState(false);
+  const [razorpayLoading, setRazorpayLoading] = useState(false);
   const pollRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -93,6 +94,111 @@ const UPIPaymentModal = ({
   const tripTitle = trip?.title || booking?.tripTitle || "Bus Trip";
 
   const upiString = buildUPIString(amount, bookingRef, tripTitle);
+
+  const handleOpenRazorpay = async () => {
+    if (!window.Razorpay) {
+      toast.error("Razorpay SDK is not loaded yet. Please wait a moment.");
+      return;
+    }
+    setRazorpayLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("token");
+      
+      // 1. Create Razorpay Order
+      const res = await fetch(getApiUrl("payment/create-order"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tripId: trip._id,
+          seats: passengers?.length || 1
+        })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.message || "Failed to initiate payment");
+      }
+
+      // 2. Configure Razorpay Checkout
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+        amount: data.amount * 100, // paise
+        currency: data.currency || "INR",
+        name: "TravelLoop",
+        description: `Bus Seat Reservation - ${tripTitle}`,
+        order_id: data.orderId,
+        handler: async (response) => {
+          setPhase("polling");
+          try {
+            // 3. Verify Signature
+            const verifyRes = await fetch(getApiUrl("payment/verify"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                bookingId: booking?._id
+              })
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyData.success) {
+              // 4. Confirm entire booking passenger/seats
+              const confirmRes = await fetch(getApiUrl("bookings/confirm"), {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  bookingId: booking?.bookingId || bookingRef,
+                  travellers: passengers,
+                  tripId: trip._id
+                })
+              });
+              const confirmData = await confirmRes.json();
+              if (confirmData.success) {
+                setPhase("success");
+                setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+              } else {
+                throw new Error(confirmData.message || "Seat confirmation failed");
+              }
+            } else {
+              throw new Error(verifyData.message || "Payment verification failed");
+            }
+          } catch (err) {
+            setPhase("failed");
+            setError(err.message || "Verification failed");
+          }
+        },
+        prefill: {
+          name: passengers?.[0]?.name || "",
+          contact: passengers?.[0]?.phone || "",
+        },
+        theme: {
+          color: "#14B8A6"
+        },
+        modal: {
+          ondismiss: () => {
+            setRazorpayLoading(false);
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      toast.error(err.message || "Checkout failed");
+    } finally {
+      setRazorpayLoading(false);
+    }
+  };
 
   const handleCopyUPI = () => {
     navigator.clipboard.writeText(UPI_VPA);
@@ -135,10 +241,26 @@ const UPIPaymentModal = ({
         if (data.success) {
           const status = (data.status || data.booking?.paymentStatus || "").toUpperCase();
           if (status === "PAID" || status === "COMPLETED") {
-            clearInterval(pollRef.current);
-            clearInterval(timerRef.current);
-            setPhase("success");
-            setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+            // Confirm seats on backend
+            const confirmRes = await fetch(getApiUrl("bookings/confirm"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                bookingId: booking?.bookingId || bookingRef,
+                travellers: passengers,
+                tripId: trip._id
+              })
+            });
+            const confirmData = await confirmRes.json();
+            if (confirmData.success) {
+              clearInterval(pollRef.current);
+              clearInterval(timerRef.current);
+              setPhase("success");
+              setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+            }
           } else if (status === "FAILED" || status === "CANCELLED") {
             clearInterval(pollRef.current);
             setPhase("failed");
@@ -184,10 +306,28 @@ const UPIPaymentModal = ({
       });
       const data = await res.json();
       if (data.success) {
-        stopPolling();
-        clearInterval(timerRef.current);
-        setPhase("success");
-        setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+        // Confirm seats on backend
+        const confirmRes = await fetch(getApiUrl("bookings/confirm"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            bookingId: booking?.bookingId || bookingRef,
+            travellers: passengers,
+            tripId: trip._id
+          })
+        });
+        const confirmData = await confirmRes.json();
+        if (confirmData.success) {
+          stopPolling();
+          clearInterval(timerRef.current);
+          setPhase("success");
+          setTimeout(() => onSuccess(booking?.bookingId || bookingRef), 1500);
+        } else {
+          setError(confirmData.message || "Seat confirmation failed");
+        }
       } else {
         setError(data.message || "Could not confirm payment.");
       }
@@ -365,12 +505,43 @@ const UPIPaymentModal = ({
             </div>
           ) : (
             <>
+              {/* Razorpay Integration Card */}
+              <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase tracking-wide">Razorpay Gateway</span>
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-200/50">SECURED</span>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-400">Powered by Razorpay</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-800 pb-2 mb-2">
+                  <div>
+                    <span className="block text-[8px] uppercase tracking-wide text-slate-400">Payment Status</span>
+                    <span className="font-extrabold text-amber-500 uppercase">PENDING</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] uppercase tracking-wide text-slate-400">Order ID</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300 truncate block">{bookingRef}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleOpenRazorpay}
+                  disabled={razorpayLoading}
+                  className="w-full py-3.5 rounded-2xl bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white font-black text-xs flex items-center justify-center gap-2 active:scale-98 transition-all shadow-md shadow-teal-500/10"
+                >
+                  {razorpayLoading ? <Loader2 size={12} className="animate-spin" /> : <CreditCard size={12} />}
+                  {razorpayLoading ? "Connecting Gateway..." : "Open Razorpay Secure Checkout"}
+                </button>
+              </div>
+
               {/* Payment Methods Card */}
               <div className="p-4 rounded-3xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 space-y-2.5">
                 <p className="text-[11px] font-black text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
                   <CreditCard size={12} className="text-teal-500" /> Supported Payment Methods
                 </p>
-                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-650 dark:text-slate-400">
                   <div className="flex items-center gap-1.5">
                     <CheckCircle2 size={12} className="text-emerald-500" /> Razorpay UPI
                   </div>

@@ -18,6 +18,12 @@ import {
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 const SEAT_PREFERENCE_OPTIONS = ["Window", "Aisle", "No Preference"];
 
+const getSeatType = (seatNumber) => {
+  const num = parseInt(seatNumber.replace(/\D/g, ""), 10);
+  if (isNaN(num)) return "Window";
+  return num % 2 === 0 ? "Aisle" : "Window";
+};
+
 const emptyPassenger = (seatNumber) => ({
   seatNumber,
   name: "",
@@ -26,6 +32,7 @@ const emptyPassenger = (seatNumber) => ({
   phone: "",
   emergencyContact: "",
   seatPreference: "No Preference",
+  seatType: getSeatType(seatNumber),
   specialRequest: "",
 });
 
@@ -71,6 +78,8 @@ const PassengerFormModal = ({
       errs.phone = "Valid 10-digit phone number is required";
     if (!current.emergencyContact?.trim())
       errs.emergencyContact = "Emergency contact is required";
+    if (!current.seatType)
+      errs.seatType = "Seat type is required";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -157,6 +166,36 @@ const PassengerFormModal = ({
               />
             ))}
           </div>
+        </div>
+
+        {/* Selected Seat Chips (Live allocations indicator) */}
+        <div className="flex flex-wrap gap-2 px-5 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/60">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide flex items-center mr-1">
+            Your Seats:
+          </span>
+          {selectedSeats.map((seat, i) => (
+            <button
+              key={seat}
+              type="button"
+              onClick={() => {
+                if (i <= currentIdx || validateCurrent()) {
+                  setCurrentIdx(i);
+                  setErrors({});
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black border flex items-center gap-1 transition-all ${
+                i === currentIdx
+                  ? "bg-teal-500 border-teal-600 text-white shadow-sm shadow-teal-500/20"
+                  : i < currentIdx
+                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                  : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+              }`}
+            >
+              <Armchair size={10} />
+              {seat}
+              {i < currentIdx && <span className="text-[8px]">✓</span>}
+            </button>
+          ))}
         </div>
 
         {/* Form */}
@@ -309,6 +348,34 @@ const PassengerFormModal = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Seat Type */}
+            <div>
+              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                <Armchair size={10} /> Seat Type *
+              </label>
+              <div className="flex gap-2">
+                {["Window", "Aisle", "Upper", "Lower"].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => update("seatType", t)}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black border transition-all ${
+                      current.seatType === t
+                        ? "bg-teal-500 border-teal-600 text-white"
+                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+                    }`}
+                  >
+                    {t === "Window" ? "🪟" : t === "Aisle" ? "🚶" : t === "Upper" ? "🔼" : "🔽"} {t}
+                  </button>
+                ))}
+              </div>
+              {errors.seatType && (
+                <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                  <AlertCircle size={10} /> {errors.seatType}
+                </p>
+              )}
             </div>
 
             {/* Special Request */}

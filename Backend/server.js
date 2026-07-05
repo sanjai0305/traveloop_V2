@@ -289,6 +289,35 @@ app.use("/api/driver-updates", driverUpdatesRoutes);
 app.use("/api/trip-members", tripMembersRoutes);
 app.use("/api/seats", seatRoutes);
 
+// Direct QR status route
+app.get("/api/qr/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const Booking = mongoose.model("Booking");
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
+      ].filter(Boolean)
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      qrUnlocked: booking.qrUnlocked || false,
+      qrCode: booking.qrCode || "",
+      token: booking.token || ""
+    });
+  } catch (error) {
+    console.error("[Booking QR Status API] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error fetching QR status" });
+  }
+});
+
+
 /* -----------------------------
    404
 ------------------------------ */

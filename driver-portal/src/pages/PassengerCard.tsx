@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  ArrowLeft, CheckCircle, MapPin, Ticket,
-  Phone, Bus, AlertCircle,
+  ArrowLeft, CheckCircle, AlertCircle,
 } from 'lucide-react'
 import { boardPassenger, markNoShow, getSeats } from '../services/api'
 
@@ -13,6 +12,8 @@ interface ScanResult {
     bookingId: string; travelerName: string; gender: string; age: number
     phone: string; seats: number; pickupLocation: string; assignedSeat: string; boardingStatus: string
     adults: number; children: number; photo?: string; paymentStatus?: string; boardedAt?: string
+    travellers?: any[]
+    seatNumbers?: string[]
   }
   trip: { _id: string; title: string; busNumber: string; departureTime: string; destinations: string[] }
 }
@@ -208,7 +209,7 @@ export default function PassengerCard() {
                 <div key={idx} className="flex justify-between items-center text-xs text-slate-300">
                   <span>{idx + 1}. {pass.name} ({pass.gender || '—'})</span>
                   <span className="text-teal-400 font-mono font-bold">
-                    {result.passenger.assignedSeat || result.passenger.seatNumbers?.[idx] ? `Seat ${result.passenger.assignedSeat || result.passenger.seatNumbers[idx]}` : `Seat A${12 + idx}`}
+                    {result.passenger.assignedSeat || result.passenger.seatNumbers?.[idx] ? `Seat ${result.passenger.assignedSeat || result.passenger.seatNumbers?.[idx]}` : `Seat A${12 + idx}`}
                   </span>
                 </div>
               ))}

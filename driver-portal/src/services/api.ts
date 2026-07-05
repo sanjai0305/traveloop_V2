@@ -48,5 +48,6 @@ export const markNoShow   = (bookingId: string) => api.post(`/driver/no-show/${b
 export const getSeats     = (tripId: string)    => api.get(`/driver/seats/${tripId}`)
 export const openBoarding = (tripId: string)    => api.post(`/driver/trips/${tripId}/unlock-boarding`)
 export const closeBoarding = (tripId: string)   => api.post(`/driver/trips/${tripId}/close-boarding`)
+export const unlockPassengerQr = (bookingId: string) => api.post('/driver/unlock-qr', { bookingId })
 
 export default api

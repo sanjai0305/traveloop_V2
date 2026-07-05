@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, CheckCircle, Clock, XCircle, Search } from 'lucide-react'
-import { getManifest } from '../services/api'
+import { ArrowLeft, CheckCircle, Clock, XCircle, Search, Lock, Unlock } from 'lucide-react'
+import { getManifest, unlockPassengerQr } from '../services/api'
 
 interface Passenger {
-  bookingId: string; travelerName: string; gender: string; age: number
-  phone: string; seats: number; boardingStatus: string; assignedSeat: string; pickupLocation: string
+  bookingId: string;
+  _id: string;
+  travelerName: string;
+  gender: string;
+  age: number;
+  phone: string;
+  seats: number;
+  boardingStatus: string;
+  assignedSeat: string;
+  pickupLocation: string;
+  qrUnlocked?: boolean;
 }
 
 const STATUS_MAP = {
@@ -23,14 +32,29 @@ export default function Manifest() {
   const [trip,       setTrip]       = useState<any>(null)
   const [loading,    setLoading]    = useState(true)
   const [search,     setSearch]     = useState('')
+  const [unlockingMap, setUnlockingMap] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!tripId) return
     getManifest(tripId).then(res => {
-      setPassengers(res.data.passengers || [])
+      setPassengers(res.data.manifest || res.data.passengers || [])
       setTrip(res.data.trip)
     }).catch(() => {}).finally(() => setLoading(false))
   }, [tripId])
+
+  const handleUnlock = async (bookingId: string) => {
+    setUnlockingMap(prev => ({ ...prev, [bookingId]: true }))
+    try {
+      await unlockPassengerQr(bookingId)
+      setPassengers(prev =>
+        prev.map(p => (p._id === bookingId ? { ...p, qrUnlocked: true } : p))
+      )
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setUnlockingMap(prev => ({ ...prev, [bookingId]: false }))
+    }
+  }
 
   const filtered = passengers.filter(p =>
     p.travelerName?.toLowerCase().includes(search.toLowerCase()) ||
@@ -102,7 +126,25 @@ export default function Manifest() {
                     <p className="text-slate-400 text-xs">{p.bookingId} · {p.gender} · Age {p.age}</p>
                     {p.assignedSeat && <p className="text-teal-400 text-xs font-semibold">Seat {p.assignedSeat}</p>}
                   </div>
-                  <span className={`chip ${cfg.bg} ${cfg.color} flex-shrink-0 text-[10px]`}>{cfg.label}</span>
+                  <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <span className={`chip ${cfg.bg} ${cfg.color} text-[10px]`}>{cfg.label}</span>
+                    {p.boardingStatus !== 'boarded' && (
+                      p.qrUnlocked ? (
+                        <span className="text-[10px] text-emerald-400 font-extrabold flex items-center gap-1 select-none">
+                          <Unlock size={10} /> Unlocked
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleUnlock(p._id)}
+                          disabled={unlockingMap[p._id]}
+                          className="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-[10px] font-black flex items-center gap-1 border border-amber-600 transition-colors shadow-sm shadow-amber-500/10 active:scale-95"
+                        >
+                          <Lock size={10} />
+                          {unlockingMap[p._id] ? "..." : "Unlock QR"}
+                        </button>
+                      )
+                    )}
+                  </div>
                 </motion.div>
               )
             })

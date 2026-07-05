@@ -1262,9 +1262,7 @@ const BookedPackageDetail = () => {
                       <span>🔒</span> Boarding Pass Locked
                     </div>
                     <p className="text-slate-400 text-[11px] leading-relaxed">
-                      {state.statusClass === "countdown"
-                        ? "Boarding window is opening soon. Countdown active."
-                        : "Waiting for driver to activate boarding pass system."}
+                      QR will be available before departure.
                     </p>
                     <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-450 pt-2 border-t border-white/5">
                       <div>
