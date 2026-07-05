@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import mongoose from "mongoose";
 
 const bookingSchema = new mongoose.Schema(
@@ -76,7 +77,8 @@ const bookingSchema = new mongoose.Schema(
     token: {
       type: String,
       unique: true,
-      sparse: true,
+      required: true,
+      default: () => crypto.randomUUID(),
     },
     travelerName: {
       type: String,
