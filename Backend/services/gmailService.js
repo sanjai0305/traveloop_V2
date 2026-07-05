@@ -1,5 +1,29 @@
 import nodemailer from "nodemailer";
 
+const isBlockedEmail = (email) => {
+  if (!email || typeof email !== "string") return true;
+  const trimmed = email.trim().toLowerCase();
+  return trimmed.endsWith("@traveloop.com") || trimmed === "traveloop.com";
+};
+
+const sendMailWithRetry = async (transporter, mailOptions, retries = 3) => {
+  if (isBlockedEmail(mailOptions.to)) {
+    console.warn(`[Gmail Service] Outgoing email blocked: Recipient domain matches traveloop.com (${mailOptions.to})`);
+    return { messageId: "blocked-traveloop", response: "250 OK (Blocked local domain)" };
+  }
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      return info;
+    } catch (err) {
+      console.error(`[Gmail Service] sendMail Attempt ${attempt} failed:`, err.message);
+      if (attempt === retries) {
+        throw err;
+      }
+    }
+  }
+};
+
 const createTransporter = async () => {
   const user = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
   const clientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
@@ -61,7 +85,7 @@ Timestamp: ${timestamp}`,
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    await sendMailWithRetry(transporter, mailOptions);
     console.log("Support Email Sent");
   } catch (error) {
     console.error("Support Email Failed:", error.message);
@@ -89,7 +113,7 @@ Traveloop Team`,
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    await sendMailWithRetry(transporter, mailOptions);
     console.log("Support Email Sent");
   } catch (error) {
     console.error("Support Email Failed:", error.message);
@@ -121,7 +145,7 @@ ${invite_link}`,
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    await sendMailWithRetry(transporter, mailOptions);
     console.log("Invite Email Sent");
   } catch (error) {
     console.error("Invite Email Failed:", error.message);

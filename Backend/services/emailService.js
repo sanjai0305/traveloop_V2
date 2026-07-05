@@ -1,5 +1,29 @@
 import nodemailer from "nodemailer";
 
+const isBlockedEmail = (email) => {
+  if (!email || typeof email !== "string") return true;
+  const trimmed = email.trim().toLowerCase();
+  return trimmed.endsWith("@traveloop.com") || trimmed === "traveloop.com";
+};
+
+const sendMailWithRetry = async (transporter, mailOptions, retries = 3) => {
+  if (isBlockedEmail(mailOptions.to)) {
+    console.warn(`[Email Service] Outgoing email blocked: Recipient domain matches traveloop.com (${mailOptions.to})`);
+    return { messageId: "blocked-traveloop", response: "250 OK (Blocked local domain)" };
+  }
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      return info;
+    } catch (err) {
+      console.error(`[Email Service] sendMail Attempt ${attempt} failed:`, err.message);
+      if (attempt === retries) {
+        throw err;
+      }
+    }
+  }
+};
+
 const createTransporter = async () => {
   const user = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
   const clientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
@@ -59,6 +83,10 @@ const EMAIL_TEMPLATE_WRAPPER = (content) => `
 `;
 
 export const sendOtpEmail = async (to, firstName, otpCode) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing OTP email blocked for: ${to}`);
+    return;
+  }
   const transporter = await createTransporter();
   const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
 
@@ -101,7 +129,7 @@ export const sendOtpEmail = async (to, firstName, otpCode) => {
     subject: mailOptions.subject
   });
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMailWithRetry(transporter, mailOptions);
     console.log("[Email Service] Email sent successfully");
     console.log("[Email Service] Complete sendMail Response Object:", JSON.stringify(info, null, 2));
     console.log("[Email Service] messageId:", info.messageId);
@@ -135,7 +163,7 @@ export const sendWelcomeEmail = async (to, firstName) => {
     <p>Safe travels,<br><strong>The Traveloop Team</strong></p>
   `);
 
-  await transporter.sendMail({
+  await sendMailWithRetry(transporter, {
     from: `"Traveloop" <${senderEmail}>`,
     to,
     subject: "Welcome to Traveloop! ✈️",
@@ -182,7 +210,7 @@ export const sendBookingConfirmation = async (to, bookingData) => {
     <p>Warmly,<br><strong>The Traveloop Team</strong></p>
   `);
 
-  await transporter.sendMail({
+  await sendMailWithRetry(transporter, {
     from: `"Traveloop" <${senderEmail}>`,
     to,
     subject: `Booking Confirmed: #${bookingId} - ${title}`,
@@ -225,7 +253,7 @@ export const sendItineraryEmail = async (to, itineraryData) => {
     <p>Best regards,<br><strong>The Traveloop Team</strong></p>
   `);
 
-  await transporter.sendMail({
+  await sendMailWithRetry(transporter, {
     from: `"Traveloop" <${senderEmail}>`,
     to,
     subject: `Your Itinerary: ${tripName}`,
@@ -281,7 +309,7 @@ export const sendInvoiceEmail = async (to, invoiceData) => {
     <p>Warmly,<br><strong>The Traveloop Team</strong></p>
   `);
 
-  await transporter.sendMail({
+  await sendMailWithRetry(transporter, {
     from: `"Traveloop" <${senderEmail}>`,
     to,
     subject: `Invoice #${invoiceNumber} from Traveloop`,
@@ -312,7 +340,7 @@ export const sendPromotionalEmail = async (to, promoData) => {
     <p>Best regards,<br><strong>The Traveloop Team</strong></p>
   `);
 
-  await transporter.sendMail({
+  await sendMailWithRetry(transporter, {
     from: `"Traveloop" <${senderEmail}>`,
     to,
     subject: `Special Offer: ${title} 🎁`,
