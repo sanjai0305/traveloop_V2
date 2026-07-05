@@ -51,6 +51,7 @@ import recommendationRoutes from "./routes/recommendationRoutes.js";
 import { runConstraintsSetup } from "./utils/neo4jSetup.js";
 import { initNeo4jSyncWorker } from "./workers/neo4jSyncWorker.js";
 import { startMongoSyncPublisher } from "./workers/syncPublisher.js";
+import errorLogger from "./middleware/errorMiddleware.js";
 
 
 let dbConnected = true;
@@ -287,14 +288,7 @@ app.use((req, res) => {
    ERROR HANDLER
 ------------------------------ */
 
-app.use((err, req, res, next) => {
-  console.error("SERVER ERROR:", err);
-
-  res.status(500).json({
-    success: false,
-    message: err.message || "Internal Server Error",
-  });
-});
+app.use(errorLogger);
 
 /* -----------------------------
    SERVER STARTUP
@@ -364,5 +358,45 @@ if (process.env.NODE_ENV === "production") {
 
   startServer(port);
 }
+
+// ─── UNHANDLED REJECTION & GRACEFUL SHUTDOWN HANDLERS ─────────────────────────
+import { closeNeo4jDriver } from "./config/neo4j.js";
+import { closeRedisConnection } from "./config/redis.js";
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception thrown:", error);
+  process.exit(1);
+});
+
+const gracefulShutdown = async (signal) => {
+  console.log(`\n[Server] Received ${signal}. Starting graceful shutdown...`);
+  server.close(async () => {
+    console.log("[Server] HTTP server closed.");
+    try {
+      await mongoose.connection.close();
+      console.log("[Mongo] Connection closed.");
+      await closeNeo4jDriver();
+      await closeRedisConnection();
+      console.log("[Server] Graceful shutdown completed successfully.");
+      process.exit(0);
+    } catch (err) {
+      console.error("[Server] Error during database shutdown:", err.message);
+      process.exit(1);
+    }
+  });
+
+  // Force exit after 10s timeout
+  setTimeout(() => {
+    console.error("[Server] Force exiting after timeout.");
+    process.exit(1);
+  }, 10000);
+};
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 export default app;

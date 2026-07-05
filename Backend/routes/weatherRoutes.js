@@ -1,5 +1,6 @@
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
+import { getCache, setCache, TTL } from "../services/cacheService.js";
 
 const router = express.Router();
 
@@ -39,22 +40,59 @@ const getDayName = (dateStr) => {
 };
 
 router.get("/", protect, async (req, res) => {
-  try {
-    const { city } = req.query;
-    if (!city) {
-      return res.status(400).json({ success: false, message: "City query parameter is required" });
-    }
+  const { city } = req.query;
+  if (!city) {
+    return res.status(400).json({ success: false, message: "City query parameter is required" });
+  }
 
-    // 1. Geocode lookup
+  const cacheKey = `weather:${city.toLowerCase().trim()}`;
+  
+  // 1. Try reading from Redis Cache
+  try {
+    const cachedData = await getCache(cacheKey);
+    if (cachedData) {
+      console.log(`[Weather Cache] Hit for city: ${city}`);
+      return res.json(cachedData);
+    }
+  } catch (cacheErr) {
+    console.warn("[Weather Cache Error] Failed to fetch from Redis:", cacheErr.message);
+  }
+
+  // Fallback payload structure in case of total service failure
+  const getFallbackPayload = (cityName) => ({
+    success: true,
+    city: cityName,
+    latitude: 0,
+    longitude: 0,
+    current: {
+      temp: "25°C",
+      label: "Partly Cloudy",
+      code: 2,
+      windspeed: "12 km/h"
+    },
+    forecast: [
+      { day: "Today", tempMax: "28°C", tempMin: "20°C", label: "Partly Cloudy", code: 2 },
+      { day: "Mon", tempMax: "29°C", tempMin: "21°C", label: "Sunny", code: 0 },
+      { day: "Tue", tempMax: "27°C", tempMin: "19°C", label: "Rainy", code: 63 }
+    ],
+    warning: "Weather forecast service currently degraded (serving simulated forecast)."
+  });
+
+  try {
+    // 2. Geocode lookup with timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
     const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
-    const geoResponse = await fetch(geocodeUrl);
+    const geoResponse = await fetch(geocodeUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!geoResponse.ok) {
       throw new Error("Geocoding service unavailable");
     }
     let geoData = await geoResponse.json();
 
     if (!geoData.results || geoData.results.length === 0) {
-      // Fallback: if no results, try splitting by space/comma and using the first token
       const parts = city.split(/[\s,]+/);
       if (parts.length > 1) {
         const fallbackCity = parts[0];
@@ -75,9 +113,14 @@ router.get("/", protect, async (req, res) => {
 
     const { latitude, longitude, name } = geoData.results[0];
 
-    // 2. Weather forecast
+    // 3. Weather forecast
+    const forecastTimeout = new AbortController();
+    const fTimeoutId = setTimeout(() => forecastTimeout.abort(), 5000);
+
     const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto`;
-    const forecastResponse = await fetch(forecastUrl);
+    const forecastResponse = await fetch(forecastUrl, { signal: forecastTimeout.signal });
+    clearTimeout(fTimeoutId);
+
     if (!forecastResponse.ok) {
       throw new Error("Weather forecast service unavailable");
     }
@@ -88,7 +131,6 @@ router.get("/", protect, async (req, res) => {
 
     const currentWeatherMap = getWeatherLabel(current.weathercode);
     
-    // Create 3-day forecast (including today, tomorrow, and day after)
     const forecast = [];
     if (daily && daily.time) {
       const limit = Math.min(3, daily.time.length);
@@ -103,7 +145,6 @@ router.get("/", protect, async (req, res) => {
       }
     }
 
-    // Determine warnings
     let warning = currentWeatherMap.warning;
     if (current.temp > 38) {
       warning = "Extreme heat warning! Keep hydrated and limit outdoor activity.";
@@ -111,7 +152,7 @@ router.get("/", protect, async (req, res) => {
       warning = "Sub-zero temperatures alert! Stay warm and protect against frost.";
     }
 
-    res.json({
+    const resultPayload = {
       success: true,
       city: name,
       latitude,
@@ -124,10 +165,16 @@ router.get("/", protect, async (req, res) => {
       },
       forecast,
       warning
-    });
+    };
+
+    // Save to Redis Cache (TTL = 2 hours / 7200 seconds)
+    await setCache(cacheKey, resultPayload, TTL.WEATHER);
+
+    res.json(resultPayload);
   } catch (error) {
-    console.error("Weather API Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Failed to fetch weather data" });
+    console.error("Weather API Error: serving graceful fallback. Reason:", error.message);
+    // Serve fallback rather than throwing a 500 error
+    res.json(getFallbackPayload(city));
   }
 });
 
