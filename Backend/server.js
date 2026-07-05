@@ -45,6 +45,13 @@ import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
 
+// Multi-Model Database Additions
+import healthRoutes from "./routes/healthRoutes.js";
+import recommendationRoutes from "./routes/recommendationRoutes.js";
+import { runConstraintsSetup } from "./utils/neo4jSetup.js";
+import { initNeo4jSyncWorker } from "./workers/neo4jSyncWorker.js";
+import { startMongoSyncPublisher } from "./workers/syncPublisher.js";
+
 
 let dbConnected = true;
 
@@ -216,14 +223,11 @@ app.use(sanitizeInput);
 app.use(globalLimiter);
 
 /* -----------------------------
-   HEALTH CHECK
+   HEALTH CHECK & RECOMS
 ------------------------------ */
 
-app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    success: true
-  });
-});
+app.use("/api/health", healthRoutes);
+app.use("/api/recommendations", recommendationRoutes);
 
 app.get("/", (req, res) => {
   res.json({
@@ -297,6 +301,16 @@ app.use((err, req, res, next) => {
 ------------------------------ */
 
 await connectDB();
+
+// Initialize graph constraints, background sync workers & change streams on boot
+try {
+  await runConstraintsSetup();
+  initNeo4jSyncWorker();
+  startMongoSyncPublisher();
+  console.log("✅ Neo4j and Redis synchronization pipelines initialized.");
+} catch (infraErr) {
+  console.warn("⚠️ Warning: Synchronization pipeline initialization failed:", infraErr.message);
+}
 
 if (!process.env.JWT_SECRET) {
   throw new Error("FATAL: JWT_SECRET environment variable is missing!");

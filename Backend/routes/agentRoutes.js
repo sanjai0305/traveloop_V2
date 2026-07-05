@@ -842,11 +842,46 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
           busNumber: req.body.busNumber || trip.busNumber,
           driverPhoto: req.body.driverPhoto || trip.driverPhoto,
           emergencyContact: req.body.emergencyContact || trip.emergencyContact
-message: "Database validation error",
-        missingFields: mongoFields,
+        }, req.agent._id);
+        req.body.driver = driverId;
+        req.body.driverId = driverId;
+      }
+
+      trip = await AgentTrip.findByIdAndUpdate(req.params.id, req.body, {
+        returnDocument: "after",
+        runValidators: true,
       });
+    } else {
+      trip = fallbackTrips.get(req.params.id);
+      if (!trip) {
+        return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
+        return res.status(403).json({ success: false, message: "Unauthorized edit request" });
+      }
+
+      const updated = {
+        ...trip,
+        ...req.body,
+        updatedAt: new Date()
+      };
+      fallbackTrips.set(req.params.id, updated);
+      trip = updated;
     }
-    res.status(500).json({ success: false, message: "Server Error creating trip", reason: error.message });
+
+    res.status(200).json({
+      success: true,
+      trip
+    });
+  } catch (error) {
+    console.error("Update trip error:", error);
+    res.status(500).json({ success: false, message: "Server Error updating trip", reason: error.message });
   }
 });
 
@@ -1039,15 +1074,6 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
           emergencyContact: req.body.emergencyContact || trip.emergencyContact
         }, req.agent._id);
         req.body.driver = driverId;
-      }
-
-      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
-      if (!ownerId) {
-        return res.status(500).json({ success: false, message: "Trip owner field missing" });
-      }
-
-      if (ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized edit request" });
       }
 
       if (req.body.bookingDeadline || req.body.startDate) {

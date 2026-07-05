@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: traveloop-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: always
+
+  neo4j:
+    image: neo4j:5.12-community
+    container_name: traveloop-neo4j
+    ports:
+      - "7474:7474" # HTTP port
+      - "7687:7687" # Bolt protocol port
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: always
+
+volumes:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:

@@ -1,0 +1,25 @@
+// ─── UNIQUE CONSTRAINTS FOR TRAVELOOP V2 GRAPH ────────────────────────────────
+
+CREATE CONSTRAINT unique_user IF NOT EXISTS
+FOR (u:User) REQUIRE u.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_agent IF NOT EXISTS
+FOR (a:Agent) REQUIRE a.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_trip IF NOT EXISTS
+FOR (t:Trip) REQUIRE t.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_destination IF NOT EXISTS
+FOR (d:Destination) REQUIRE d.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_hotel IF NOT EXISTS
+FOR (h:Hotel) REQUIRE h.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_vehicle IF NOT EXISTS
+FOR (v:Vehicle) REQUIRE v.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_activity IF NOT EXISTS
+FOR (ac:Activity) REQUIRE ac.id IS UNIQUE;
+
+CREATE CONSTRAINT unique_category IF NOT EXISTS
+FOR (c:Category) REQUIRE c.id IS UNIQUE;
