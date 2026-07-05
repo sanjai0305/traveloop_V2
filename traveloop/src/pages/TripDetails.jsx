@@ -1118,7 +1118,7 @@ export const TripDetails = () => {
 
         {/* âââ BOOKING MODAL SHEET âââ */}
         <AnimatePresence>
-          {showBookingModal && (
+          {showBookingModal && ["form", "seats", "confirm", "payment", "success", "failure"].includes(bookingStage) && (
             <>
               {/* Backdrop */}
               <motion.div
