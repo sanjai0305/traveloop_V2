@@ -1620,7 +1620,7 @@ const BookedPackageDetail = () => {
                         <p className="text-xs font-extrabold text-slate-600 uppercase tracking-wide">{cat}</p>
                       </div>
                       {catItems.map((item) => {
-                        const idx = packingList.indexOf(item);
+                        const idx = Array.isArray(packingList) ? packingList.indexOf(item) : -1;
                         return (
                           <button
                             key={item.item || idx}
