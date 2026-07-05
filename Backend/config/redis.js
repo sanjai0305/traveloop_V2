@@ -3,14 +3,21 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+const host = process.env.REDIS_HOST || "127.0.0.1";
+const port = parseInt(process.env.REDIS_PORT || "6379", 10);
+const password = process.env.REDIS_PASSWORD || undefined;
 
 let redisClient;
 
 try {
-  console.log(`[Redis Init] Connecting to Redis instance at: ${redisUrl}`);
-  redisClient = new Redis(redisUrl, {
+  console.log(`[Redis Init] Connecting to self-hosted Redis instance at: ${host}:${port}`);
+  redisClient = new Redis({
+    host,
+    port,
+    password,
     maxRetriesPerRequest: null, // Required by BullMQ
+    enableReadyCheck: true,
+    lazyConnect: true,
     reconnectOnError: (err) => {
       const targetError = "READONLY";
       if (err.message.slice(0, targetError.length) === targetError) {
@@ -18,6 +25,11 @@ try {
       }
       return false;
     },
+  });
+  
+  // Explicitly trigger lazy connection
+  redisClient.connect().catch((err) => {
+    console.warn("[Redis Connection Attempt] Failed initial connection, will retry in background:", err.message);
   });
 
   redisClient.on("connect", () => {
