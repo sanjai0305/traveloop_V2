@@ -210,6 +210,51 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    hotels: [
+      {
+        name: { type: String, default: "" },
+        category: { type: String, default: "3 Star" },
+        address: { type: String, default: "" },
+        mapsLink: { type: String, default: "" },
+        photos: { type: [String], default: [] },
+        roomType: { type: String, default: "Double" },
+        occupancy: { type: Number, default: 2 },
+        nightStayCount: { type: Number, default: 1 },
+        notes: { type: String, default: "" }
+      }
+    ],
+    foodIncluded: {
+      type: Boolean,
+      default: false,
+    },
+    deadlineEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    deadlineDate: {
+      type: String,
+      default: "",
+    },
+    deadlineTime: {
+      type: String,
+      default: "",
+    },
+    pickupMapsLink: {
+      type: String,
+      default: "",
+    },
+    dropMapsLink: {
+      type: String,
+      default: "",
+    },
+    packingChecklist: {
+      type: [String],
+      default: [],
+    },
+    activities: {
+      type: [String],
+      default: [],
+    },
     itinerary: [
       {
         day: { type: Number },
@@ -217,6 +262,14 @@ const agentTripSchema = new mongoose.Schema(
         description: { type: String },
         hotel: { type: String, default: "" },
         images: { type: [String], default: [] },
+        activity: { type: String, default: "" },
+        time: { type: String, default: "" },
+        duration: { type: String, default: "" },
+        destination: { type: String, default: "" },
+        placesCovered: { type: String, default: "" },
+        lunch: { type: String, default: "" },
+        stay: { type: String, default: "" },
+        nightStay: { type: String, default: "" }
       }
     ],
     allowCancellation: {
