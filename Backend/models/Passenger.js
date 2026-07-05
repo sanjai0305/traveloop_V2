@@ -47,6 +47,11 @@ const passengerSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    email: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     emergencyContact: {
       type: String,
       default: "",

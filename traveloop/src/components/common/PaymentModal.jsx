@@ -85,6 +85,15 @@ export const PaymentModal = ({
       }
 
       const orderData = await orderRes.json();
+      console.log("order", orderData);
+
+      if (!orderData.success || !orderData.orderId) {
+        console.log("order_id missing");
+        throw new Error("Unable to create Razorpay order.");
+      }
+
+      const order_id = orderData.orderId;
+      console.log("order_id", order_id);
 
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
@@ -92,7 +101,7 @@ export const PaymentModal = ({
         currency: orderData.currency,
         name: "TravelLoop Checkout",
         description: "Group Journey Booking Fee",
-        order_id: orderData.orderId,
+        order_id: order_id,
         handler: async (response) => {
           setStatus(PaymentStatus.VERIFICATION_PENDING);
           try {
@@ -137,13 +146,16 @@ export const PaymentModal = ({
         },
       };
 
+      console.log("payment options", options);
+      console.log("window.Razorpay", window.Razorpay);
+
       const rzp = new window.Razorpay(options);
       rzp.open();
       setStatus(PaymentStatus.AWAITING_PAYMENT);
     } catch (err) {
       console.error("[Razorpay Open Error]:", err);
       setStatus(PaymentStatus.FAILED);
-      setErrorMessage(err.message || "Primary gateway connection refused.");
+      setErrorMessage(err.message || "Unable to create Razorpay order.");
     }
   };
 

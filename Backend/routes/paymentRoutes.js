@@ -118,6 +118,7 @@ const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) =>
         age: Number(pData.age) || 0,
         gender: pData.gender || "Other",
         phone: pData.phone || "",
+        email: pData.email || "",
         emergencyContact: pData.emergencyContact || booking.contactNumber || "",
         seatNumber,
         seatPreference: pData.seatPreference || "No Preference",
@@ -417,6 +418,43 @@ router.post("/verify", protect, async (req, res) => {
       signature: razorpay_signature,
     });
 
+    // Send email invoice asynchronously
+    try {
+      const { sendInvoiceEmail } = await import("../services/emailService.js");
+      const travelerEmail = booking.travellers?.[0]?.email || req.user.email;
+      if (travelerEmail) {
+        const passengerDetails = booking.travellers.map((t, idx) => ({
+          name: t.name,
+          age: t.age,
+          gender: t.gender,
+          phone: t.phone,
+          email: t.email,
+          seatNumber: booking.seatNumbers[idx] || ""
+        }));
+
+        const invoicePayload = {
+          tripName: trip.title || "Bus Journey",
+          bookingId: booking.bookingId,
+          passengers: passengerDetails,
+          seatNumbers: booking.seatNumbers,
+          travelDate: trip.startDate ? new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
+          pickupPoint: trip.pickupLocation || booking.pickupLocation || "Main Terminal",
+          dropPoint: trip.dropPoint || "Terminal Drop",
+          amountPaid: finalAmount,
+          paymentId: razorpay_payment_id,
+          bookingStatus: booking.bookingStatus || "Confirmed",
+          qrUnlockStatus: booking.qrUnlocked ? "Unlocked" : "Locked (Driver Verification Pending)",
+          emergencyContact: booking.emergencyContact || booking.contactNumber || ""
+        };
+
+        sendInvoiceEmail(travelerEmail, invoicePayload).catch(err => {
+          console.error("Async sendInvoiceEmail error:", err);
+        });
+      }
+    } catch (invoiceErr) {
+      console.error("Failed to trigger invoice email:", invoiceErr);
+    }
+
     res.status(200).json({
       success: true,
       bookingId: booking.bookingId,
@@ -504,6 +542,80 @@ router.post("/confirm-manual", protect, async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// Booking OTP map storage
+const bookingOtps = new Map();
+
+// @route   POST /api/payment/send-booking-otp
+// @desc    Generate and send booking confirmation OTPs to mobile and email
+// @access  Private (Traveler)
+router.post("/send-booking-otp", protect, async (req, res) => {
+  const { email, phone } = req.body;
+  if (!email || !phone) {
+    return res.status(400).json({ success: false, message: "Email and phone are required." });
+  }
+
+  const emailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+  const mobileOtp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  bookingOtps.set(`${email.toLowerCase().trim()}_${phone.trim()}`, {
+    emailOtp,
+    mobileOtp,
+    expiresAt
+  });
+
+  console.log(`[Booking OTP Generated] Email: ${email} -> OTP: ${emailOtp}`);
+  console.log(`[Booking OTP Generated] Mobile: ${phone} -> OTP: ${mobileOtp}`);
+
+  try {
+    const { sendOtpEmail } = await import("../services/emailService.js");
+    await sendOtpEmail(email, emailOtp);
+  } catch (emailErr) {
+    console.error("Failed to send booking OTP email:", emailErr);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "OTPs sent successfully to mobile and email.",
+    debugOtp: {
+      emailOtp,
+      mobileOtp
+    }
+  });
+});
+
+// @route   POST /api/payment/verify-booking-otp
+// @desc    Verify OTPs before proceeding to payment
+// @access  Private (Traveler)
+router.post("/verify-booking-otp", protect, async (req, res) => {
+  const { email, phone, emailOtp, mobileOtp } = req.body;
+  if (!email || !phone || !emailOtp || !mobileOtp) {
+    return res.status(400).json({ success: false, message: "All fields are required." });
+  }
+
+  const key = `${email.toLowerCase().trim()}_${phone.trim()}`;
+  const record = bookingOtps.get(key);
+
+  if (!record) {
+    return res.status(400).json({ success: false, message: "OTP not requested or expired." });
+  }
+
+  if (Date.now() > record.expiresAt) {
+    bookingOtps.delete(key);
+    return res.status(400).json({ success: false, message: "OTPs have expired. Please request new ones." });
+  }
+
+  if (record.emailOtp !== emailOtp || record.mobileOtp !== mobileOtp) {
+    return res.status(400).json({ success: false, message: "Invalid OTPs. Please try again." });
+  }
+
+  bookingOtps.delete(key);
+  res.status(200).json({
+    success: true,
+    message: "OTPs verified successfully."
+  });
 });
 
 export default router;

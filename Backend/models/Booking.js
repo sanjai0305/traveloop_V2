@@ -102,6 +102,7 @@ const bookingSchema = new mongoose.Schema(
         age: { type: Number },
         gender: { type: String },
         phone: { type: String },
+        email: { type: String },
       }
     ],
     maleCount: {

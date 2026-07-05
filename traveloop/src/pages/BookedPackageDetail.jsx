@@ -181,6 +181,18 @@ const BookedPackageDetail = () => {
   const [userTripId,   setUserTripId]   = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
 
+  // Cancellation OTP Verification States
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelOtpSent, setCancelOtpSent] = useState(false);
+  const [cancelMobileOtp, setCancelMobileOtp] = useState(["", "", "", "", "", ""]);
+  const [cancelEmailOtp, setCancelEmailOtp] = useState(["", "", "", "", "", ""]);
+  const [cancelOtpTimer, setCancelOtpTimer] = useState(120);
+  const [cancelOtpSending, setCancelOtpSending] = useState(false);
+  const [cancelOtpVerifying, setCancelOtpVerifying] = useState(false);
+  const [cancelOtpError, setCancelOtpError] = useState("");
+  const [cancelDebugOtps, setCancelDebugOtps] = useState(null);
+  const cancelCountdownRef = useRef(null);
+
   // ── NEW: Members tab state ─────────────────────────────────
   const [members,       setMembers]       = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -354,34 +366,100 @@ const BookedPackageDetail = () => {
     }
   };
 
-  const handleCancelBooking = async () => {
-    if (!window.confirm("Are you sure you want to cancel this booking? This action is irreversible and will release your seats.")) {
-      return;
-    }
-    setCancelLoading(true);
+  const handleCancelBooking = () => {
+    setShowCancelModal(true);
+  };
+
+  const handleSendCancelOtp = async () => {
+    setCancelOtpSending(true);
+    setCancelOtpError("");
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(getApiUrl(`bookings/${bookingId}/cancel`), {
+      const res = await fetch(getApiUrl(`bookings/${bookingId}/send-cancel-otp`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCancelOtpSent(true);
+        setCancelOtpTimer(120);
+        if (data.debugOtp) {
+          setCancelDebugOtps(data.debugOtp);
+        }
+        startCancelCountdown();
+      } else {
+        setCancelOtpError(data.message || "Failed to send verification codes.");
+      }
+    } catch (err) {
+      setCancelOtpError("Network error requesting cancellation OTP.");
+    } finally {
+      setCancelOtpSending(false);
+    }
+  };
+
+  const startCancelCountdown = () => {
+    if (cancelCountdownRef.current) clearInterval(cancelCountdownRef.current);
+    cancelCountdownRef.current = setInterval(() => {
+      setCancelOtpTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(cancelCountdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleVerifyCancelOtp = async () => {
+    setCancelOtpVerifying(true);
+    setCancelOtpError("");
+    
+    const emailOtpStr = cancelEmailOtp.join("");
+    const mobileOtpStr = cancelMobileOtp.join("");
+    
+    if (emailOtpStr.length < 6 || mobileOtpStr.length < 6) {
+      setCancelOtpError("Please enter all 6 digits for both OTPs.");
+      setCancelOtpVerifying(false);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl(`bookings/${bookingId}/verify-cancel-otp`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ reason: "Cancelled by traveler" }),
+        body: JSON.stringify({
+          emailOtp: emailOtpStr,
+          mobileOtp: mobileOtpStr
+        })
       });
       const data = await res.json();
       if (data.success) {
-        alert("Booking cancelled successfully.");
+        alert("Booking cancelled and refund initiated successfully.");
+        setShowCancelModal(false);
+        setCancelOtpSent(false);
         fetchBooking();
       } else {
-        alert(data.message || "Failed to cancel booking");
+        setCancelOtpError(data.message || "Verification failed. Please try again.");
       }
     } catch (err) {
-      alert("Error cancelling booking");
+      setCancelOtpError("Network error during cancellation verification.");
     } finally {
-      setCancelLoading(false);
+      setCancelOtpVerifying(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (cancelCountdownRef.current) clearInterval(cancelCountdownRef.current);
+    };
+  }, []);
 
   const toast = useToast();
 
@@ -2762,6 +2840,217 @@ const BookedPackageDetail = () => {
                   💳 {addPassengerLoading ? "Processing payment..." : "Pay & Add Passenger"}
                 </button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Cancellation OTP Verification Modal */}
+      <AnimatePresence>
+        {showCancelModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 space-y-6 shadow-2xl text-slate-800 dark:text-white"
+            >
+              
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="text-rose-500 animate-bounce" size={20} />
+                  <h3 className="text-base font-black uppercase tracking-wider text-rose-500">
+                    Secure Cancellation
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setCancelOtpSent(false);
+                  }}
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Cancel Summary */}
+              <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-150 dark:border-slate-850 rounded-2xl p-4.5 space-y-3">
+                <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                  Cancellation Summary
+                </h4>
+                <div className="space-y-1.5 text-xs text-slate-650 dark:text-slate-350">
+                  <div className="flex justify-between">
+                    <span>Booking ID:</span>
+                    <strong className="text-slate-800 dark:text-white font-extrabold">{booking?.bookingId}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Trip Name:</span>
+                    <strong className="text-slate-800 dark:text-white font-extrabold">{trip?.title}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Travel Date:</span>
+                    <strong className="text-slate-800 dark:text-white font-extrabold">{fmt(trip?.startDate)}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total Passengers:</span>
+                    <strong className="text-slate-800 dark:text-white font-extrabold">{booking?.travellers?.length || 0}</strong>
+                  </div>
+                  <div className="flex justify-between border-t border-dashed border-slate-200 dark:border-slate-800 pt-2.5 mt-2">
+                    <span className="text-rose-550 font-extrabold">Refund Status:</span>
+                    <strong className="text-rose-550 font-extrabold">Refund Initiated (75% Back)</strong>
+                  </div>
+                </div>
+              </div>
+
+              {!cancelOtpSent ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-500 leading-normal">
+                    To secure your cancellation, we will send verification codes to the primary passenger's phone and email.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSendCancelOtp}
+                    disabled={cancelOtpSending}
+                    className="w-full py-4 rounded-2xl bg-rose-500 text-white font-black text-xs uppercase tracking-wider hover:bg-rose-600 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-rose-500/20 active:scale-98"
+                  >
+                    {cancelOtpSending ? <Loader2 size={13} className="animate-spin" /> : null}
+                    Send OTP Verification Codes
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  
+                  {/* Mobile OTP */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-405 uppercase tracking-widest">
+                      Mobile Verification Code
+                    </label>
+                    <div className="flex gap-2 justify-center">
+                      {cancelMobileOtp.map((val, idx) => (
+                        <input
+                          key={`cancel-mobile-${idx}`}
+                          id={`cancel-mobile-input-${idx}`}
+                          type="text"
+                          maxLength="1"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          value={val}
+                          onChange={(e) => {
+                            const newOTP = [...cancelMobileOtp];
+                            newOTP[idx] = e.target.value;
+                            setCancelMobileOtp(newOTP);
+                            if (e.target.value && idx < 5) {
+                              document.getElementById(`cancel-mobile-input-${idx + 1}`)?.focus();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Backspace" && !cancelMobileOtp[idx] && idx > 0) {
+                              document.getElementById(`cancel-mobile-input-${idx - 1}`)?.focus();
+                            }
+                          }}
+                          className="w-10 h-12 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-55 dark:bg-slate-950 text-center font-bold text-base text-slate-900 dark:text-white outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Email OTP */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-405 uppercase tracking-widest">
+                      Email Verification Code
+                    </label>
+                    <div className="flex gap-2 justify-center">
+                      {cancelEmailOtp.map((val, idx) => (
+                        <input
+                          key={`cancel-email-${idx}`}
+                          id={`cancel-email-input-${idx}`}
+                          type="text"
+                          maxLength="1"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          value={val}
+                          onChange={(e) => {
+                            const newOTP = [...cancelEmailOtp];
+                            newOTP[idx] = e.target.value;
+                            setCancelEmailOtp(newOTP);
+                            if (e.target.value && idx < 5) {
+                              document.getElementById(`cancel-email-input-${idx + 1}`)?.focus();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Backspace" && !cancelEmailOtp[idx] && idx > 0) {
+                              document.getElementById(`cancel-email-input-${idx - 1}`)?.focus();
+                            }
+                          }}
+                          className="w-10 h-12 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-55 dark:bg-slate-950 text-center font-bold text-base text-slate-900 dark:text-white outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Debug Fill */}
+                  {cancelDebugOtps && (
+                    <div className="p-2 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[9px] text-rose-500 font-mono text-center flex items-center justify-center gap-1.5">
+                      <span>Fill: SMS: <strong>{cancelDebugOtps.mobileOtp}</strong> | Mail: <strong>{cancelDebugOtps.emailOtp}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelMobileOtp(cancelDebugOtps.mobileOtp.split(""));
+                          setCancelEmailOtp(cancelDebugOtps.emailOtp.split(""));
+                        }}
+                        className="px-2 py-0.5 bg-rose-550 text-white font-black rounded uppercase text-[8px]"
+                      >
+                        Auto Fill
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error display */}
+                  {cancelOtpError && (
+                    <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs font-bold text-center">
+                      {cancelOtpError}
+                    </div>
+                  )}
+
+                  {/* Timer & Resend */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 font-semibold">
+                      {cancelOtpTimer > 0 ? `Resend code in ${cancelOtpTimer}s` : "Didn't receive codes?"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendCancelOtp}
+                      disabled={cancelOtpTimer > 0 || cancelOtpSending}
+                      className="text-rose-500 hover:text-rose-600 font-black disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancelOtpSending ? "Sending..." : "Resend OTP"}
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleVerifyCancelOtp}
+                      disabled={cancelOtpVerifying}
+                      className="w-full py-4 rounded-2xl bg-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-500/20 active:scale-98 transition-all flex items-center justify-center gap-2"
+                    >
+                      {cancelOtpVerifying ? <Loader2 size={13} className="animate-spin" /> : null}
+                      Confirm Cancellation & Process Refund
+                    </button>
+                  </div>
+
+                </div>
+              )}
+
             </motion.div>
           </motion.div>
         )}

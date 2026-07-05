@@ -1,12 +1,13 @@
 /**
  * UPIPaymentModal.jsx — Premium Razorpay-inspired Checkout Experience
  *
- * - Renders a high-fidelity checkout visual containing:
- *   - Trip Summary: Journey Name, Boarding/Dropping points, Seats, Travel Date, Duration, Amount, Status.
- *   - Payment Methods Panel: UPI (Google Pay, PhonePe, Paytm, BHIM, Amazon Pay), Card, Net Banking, Wallets, EMI.
- *   - Secured by Razorpay / Powered by Razorpay visual badges.
- * - Integrates the real Razorpay SDK checkout overlay trigger using existing keys and verification APIs.
- * - Retains live status polling, QR generation fallback, and manual booking confirmation.
+ * - Renders a high-fidelity checkout visual.
+ * - Resolves integration issues:
+ *   - Verifies Razorpay initialization and dynamically loads checkout.js script if needed.
+ *   - Calls backend order creation API and checks for valid orderId before launching.
+ *   - Renders a custom Payment Error Card on order creation/gateway failure.
+ *   - Adds detailed console logs for debugging.
+ *   - Operates independent of socket connection states.
  */
 
 import React, { useState, useEffect, useRef } from "react";
@@ -15,17 +16,35 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   X, CheckCircle2, XCircle, Loader2, RefreshCw, Clock,
   Smartphone, Zap, AlertTriangle, Info, CreditCard,
-  Copy, Bus, ShieldCheck, Landmark, Wallet, Sparkles, HelpCircle, Lock
+  Copy, Bus, ShieldCheck, Landmark, Wallet, Sparkles, Lock
 } from "lucide-react";
 import { getApiUrl } from "../../utils/api";
 import { useToast } from "../mobile/MobileToast";
 
 const UPI_VPA = import.meta.env.VITE_UPI_VPA || "traveloop@upi";
-const PAYEE_NAME = "TravelLoop";
 const POLL_INTERVAL = 3000;
 
-// ─── BUILD UPI INTENT STRING FOR QR FALLBACK ─────────────────────────────────
+// Dynamic script loader helper for checkout.js
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (window.Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => {
+      resolve(true);
+    };
+    script.onerror = () => {
+      resolve(false);
+    };
+    document.body.appendChild(script);
+  });
+};
 
+// ─── BUILD UPI INTENT STRING FOR QR FALLBACK ─────────────────────────────────
 const buildUPIString = (amount, bookingRef, tripTitle, seatNumbers) => {
   const upiId = import.meta.env.VITE_UPI_VPA || "traveloop@upi";
   const merchantName = "TravelLoop";
@@ -52,6 +71,10 @@ const UPIPaymentModal = ({
   const [confirming, setConfirming] = useState(false);
   const [copiedUPI, setCopiedUPI] = useState(false);
   const [razorpayLoading, setRazorpayLoading] = useState(false);
+  
+  // Payment error card state
+  const [paymentError, setPaymentError] = useState(null); // { title: string, details: string }
+
   const pollRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -66,12 +89,26 @@ const UPIPaymentModal = ({
 
   // ── Real Razorpay Checkout Overlay Trigger ─────────────────────────────────
   const handleOpenRazorpay = async () => {
+    console.log("window.Razorpay before load check:", window.Razorpay);
+    
+    // Ensure window.Razorpay script exists
     if (!window.Razorpay) {
-      toast.error("Razorpay SDK is not loaded yet. Please wait a moment.");
-      return;
+      console.log("Razorpay script not found on window. Loading dynamically...");
+      const loaded = await loadRazorpayScript();
+      if (!loaded) {
+        setPaymentError({
+          title: "Payment could not be initialized",
+          details: "Unable to load Razorpay checkout script."
+        });
+        return;
+      }
     }
+    
+    console.log("Razorpay Loaded", window.Razorpay);
     setRazorpayLoading(true);
+    setPaymentError(null);
     setError(null);
+    
     try {
       const token = localStorage.getItem("token");
       
@@ -88,22 +125,33 @@ const UPIPaymentModal = ({
         })
       });
       const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.message || "Failed to initiate payment");
+      console.log("order", data);
+      
+      // Verify Order creation response
+      if (!data.success || !data.orderId) {
+        console.log("order_id missing");
+        setPaymentError({
+          title: "Payment could not be initialized",
+          details: "Unable to create Razorpay order."
+        });
+        return;
       }
+      
+      const order_id = data.orderId;
+      console.log("order_id", order_id);
 
       // Configure Razorpay Options
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
-        amount: data.amount * 100, // paise
+        amount: data.amount * 105, // matches grand total with taxes
         currency: data.currency || "INR",
-        name: "TravelLoop Payments",
+        name: "TravelLoop",
         description: `Bus Seat Reservation - ${tripTitle}`,
-        order_id: data.orderId,
+        order_id: order_id,
         handler: async (response) => {
           setPhase("polling");
           try {
-            // Verify payment
+            // Verify payment signature
             const verifyRes = await fetch(getApiUrl("payment/verify"), {
               method: "POST",
               headers: {
@@ -144,10 +192,17 @@ const UPIPaymentModal = ({
         }
       };
 
+      console.log("payment options", options);
+      console.log("window.Razorpay", window.Razorpay);
+
       const rzp = new window.Razorpay(options);
       rzp.open();
     } catch (err) {
-      toast.error(err.message || "Checkout failed");
+      console.error("[Razorpay Initialization Failed]", err);
+      setPaymentError({
+        title: "Payment could not be initialized",
+        details: "Unable to create Razorpay order."
+      });
     } finally {
       setRazorpayLoading(false);
     }
@@ -205,7 +260,7 @@ const UPIPaymentModal = ({
           }
         }
       } catch (err) {
-        // network retry
+        // continue retry on network timeout
       }
     }, POLL_INTERVAL);
   };
@@ -224,7 +279,7 @@ const UPIPaymentModal = ({
     };
   }, []);
 
-  // Manual payment check
+  // Manual payment confirmation
   const handleManualConfirm = async () => {
     setConfirming(true);
     try {
@@ -258,12 +313,12 @@ const UPIPaymentModal = ({
     }
   };
 
-  const handleAppOpen = (app) => {
+  const handleAppOpen = (appName) => {
     if (!upiString) {
       toast.error("UPI link is not generated");
       return;
     }
-    const deepLink = app.replace("upi://", "tez://"); // tez is default tez/phonepe scheme replacer
+    const deepLink = upiString.replace("upi://", "tez://");
     window.location.href = deepLink;
     setTimeout(startPolling, 3000);
   };
@@ -282,7 +337,7 @@ const UPIPaymentModal = ({
       className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center p-0 md:p-4 overflow-hidden"
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-slate-955/80 backdrop-blur-sm" />
 
       {/* Main Payment Checkout Card */}
       <motion.div
@@ -384,256 +439,284 @@ const UPIPaymentModal = ({
         </div>
 
         {/* Right Panel: Payment Options */}
-        <div className="flex-1 flex flex-col overflow-y-auto bg-slate-900">
+        <div className="flex-1 flex flex-col overflow-y-auto bg-slate-900 justify-center">
           
-          {/* Header */}
-          <div className="px-6 py-4.5 border-b border-slate-850 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-black flex items-center gap-2 text-white">
-                <ShieldCheck size={18} className="text-teal-400 animate-pulse" />
-                Select Payment Mode
-              </h2>
-              <p className="text-[10px] text-slate-450 mt-0.5">Secure payment gateway powered by Razorpay.</p>
+          {paymentError ? (
+            <div className="p-6 text-center space-y-4 max-w-sm mx-auto animate-fade-in">
+              <div className="w-16 h-16 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-455 text-2xl">
+                ⚠️
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-base font-black text-white">{paymentError.title}</h3>
+                <p className="text-xs text-slate-400 leading-normal">{paymentError.details}</p>
+              </div>
+              <div className="pt-4 space-y-2 w-full">
+                <button
+                  onClick={handleOpenRazorpay}
+                  className="w-full py-3.5 rounded-2xl bg-teal-500 hover:bg-teal-600 text-slate-950 font-black text-xs uppercase tracking-wider transition-all"
+                >
+                  Retry Payment
+                </button>
+                <button
+                  onClick={() => setPaymentError(null)}
+                  className="w-full py-3.5 rounded-2xl border border-slate-800 hover:border-slate-700 text-slate-300 font-black text-xs uppercase tracking-wider transition-all"
+                >
+                  Back
+                </button>
+              </div>
             </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-            
-            {/* Method Tabs Left Side */}
-            <div className="w-full md:w-40 border-b md:border-b-0 md:border-r border-slate-850 flex md:flex-col shrink-0 bg-slate-950/20 overflow-x-auto md:overflow-x-visible">
-              {[
-                { id: "upi", label: "UPI Apps", icon: Smartphone },
-                { id: "card", label: "Cards", icon: CreditCard },
-                { id: "netbanking", label: "Net Banking", icon: Landmark },
-                { id: "wallets", label: "Wallets", icon: Wallet },
-                { id: "emi", label: "EMI Plans", icon: RefreshCw },
-              ].map((method) => {
-                const Icon = method.icon;
-                const isSelected = activeMethod === method.id;
-                return (
-                  <button
-                    key={method.id}
-                    onClick={() => setActiveMethod(method.id)}
-                    className={`flex-1 md:flex-initial flex items-center justify-center md:justify-start gap-2.5 px-4 py-4 text-xs font-black uppercase tracking-wider text-left transition-all ${
-                      isSelected
-                        ? "bg-slate-800 text-teal-400 border-b-2 md:border-b-0 md:border-l-4 border-teal-400"
-                        : "text-slate-400 hover:text-white hover:bg-slate-850/50"
-                    }`}
-                  >
-                    <Icon size={14} />
-                    <span>{method.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Method Details Pane */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-6">
-              
-              {/* Method 1: UPI */}
-              {activeMethod === "upi" && (
-                <div className="space-y-5 animate-fade-in">
-                  <div className="space-y-3">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pay directly with UPI app</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      {[
-                        { name: "Google Pay", color: "from-blue-600 to-blue-700", bg: "bg-blue-600/10 border-blue-500/20" },
-                        { name: "PhonePe", color: "from-purple-600 to-purple-700", bg: "bg-purple-600/10 border-purple-500/20" },
-                        { name: "Paytm", color: "from-sky-500 to-sky-600", bg: "bg-sky-500/10 border-sky-500/20" },
-                        { name: "BHIM", color: "from-orange-500 to-orange-600", bg: "bg-orange-500/10 border-orange-500/20" },
-                        { name: "Amazon Pay", color: "from-amber-500 to-amber-600", bg: "bg-amber-500/10 border-amber-500/20" },
-                      ].map((app) => (
-                        <button
-                          key={app.name}
-                          onClick={() => handleAppOpen(app.name)}
-                          className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${app.bg} hover:border-teal-400 transition-all active:scale-95 text-center shrink-0 h-16`}
-                        >
-                          <span className="text-[9px] font-black text-white">{app.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* QR Fallback */}
-                  <div className="border-t border-slate-850 pt-5 flex flex-col items-center gap-4">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scan QR Code to pay</p>
-                    <div className="p-3 bg-white rounded-2xl shadow-inner border border-slate-100 flex items-center justify-center">
-                      {qrData ? (
-                        <QRCodeSVG value={qrData} size={150} level="H" includeMargin fgColor="#0f172a" />
-                      ) : (
-                        <span className="text-[10px] text-rose-500 font-bold py-8">QR generation failed. Use gateway.</span>
-                      )}
-                    </div>
-                    
-                    {/* Copy VPA */}
-                    <div className="w-full max-w-xs bg-slate-950/60 border border-slate-850 rounded-2xl p-3 flex items-center justify-between">
-                      <div className="overflow-hidden mr-2">
-                        <p className="text-[8px] text-slate-500 font-black uppercase">UPI Address</p>
-                        <p className="text-[11px] font-bold text-slate-300 truncate">{UPI_VPA}</p>
-                      </div>
-                      <button
-                        onClick={handleCopyUPI}
-                        className="bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[9px] font-black px-2.5 py-1.5 rounded-xl transition-all"
-                      >
-                        {copiedUPI ? "Copied" : "Copy VPA"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Method 2: Cards */}
-              {activeMethod === "card" && (
-                <div className="space-y-4 animate-fade-in">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credit / Debit Card details</p>
-                  
-                  {/* Mock Premium Card UI */}
-                  <div className="bg-gradient-to-br from-slate-800 to-slate-950 rounded-3xl p-5 border border-white/10 shadow-lg relative overflow-hidden h-40 flex flex-col justify-between">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
-                    <div className="flex justify-between items-start">
-                      <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">Traveloop Classic</span>
-                      <CreditCard size={18} className="text-teal-400" />
-                    </div>
-                    <div className="text-sm font-mono tracking-widest text-slate-300">••••  ••••  ••••  ••••</div>
-                    <div className="flex justify-between items-end text-[9px] font-mono text-slate-400">
-                      <div>
-                        <span>CARD HOLDER</span>
-                        <p className="font-bold text-white uppercase tracking-wider mt-0.5">Your Name</p>
-                      </div>
-                      <div className="text-right">
-                        <span>EXPIRES</span>
-                        <p className="font-bold text-white mt-0.5">MM/YY</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3">
-                    <input disabled placeholder="Card Number" className="col-span-3 px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
-                    <input disabled placeholder="Expiry (MM/YY)" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
-                    <input disabled placeholder="CVV" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs text-slate-500 outline-none" />
-                    <button onClick={handleOpenRazorpay} className="py-3 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 text-[10px] font-black uppercase">Secure Fill</button>
-                  </div>
-                </div>
-              )}
-
-              {/* Method 3: Net Banking */}
-              {activeMethod === "netbanking" && (
-                <div className="space-y-4 animate-fade-in">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Popular Bank</p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra", "Punjab National Bank"].map((bank) => (
-                      <button
-                        key={bank}
-                        onClick={handleOpenRazorpay}
-                        className="flex items-center gap-2 p-3 bg-slate-950/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-950 transition-all text-left font-bold"
-                      >
-                        <Landmark size={12} className="text-teal-400" />
-                        <span className="truncate">{bank}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Method 4: Wallets */}
-              {activeMethod === "wallets" && (
-                <div className="space-y-4 animate-fade-in">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link Wallet Option</p>
-                  <div className="grid grid-cols-1 gap-2 text-xs">
-                    {["Amazon Pay Wallet", "Paytm Wallet", "PhonePe Wallet", "MobiKwik"].map((wallet) => (
-                      <button
-                        key={wallet}
-                        onClick={handleOpenRazorpay}
-                        className="flex items-center justify-between p-3.5 bg-slate-950/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-950 transition-all font-bold"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Wallet size={12} className="text-teal-400" />
-                          <span>{wallet}</span>
-                        </div>
-                        <span className="text-[9px] text-slate-450 uppercase">Connect</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Method 5: EMI */}
-              {activeMethod === "emi" && (
-                <div className="space-y-4 animate-fade-in text-center py-6">
-                  <RefreshCw size={24} className="mx-auto text-teal-400 animate-spin" />
-                  <p className="text-xs font-bold text-slate-300">EMI plans are available for amounts above ₹3,000</p>
-                  <p className="text-[10px] text-slate-500">EMI options will be listed securely on the Razorpay overlay checkout.</p>
-                  <button
-                    onClick={handleOpenRazorpay}
-                    className="px-5 py-2.5 bg-teal-500 text-slate-950 rounded-xl font-black text-[10px] uppercase tracking-wider mx-auto"
-                  >
-                    Check EMI eligibility
-                  </button>
-                </div>
-              )}
-
-              {/* Manual Confirmation (Already Paid warning) */}
-              <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl space-y-2">
-                <div className="flex items-start gap-2">
-                  <Info size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-slate-400 leading-normal font-semibold">
-                    Already completed your UPI transaction? If verified on your phone, click manual verification to update booking status immediately.
-                  </p>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="px-6 py-4.5 border-b border-slate-850 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="text-sm font-black flex items-center gap-2 text-white">
+                    <ShieldCheck size={18} className="text-teal-400 animate-pulse" />
+                    Select Payment Mode
+                  </h2>
+                  <p className="text-[10px] text-slate-450 mt-0.5">Secure payment gateway powered by Razorpay.</p>
                 </div>
                 <button
-                  onClick={handleManualConfirm}
-                  disabled={confirming}
-                  className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5"
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
                 >
-                  {confirming ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                  {confirming ? "Confirming..." : "I've Paid — Verify Payment"}
+                  <X size={16} />
                 </button>
               </div>
 
-              {/* Error box */}
-              {error && (
-                <div className="flex items-start gap-2 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse">
-                  <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                  <span>{error}</span>
+              <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                
+                {/* Method Tabs Left Side */}
+                <div className="w-full md:w-40 border-b md:border-b-0 md:border-r border-slate-850 flex md:flex-col shrink-0 bg-slate-950/20 overflow-x-auto md:overflow-x-visible">
+                  {[
+                    { id: "upi", label: "UPI Apps", icon: Smartphone },
+                    { id: "card", label: "Cards", icon: CreditCard },
+                    { id: "netbanking", label: "Net Banking", icon: Landmark },
+                    { id: "wallets", label: "Wallets", icon: Wallet },
+                    { id: "emi", label: "EMI Plans", icon: RefreshCw },
+                  ].map((method) => {
+                    const Icon = method.icon;
+                    const isSelected = activeMethod === method.id;
+                    return (
+                      <button
+                        key={method.id}
+                        onClick={() => setActiveMethod(method.id)}
+                        className={`flex-1 md:flex-initial flex items-center justify-center md:justify-start gap-2.5 px-4 py-4 text-xs font-black uppercase tracking-wider text-left transition-all ${
+                          isSelected
+                            ? "bg-slate-800 text-teal-400 border-b-2 md:border-b-0 md:border-l-4 border-teal-400"
+                            : "text-slate-400 hover:text-white hover:bg-slate-850/50"
+                        }`}
+                      >
+                        <Icon size={14} />
+                        <span>{method.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
 
-              {/* Polling Check */}
-              {phase === "polling" && (
-                <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
-                  <Loader2 size={12} className="animate-spin" />
-                  <span className="text-[10px] font-black">
-                    Validating transaction signature... (Attempt #{pollCount})
-                  </span>
+                {/* Method Details Pane */}
+                <div className="flex-1 p-6 overflow-y-auto space-y-6">
+                  
+                  {/* Method 1: UPI */}
+                  {activeMethod === "upi" && (
+                    <div className="space-y-5 animate-fade-in">
+                      <div className="space-y-3">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pay directly with UPI app</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                          {[
+                            { name: "Google Pay", color: "from-blue-600 to-blue-700", bg: "bg-blue-600/10 border-blue-500/20" },
+                            { name: "PhonePe", color: "from-purple-600 to-purple-700", bg: "bg-purple-600/10 border-purple-500/20" },
+                            { name: "Paytm", color: "from-sky-500 to-sky-600", bg: "bg-sky-500/10 border-sky-500/20" },
+                            { name: "BHIM", color: "from-orange-500 to-orange-600", bg: "bg-orange-500/10 border-orange-500/20" },
+                            { name: "Amazon Pay", color: "from-amber-500 to-amber-600", bg: "bg-amber-500/10 border-amber-500/20" },
+                          ].map((app) => (
+                            <button
+                              key={app.name}
+                              onClick={() => handleAppOpen(app.name)}
+                              className={`flex flex-col items-center justify-center p-3 rounded-2xl border ${app.bg} hover:border-teal-400 transition-all active:scale-95 text-center shrink-0 h-16`}
+                            >
+                              <span className="text-[9px] font-black text-white">{app.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* QR Fallback */}
+                      <div className="border-t border-slate-850 pt-5 flex flex-col items-center gap-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scan QR Code to pay</p>
+                        <div className="p-3 bg-white rounded-2xl shadow-inner border border-slate-100 flex items-center justify-center">
+                          {qrData ? (
+                            <QRCodeSVG value={qrData} size={150} level="H" includeMargin fgColor="#0f172a" />
+                          ) : (
+                            <span className="text-[10px] text-rose-500 font-bold py-8">QR generation failed. Use gateway.</span>
+                          )}
+                        </div>
+                        
+                        {/* Copy VPA */}
+                        <div className="w-full max-w-xs bg-slate-950/60 border border-slate-850 rounded-2xl p-3 flex items-center justify-between">
+                          <div className="overflow-hidden mr-2">
+                            <p className="text-[8px] text-slate-500 font-black uppercase">UPI Address</p>
+                            <p className="text-[11px] font-bold text-slate-300 truncate">{UPI_VPA}</p>
+                          </div>
+                          <button
+                            onClick={handleCopyUPI}
+                            className="bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[9px] font-black px-2.5 py-1.5 rounded-xl transition-all"
+                          >
+                            {copiedUPI ? "Copied" : "Copy VPA"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Method 2: Cards */}
+                  {activeMethod === "card" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Credit / Debit Card details</p>
+                      
+                      {/* Mock Premium Card UI */}
+                      <div className="bg-gradient-to-br from-slate-800 to-slate-950 rounded-3xl p-5 border border-white/10 shadow-lg relative overflow-hidden h-40 flex flex-col justify-between">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">Traveloop Classic</span>
+                          <CreditCard size={18} className="text-teal-400" />
+                        </div>
+                        <div className="text-sm font-mono tracking-widest text-slate-300">••••  ••••  ••••  ••••</div>
+                        <div className="flex justify-between items-end text-[9px] font-mono text-slate-400">
+                          <div>
+                            <span>CARD HOLDER</span>
+                            <p className="font-bold text-white uppercase tracking-wider mt-0.5">Your Name</p>
+                          </div>
+                          <div className="text-right">
+                            <span>EXPIRES</span>
+                            <p className="font-bold text-white mt-0.5">MM/YY</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <input disabled placeholder="Card Number" className="col-span-3 px-4 py-3 rounded-xl border border-slate-800 bg-slate-955 text-xs text-slate-500 outline-none" />
+                        <input disabled placeholder="Expiry (MM/YY)" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-955 text-xs text-slate-500 outline-none" />
+                        <input disabled placeholder="CVV" className="px-4 py-3 rounded-xl border border-slate-800 bg-slate-955 text-xs text-slate-500 outline-none" />
+                        <button onClick={handleOpenRazorpay} className="py-3 rounded-xl bg-teal-500/10 border border-teal-500/30 text-teal-400 text-[10px] font-black uppercase">Secure Fill</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Method 3: Net Banking */}
+                  {activeMethod === "netbanking" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select Popular Bank</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {["State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra", "Punjab National Bank"].map((bank) => (
+                          <button
+                            key={bank}
+                            onClick={handleOpenRazorpay}
+                            className="flex items-center gap-2 p-3 bg-slate-955/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-955 transition-all text-left font-bold"
+                          >
+                            <Landmark size={12} className="text-teal-400" />
+                            <span className="truncate">{bank}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Method 4: Wallets */}
+                  {activeMethod === "wallets" && (
+                    <div className="space-y-4 animate-fade-in">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Link Wallet Option</p>
+                      <div className="grid grid-cols-1 gap-2 text-xs">
+                        {["Amazon Pay Wallet", "Paytm Wallet", "PhonePe Wallet", "MobiKwik"].map((wallet) => (
+                          <button
+                            key={wallet}
+                            onClick={handleOpenRazorpay}
+                            className="flex items-center justify-between p-3.5 bg-slate-955/40 rounded-xl border border-slate-850 hover:border-teal-400 hover:bg-slate-955 transition-all font-bold"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Wallet size={12} className="text-teal-400" />
+                              <span>{wallet}</span>
+                        </div>
+                            <span className="text-[9px] text-slate-450 uppercase">Connect</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Method 5: EMI */}
+                  {activeMethod === "emi" && (
+                    <div className="space-y-4 animate-fade-in text-center py-6">
+                      <RefreshCw size={24} className="mx-auto text-teal-400 animate-spin" />
+                      <p className="text-xs font-bold text-slate-300">EMI plans are available for amounts above ₹3,000</p>
+                      <p className="text-[10px] text-slate-500">EMI options will be listed securely on the Razorpay overlay checkout.</p>
+                      <button
+                        onClick={handleOpenRazorpay}
+                        className="px-5 py-2.5 bg-teal-500 text-slate-950 rounded-xl font-black text-[10px] uppercase tracking-wider mx-auto"
+                      >
+                        Check EMI eligibility
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Manual Confirmation */}
+                  <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl space-y-2">
+                    <div className="flex items-start gap-2">
+                      <Info size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-[10px] text-slate-400 leading-normal font-semibold">
+                        Already completed your UPI transaction? If verified on your phone, click manual verification to update booking status immediately.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleManualConfirm}
+                      disabled={confirming}
+                      className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5"
+                    >
+                      {confirming ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                      {confirming ? "Confirming..." : "I've Paid — Verify Payment"}
+                    </button>
+                  </div>
+
+                  {/* Error box */}
+                  {error && (
+                    <div className="flex items-start gap-2 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse">
+                      <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  {/* Polling Check */}
+                  {phase === "polling" && (
+                    <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
+                      <Loader2 size={12} className="animate-spin" />
+                      <span className="text-[10px] font-black">
+                        Validating transaction signature... (Attempt #{pollCount})
+                      </span>
+                    </div>
+                  )}
+
                 </div>
-              )}
+              </div>
 
-            </div>
-          </div>
-
-          {/* Action Footer */}
-          <div className="p-6 border-t border-slate-850 bg-slate-950/40 flex flex-col sm:flex-row gap-3">
-            <button
-              onClick={onCancel}
-              className="flex-1 py-4 border border-slate-850 hover:border-rose-500/30 hover:bg-rose-500/5 text-slate-400 hover:text-rose-400 font-black text-xs uppercase tracking-wider rounded-2xl transition-all"
-            >
-              Cancel & Release Seats
-            </button>
-            <button
-              onClick={handleOpenRazorpay}
-              disabled={razorpayLoading}
-              className="flex-1.5 py-4 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-teal-500/10 active:scale-98 transition-all flex items-center justify-center gap-2"
-            >
-              {razorpayLoading ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={14} />}
-              {razorpayLoading ? "Linking checkout..." : `Pay ₹${amount.toLocaleString("en-IN")} via Razorpay`}
-            </button>
-          </div>
+              {/* Action Footer */}
+              <div className="p-6 border-t border-slate-850 bg-slate-955/40 flex flex-col sm:flex-row gap-3 shrink-0">
+                <button
+                  onClick={onCancel}
+                  className="flex-1 py-4 border border-slate-850 hover:border-rose-500/30 hover:bg-rose-500/5 text-slate-400 hover:text-rose-400 font-black text-xs uppercase tracking-wider rounded-2xl transition-all"
+                >
+                  Cancel & Release Seats
+                </button>
+                <button
+                  onClick={handleOpenRazorpay}
+                  disabled={razorpayLoading}
+                  className="flex-1.5 py-4 bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-teal-500/10 active:scale-98 transition-all flex items-center justify-center gap-2"
+                >
+                  {razorpayLoading ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={14} />}
+                  {razorpayLoading ? "Linking checkout..." : `Pay ₹${amount.toLocaleString("en-IN")} via Razorpay`}
+                </button>
+              </div>
+            </>
+          )}
 
         </div>
 

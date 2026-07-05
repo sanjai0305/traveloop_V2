@@ -347,3 +347,105 @@ export const sendPromotionalEmail = async (to, promoData) => {
     html,
   });
 };
+
+export const sendInvoiceEmail = async (to, invoiceData) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing Invoice email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+
+  const {
+    tripName,
+    bookingId,
+    passengers = [],
+    seatNumbers = [],
+    travelDate,
+    pickupPoint,
+    dropPoint,
+    amountPaid,
+    paymentId,
+    bookingStatus,
+    qrUnlockStatus,
+    emergencyContact
+  } = invoiceData;
+
+  const taxAmount = (amountPaid * 0.05).toFixed(2);
+  const baseFare = (amountPaid - taxAmount).toFixed(2);
+
+  const passengerRows = passengers.map(p => `
+    <tr>
+      <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #334155;"><strong>${p.name}</strong> (${p.gender ? p.gender[0] : "O"}, Age ${p.age || "N/A"})</td>
+      <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #334155;">Seat ${p.seatNumber || "N/A"}</td>
+      <td style="padding: 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #64748b;">${p.email || to}</td>
+    </tr>
+  `).join("");
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="border-bottom: 2px solid ${BRAND_COLOR}; padding-bottom: 16px; margin-bottom: 20px;">
+      <h2 style="color: #1e293b; margin: 0; font-size: 24px;">Booking Invoice / Receipt</h2>
+      <p style="color: #64748b; margin: 4px 0 0 0; font-size: 13px;">Booking Reference: <strong>${bookingId}</strong></p>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+      <tr>
+        <td style="width: 50%; vertical-align: top; padding-right: 12px;">
+          <h4 style="margin: 0 0 6px 0; color: #475569; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;">Trip Details</h4>
+          <p style="margin: 0; font-size: 14px; font-weight: 700; color: #1e293b;">${tripName}</p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">Travel Date: <strong>${travelDate}</strong></p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">Boarding: <strong>${pickupPoint}</strong></p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">Drop: <strong>${dropPoint}</strong></p>
+        </td>
+        <td style="width: 50%; vertical-align: top; padding-left: 12px; border-left: 1px solid #f1f5f9;">
+          <h4 style="margin: 0 0 6px 0; color: #475569; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;">Payment Details</h4>
+          <p style="margin: 0; font-size: 13px; color: #475569;">Status: <strong style="color: #0d9488;">${bookingStatus}</strong></p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">Payment ID: <strong>${paymentId || "N/A"}</strong></p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">QR Code Pass: <strong>${qrUnlockStatus}</strong></p>
+          <p style="margin: 4px 0; font-size: 13px; color: #475569;">Emergency SOS Contact: <strong>${emergencyContact || "N/A"}</strong></p>
+        </td>
+      </tr>
+    </table>
+
+    <h4 style="color: #475569; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin: 24px 0 10px 0;">Passenger List</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+      <thead>
+        <tr style="background-color: #f8fafc;">
+          <td style="padding: 8px; font-weight: 700; font-size: 12px; color: #475569;">Passenger</td>
+          <td style="padding: 8px; font-weight: 700; font-size: 12px; color: #475569;">Seat Allocation</td>
+          <td style="padding: 8px; font-weight: 700; font-size: 12px; color: #475569;">Email Address</td>
+        </tr>
+      </thead>
+      <tbody>
+        ${passengerRows}
+      </tbody>
+    </table>
+
+    <h4 style="color: #475569; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin: 24px 0 10px 0;">Billing Summary</h4>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+      <tr>
+        <td style="padding: 6px 0; font-size: 13px; color: #475569;">Base Fare</td>
+        <td style="padding: 6px 0; font-size: 13px; color: #1e293b; text-align: right;">₹${baseFare}</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 0; font-size: 13px; color: #475569;">Taxes & GST (5%)</td>
+        <td style="padding: 6px 0; font-size: 13px; color: #1e293b; text-align: right;">₹${taxAmount}</td>
+      </tr>
+      <tr style="border-top: 1px solid #e2e8f0; font-weight: 700;">
+        <td style="padding: 10px 0 0 0; font-size: 14px; color: #1e293b;">Total Amount Paid</td>
+        <td style="padding: 10px 0 0 0; font-size: 16px; color: ${BRAND_COLOR}; text-align: right;">₹${amountPaid.toLocaleString("en-IN")}</td>
+      </tr>
+    </table>
+
+    <div style="text-align: center; margin-top: 36px; padding-top: 20px; border-top: 1px solid #f1f5f9;">
+      <a href="https://traveloopv2.duckdns.org/api/bookings/ticket/${bookingId}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Download Ticket PDF</a>
+    </div>
+  `);
+
+  await sendMailWithRetry(transporter, {
+    from: `"Traveloop Payments" <${senderEmail}>`,
+    to,
+    subject: `Your Traveloop Booking Invoice & Ticket - ${bookingId} 🎫`,
+    html,
+  });
+};

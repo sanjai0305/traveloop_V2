@@ -225,6 +225,7 @@ export class BookingService {
       age: Number(t.age || 0),
       gender: normalizeGender(t.gender),
       phone: t.phone || "",
+      email: t.email || "",
     }));
 
     const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;

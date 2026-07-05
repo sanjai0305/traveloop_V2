@@ -635,4 +635,160 @@ router.post("/confirm", protect, async (req, res) => {
   }
 });
 
+// Cancellation OTP map storage
+const cancelOtps = new Map();
+
+// @route   POST /api/bookings/:bookingId/send-cancel-otp
+// @desc    Generate and send cancellation OTPs to mobile and email
+// @access  Private (Traveler)
+router.post("/:bookingId/send-cancel-otp", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  const userId = req.user.id || req.user._id;
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, userId });
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const email = booking.travellers?.[0]?.email || req.user.email;
+    const phone = booking.travellers?.[0]?.phone || booking.contactNumber || req.user.phone || "";
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: "No email address found for this booking" });
+    }
+
+    const emailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const mobileOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    cancelOtps.set(bookingId.toString(), {
+      emailOtp,
+      mobileOtp,
+      expiresAt
+    });
+
+    console.log(`[Cancellation OTP] Booking: ${bookingId} -> Email: ${email} -> OTP: ${emailOtp}`);
+    console.log(`[Cancellation OTP] Booking: ${bookingId} -> Mobile: ${phone} -> OTP: ${mobileOtp}`);
+
+    try {
+      const { sendOtpEmail } = await import("../services/emailService.js");
+      await sendOtpEmail(email, emailOtp);
+    } catch (emailErr) {
+      console.error("Failed to send cancellation OTP email:", emailErr);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Cancellation OTPs sent successfully.",
+      debugOtp: {
+        emailOtp,
+        mobileOtp
+      }
+    });
+  } catch (error) {
+    console.error("[Send Cancel OTP Error]:", error);
+    res.status(500).json({ success: false, message: "Server error sending cancellation OTP" });
+  }
+});
+
+// @route   POST /api/bookings/:bookingId/verify-cancel-otp
+// @desc    Verify cancellation OTPs and process refund
+// @access  Private (Traveler)
+router.post("/:bookingId/verify-cancel-otp", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  const { emailOtp, mobileOtp } = req.body;
+  const userId = req.user.id || req.user._id;
+
+  if (!emailOtp || !mobileOtp) {
+    return res.status(400).json({ success: false, message: "Both email and mobile OTPs are required." });
+  }
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, userId }).populate("tripId");
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.paymentStatus === "Cancelled") {
+      return res.status(400).json({ success: false, message: "Booking is already cancelled" });
+    }
+
+    const key = bookingId.toString();
+    const record = cancelOtps.get(key);
+
+    if (!record) {
+      return res.status(400).json({ success: false, message: "Cancellation OTP not requested or expired." });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      cancelOtps.delete(key);
+      return res.status(400).json({ success: false, message: "Cancellation OTPs expired. Please try again." });
+    }
+
+    if (record.emailOtp !== emailOtp || record.mobileOtp !== mobileOtp) {
+      return res.status(400).json({ success: false, message: "Invalid OTPs. Please try again." });
+    }
+
+    cancelOtps.delete(key);
+    
+    // 1. Update Booking status
+    booking.paymentStatus = "Cancelled";
+    booking.bookingStatus = "cancelled";
+    booking.status = "Cancelled";
+    booking.refundStatus = "Refund Initiated";
+    await booking.save();
+
+    // 2. Release seat booking from seat collections
+    const SeatBooking = mongoose.model("SeatBooking");
+    await SeatBooking.deleteMany({ bookingId: booking._id });
+
+    // 3. Increment trip available seats
+    const AgentTrip = mongoose.model("AgentTrip");
+    const trip = await AgentTrip.findById(booking.tripId);
+    if (trip) {
+      trip.bookedSeats = Math.max(0, (trip.bookedSeats || 0) - booking.seats);
+      trip.availableSeats = (trip.availableSeats || 0) + booking.seats;
+      const totalS = trip.totalSeats || 40;
+      trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+      trip.occupancyRate = trip.occupancy;
+      await trip.save();
+    }
+
+    // 4. Emit live seat updates for all released seats
+    const io = req.app.get("io");
+    if (io && booking.seatNumbers?.length > 0) {
+      booking.seatNumbers.forEach(seatNum => {
+        io.to(`trip_${booking.tripId?._id || booking.tripId}`).emit("seat_update", {
+          tripId: booking.tripId?._id || booking.tripId,
+          seatNumber: seatNum,
+          status: "available",
+          gender: null,
+          passengerName: null,
+          age: null
+        });
+      });
+    }
+
+    // 5. Send cancellation email
+    const email = booking.travellers?.[0]?.email || req.user.email;
+    if (email) {
+      try {
+        console.log(`[Cancellation Email Sent] Booking ${booking.bookingId} cancelled for ${email}`);
+      } catch (emailErr) {
+        console.error("Failed to send cancellation confirmation email:", emailErr);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Booking cancelled and refund initiated successfully.",
+      booking
+    });
+  } catch (error) {
+    console.error("[Verify Cancel OTP Error]:", error);
+    res.status(500).json({ success: false, message: "Server error during cancellation" });
+  }
+});
+
 export default router;

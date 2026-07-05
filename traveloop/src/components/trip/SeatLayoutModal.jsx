@@ -4,14 +4,16 @@
  * - Renders driver cabin, entry door, premium sleeper/seater grid layout
  * - Interactive seat nodes with hover animations, glow effects, initials, and tooltips
  * - Premium right-side passenger details drawer (Rounded 28px, Glassmorphism, Fare Summary)
- * - Restores live socket.io updates and API calls (seats/reserve)
+ * - Added: Email Address field, removed Seat Berth Preference select field
+ * - Auto-assigned selected seat display
+ * - Integrated 6-digit Mobile and Email OTP Verification Flow before proceeding to payment
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Users, Bus, DoorOpen, Check, AlertTriangle, Loader2,
-  User, RefreshCw, Info, ArrowRight, Sparkles, Phone, ShieldCheck, Heart
+  User, RefreshCw, Info, ArrowRight, Sparkles, Phone, ShieldCheck, Heart, Zap
 } from "lucide-react";
 import { io as socketIO } from "socket.io-client";
 import { getApiUrl, getSocketUrl } from "../../utils/api";
@@ -33,13 +35,13 @@ const SEAT_STYLES = {
     label: "Selected",
   },
   reserved: {
-    bg: "bg-amber-50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60",
+    bg: "bg-amber-50 dark:bg-amber-955/20 border-amber-300 dark:border-amber-900/60",
     text: "text-amber-700 dark:text-amber-400",
     hover: "cursor-not-allowed",
     label: "Reserved",
   },
   booked_male: {
-    bg: "bg-sky-50 dark:bg-sky-950/20 border-sky-300 dark:border-sky-900/60",
+    bg: "bg-sky-50 dark:bg-sky-955/20 border-sky-300 dark:border-sky-900/60",
     text: "text-sky-700 dark:text-sky-400",
     hover: "cursor-not-allowed",
     label: "Booked (Male)",
@@ -69,7 +71,6 @@ const SeatCell = ({ seat, isSelected, onClick, disabled, passengerInfo }) => {
   const isBooked = seat.status === "booked";
   const isReserved = seat.status === "reserved";
   
-  // Calculate initials to display inside selected seat
   const initials = passengerInfo?.name
     ? passengerInfo.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
     : "";
@@ -133,6 +134,7 @@ const SeatCell = ({ seat, isSelected, onClick, disabled, passengerInfo }) => {
                 {passengerInfo ? (
                   <>
                     <div>👤 {passengerInfo.name}</div>
+                    <div>✉️ {passengerInfo.email}</div>
                     <div>🎂 {passengerInfo.age} yrs · {passengerInfo.gender}</div>
                     {passengerInfo.phone && <div>📞 {passengerInfo.phone}</div>}
                   </>
@@ -179,13 +181,27 @@ const SeatLayoutModal = ({
     age: "",
     gender: "Male",
     phone: "",
+    email: "",
     emergencyContact: "",
-    seatPreference: "Window",
   });
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reserving, setReserving] = useState(false);
+
+  // OTP Verification Overlay States
+  const [showOtpVerification, setShowOtpVerification] = useState(false);
+  const [mobileOtpInput, setMobileOtpInput] = useState(["", "", "", "", "", ""]);
+  const [emailOtpInput, setEmailOtpInput] = useState(["", "", "", "", "", ""]);
+  const [otpTimer, setOtpTimer] = useState(120); // 2 minutes
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpSuccess, setOtpSuccess] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [serverDebugOtps, setServerDebugOtps] = useState(null);
+
+  const otpCountdownRef = useRef(null);
 
   // ── Fetch seat map ──────────────────────────────────────────────────────────
   const fetchSeats = useCallback(async () => {
@@ -267,29 +283,24 @@ const SeatLayoutModal = ({
 
     const seatNum = seat.seatNumber;
     
-    // Toggling selection
     if (selected.includes(seatNum)) {
       setSelected((prev) => prev.filter((s) => s !== seatNum));
-      // Remove passenger info
       setPassengerDetails((prev) => {
         const next = { ...prev };
         delete next[seatNum];
         return next;
       });
-      // Close drawer if it was open for this seat
       if (drawerSeat === seatNum) {
         setDrawerSeat(null);
       }
       return;
     }
 
-    // Limit exceeded check
     if (selected.length >= requiredSeats) {
       toast.info(`You can select a maximum of ${requiredSeats} seat(s).`);
       return;
     }
 
-    // Add seat and open drawer
     setSelected((prev) => [...prev, seatNum]);
     openPassengerDrawer(seatNum);
   };
@@ -301,8 +312,8 @@ const SeatLayoutModal = ({
       age: existing.age || "",
       gender: existing.gender || "Male",
       phone: existing.phone || "",
+      email: existing.email || "",
       emergencyContact: existing.emergencyContact || "",
-      seatPreference: existing.seatPreference || "Window",
     });
     setDrawerSeat(seatNum);
   };
@@ -316,6 +327,18 @@ const SeatLayoutModal = ({
     }
     if (!formData.age) {
       toast.error("Passenger Age is required");
+      return;
+    }
+    if (!formData.phone.trim()) {
+      toast.error("Passenger Phone is required");
+      return;
+    }
+    if (!formData.email.trim()) {
+      toast.error("Passenger Email is required");
+      return;
+    }
+    if (!formData.emergencyContact.trim()) {
+      toast.error("Emergency Contact is required");
       return;
     }
 
@@ -332,13 +355,121 @@ const SeatLayoutModal = ({
     toast.success(`Details for Seat ${drawerSeat} saved!`);
   };
 
-  // ── Confirm Booking & Reservation API Call ─────────────────────────────────
+  // ── OTP Delivery & Timer Helpers ──────────────────────────────────────────
+  const handleSendOtp = async (passengersList) => {
+    setOtpSending(true);
+    setOtpError("");
+    try {
+      const firstPassenger = passengersList[0];
+      const email = firstPassenger?.email;
+      const phone = firstPassenger?.phone;
+      
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("payment/send-booking-otp"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ email, phone })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSent(true);
+        setOtpTimer(120);
+        if (data.debugOtp) {
+          setServerDebugOtps(data.debugOtp);
+        }
+        startOtpTimer();
+        toast.success("Verification codes sent successfully!");
+      } else {
+        setOtpError(data.message || "Failed to send verification codes.");
+      }
+    } catch (err) {
+      setOtpError("Network error sending OTPs.");
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const startOtpTimer = () => {
+    if (otpCountdownRef.current) clearInterval(otpCountdownRef.current);
+    otpCountdownRef.current = setInterval(() => {
+      setOtpTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(otpCountdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleVerifyOtp = async () => {
+    setOtpVerifying(true);
+    setOtpError("");
+    
+    const emailOtpStr = emailOtpInput.join("");
+    const mobileOtpStr = mobileOtpInput.join("");
+    
+    if (emailOtpStr.length < 6 || mobileOtpStr.length < 6) {
+      setOtpError("Please enter all 6 digits for both OTPs.");
+      setOtpVerifying(false);
+      return;
+    }
+    
+    try {
+      const firstPassenger = selected.map((seatNum) => ({
+        ...passengerDetails[seatNum]
+      }))[0];
+      const email = firstPassenger?.email;
+      const phone = firstPassenger?.phone;
+      
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("payment/verify-booking-otp"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email,
+          phone,
+          emailOtp: emailOtpStr,
+          mobileOtp: mobileOtpStr
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSuccess(true);
+        setTimeout(() => {
+          setShowOtpVerification(false);
+          // Proceed to payments trigger on parent callback
+          const passengersList = selected.map((seatNum) => ({
+            ...passengerDetails[seatNum],
+            seatNumber: seatNum,
+          }));
+          onConfirm(selected, passengersList);
+        }, 1500);
+      } else {
+        setOtpError(data.message || "Invalid OTPs. Please try again.");
+      }
+    } catch (err) {
+      setOtpError("Network error verifying OTPs.");
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => clearInterval(otpCountdownRef.current);
+  }, []);
+
+  // ── Confirm Booking & Seat Reservation ─────────────────────────────────────
   const handleConfirm = async () => {
-    // Check if passenger details are filled for all selected seats
     const missing = selected.filter((seatNum) => !passengerDetails[seatNum]);
     if (missing.length > 0) {
       toast.error(`Please fill passenger details for seat(s): ${missing.join(", ")}`);
-      // Open drawer for the first missing seat
       openPassengerDrawer(missing[0]);
       return;
     }
@@ -347,7 +478,6 @@ const SeatLayoutModal = ({
     const token = localStorage.getItem("token");
     const failedSeats = [];
 
-    // Call seats/reserve endpoint sequentially
     for (const seatNumber of selected) {
       try {
         const res = await fetch(getApiUrl("seats/reserve"), {
@@ -381,13 +511,14 @@ const SeatLayoutModal = ({
       return;
     }
 
-    // Format list of passengers for onConfirm callback
     const passengersList = selected.map((seatNum) => ({
       ...passengerDetails[seatNum],
       seatNumber: seatNum,
     }));
 
-    onConfirm(selected, passengersList);
+    // Switch to OTP step screen overlay
+    setShowOtpVerification(true);
+    handleSendOtp(passengersList);
   };
 
   // ── Fare calculations ──────────────────────────────────────────────────────
@@ -398,7 +529,6 @@ const SeatLayoutModal = ({
   const fareConvenience = numSelected > 0 ? 150 : 0;
   const fareTotal = fareSubtotal + fareTax + fareConvenience;
 
-  // Build rows for rendering
   const seatsByRow = layout.rows.reduce((acc, row) => {
     acc[row] = seats.filter((s) => s.row === row).sort((a, b) => a.col - b.col);
     return acc;
@@ -425,86 +555,248 @@ const SeatLayoutModal = ({
         className="relative w-full max-w-4xl h-full md:h-[88vh] bg-slate-900 border border-slate-800 text-white rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col md:flex-row overflow-hidden"
       >
         
+        {/* OTP Verification Overlay */}
+        <AnimatePresence>
+          {showOtpVerification && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-955/95 backdrop-blur-md p-6"
+            >
+              <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 relative">
+                
+                <button
+                  type="button"
+                  onClick={() => setShowOtpVerification(false)}
+                  className="absolute top-4 right-4 text-slate-450 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto text-teal-400">
+                    <ShieldCheck size={22} className="animate-pulse" />
+                  </div>
+                  <h3 className="text-base font-black text-white">Security Verification</h3>
+                  <p className="text-xs text-slate-400">
+                    Verify contact details to secure booking transaction.
+                  </p>
+                </div>
+
+                {otpSuccess ? (
+                  <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-3xl">
+                      ✓
+                    </div>
+                    <p className="text-sm font-black text-emerald-400">Verifications Successful!</p>
+                    <p className="text-[10px] text-slate-505 text-center">Redirecting to payment gateway...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    
+                    {/* Mobile OTP */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-405 uppercase tracking-widest">
+                        Mobile Verification Code
+                      </label>
+                      <div className="flex gap-2 justify-center">
+                        {mobileOtpInput.map((val, idx) => (
+                          <input
+                            key={`mobile-${idx}`}
+                            id={`mobile-input-${idx}`}
+                            type="text"
+                            maxLength="1"
+                            pattern="[0-9]*"
+                            inputMode="numeric"
+                            value={val}
+                            onChange={(e) => {
+                              const newOTP = [...mobileOtpInput];
+                              newOTP[idx] = e.target.value;
+                              setMobileOtpInput(newOTP);
+                              if (e.target.value && idx < 5) {
+                                document.getElementById(`mobile-input-${idx + 1}`)?.focus();
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Backspace" && !mobileOtpInput[idx] && idx > 0) {
+                                document.getElementById(`mobile-input-${idx - 1}`)?.focus();
+                              }
+                            }}
+                            className="w-10 h-12 rounded-xl border border-slate-800 bg-slate-950 text-center font-bold text-base text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400"
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Email OTP */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-405 uppercase tracking-widest">
+                        Email Verification Code
+                      </label>
+                      <div className="flex gap-2 justify-center">
+                        {emailOtpInput.map((val, idx) => (
+                          <input
+                            key={`email-${idx}`}
+                            id={`email-input-${idx}`}
+                            type="text"
+                            maxLength="1"
+                            pattern="[0-9]*"
+                            inputMode="numeric"
+                            value={val}
+                            onChange={(e) => {
+                              const newOTP = [...emailOtpInput];
+                              newOTP[idx] = e.target.value;
+                              setEmailOtpInput(newOTP);
+                              if (e.target.value && idx < 5) {
+                                document.getElementById(`email-input-${idx + 1}`)?.focus();
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Backspace" && !emailOtpInput[idx] && idx > 0) {
+                                document.getElementById(`email-input-${idx - 1}`)?.focus();
+                              }
+                            }}
+                            className="w-10 h-12 rounded-xl border border-slate-800 bg-slate-955 text-center font-bold text-base text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400"
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Debug Fill */}
+                    {serverDebugOtps && (
+                      <div className="p-2 bg-slate-955 border border-slate-800 rounded-xl text-[9px] text-teal-400 font-mono text-center flex items-center justify-center gap-1.5">
+                        <span>Fill: SMS: <strong>{serverDebugOtps.mobileOtp}</strong> | Mail: <strong>{serverDebugOtps.emailOtp}</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMobileOtpInput(serverDebugOtps.mobileOtp.split(""));
+                            setEmailOtpInput(serverDebugOtps.emailOtp.split(""));
+                          }}
+                          className="px-2 py-0.5 bg-teal-500 text-slate-950 font-black rounded uppercase text-[8px]"
+                        >
+                          Auto Fill
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Error display */}
+                    {otpError && (
+                      <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-455 text-xs font-bold text-center">
+                        {otpError}
+                      </div>
+                    )}
+
+                    {/* Timer & Resend */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400 font-semibold">
+                        {otpTimer > 0 ? `Resend code in ${otpTimer}s` : "Didn't receive codes?"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const passengersList = selected.map((seatNum) => ({
+                            ...passengerDetails[seatNum],
+                            seatNumber: seatNum,
+                          }));
+                          handleSendOtp(passengersList);
+                        }}
+                        disabled={otpTimer > 0 || otpSending}
+                        className="text-teal-400 hover:text-teal-300 font-black disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {otpSending ? "Sending..." : "Resend OTP"}
+                      </button>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleVerifyOtp}
+                        disabled={otpVerifying}
+                        className="w-full py-4 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-teal-500/20 active:scale-98 transition-all flex items-center justify-center gap-2"
+                      >
+                        {otpVerifying ? <Loader2 size={13} className="animate-spin" /> : <Check size={14} />}
+                        Verify & Continue To Payment
+                      </button>
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Left Side: Seat Layout Grid */}
         <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
           
-          {/* Header */}
-          <div className="sticky top-0 z-25 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-6 py-4.5 flex items-center justify-between">
+          {/* Layout Header */}
+          <div className="px-6 py-5 border-b border-slate-850 flex items-center justify-between shrink-0">
             <div>
-              <h2 className="text-base font-black flex items-center gap-2 text-white">
-                <Bus size={18} className="text-teal-400" />
-                Select Passenger Seats
+              <h2 className="text-sm font-black flex items-center gap-2">
+                <Bus size={16} className="text-teal-400" />
+                Select Seats — {trip.title || "Bus"}
               </h2>
-              <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider font-bold">
-                Select {requiredSeats} seat{requiredSeats > 1 ? "s" : ""} · {trip.title}
-              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Please select exactly {requiredSeats} seat(s) on the bus grid.</p>
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-450 hover:text-white"
             >
               <X size={16} />
             </button>
           </div>
 
-          <div className="flex-1 p-5 space-y-5 overflow-y-auto">
-            {/* Legend Banner */}
-            <div className="flex flex-wrap gap-x-4 gap-y-2 bg-slate-955/40 border border-slate-800/80 rounded-2xl p-3 justify-center">
-              {[
-                { color: "bg-slate-800 border-slate-700", label: "Available" },
-                { color: "bg-gradient-to-r from-teal-400 to-cyan-500 border-teal-500", label: "Selected" },
-                { color: "bg-sky-955/30 border-sky-500/60", label: "Booked (M)" },
-                { color: "bg-pink-955/30 border-pink-500/50", label: "Booked (F)" },
-                { color: "bg-amber-955/30 border-amber-500/50", label: "Reserved" },
-              ].map((l) => (
-                <div key={l.label} className="flex items-center gap-2">
-                  <div className={`w-4 h-4 rounded border ${l.color}`} />
-                  <span className="text-[10px] text-slate-400 font-bold">{l.label}</span>
+          <div className="p-6 flex-1 space-y-6">
+            
+            {/* Color Legend */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 max-w-xl mx-auto bg-slate-950/40 p-4 border border-slate-850 rounded-2xl">
+              {Object.entries(SEAT_STYLES).map(([key, style]) => (
+                <div key={key} className="flex items-center gap-2 text-[10px] font-bold text-slate-350">
+                  <div className={`w-3.5 h-3.5 rounded border ${style.bg.split(" ")[0]} ${style.bg.split(" ")[1] || ""}`} />
+                  <span>{style.label}</span>
                 </div>
               ))}
             </div>
 
-            {/* Error banner */}
-            {error && (
-              <div className="flex items-start gap-2.5 p-3.5 bg-rose-500/10 rounded-2xl border border-rose-500/20 text-rose-400 text-xs font-bold animate-pulse">
-                <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Bus layout map panel */}
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 gap-3">
-                <Loader2 className="w-9 h-9 text-teal-400 animate-spin" />
-                <span className="text-xs text-slate-400 font-bold tracking-wider">Configuring bus seating matrix...</span>
+                <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
+                <span className="text-xs text-slate-405 font-bold">Configuring bus seating matrix...</span>
+              </div>
+            ) : error ? (
+              <div className="max-w-md mx-auto p-4 bg-rose-500/10 border border-rose-500/20 text-rose-455 text-xs rounded-2xl flex items-start gap-2.5">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <span>{error}</span>
               </div>
             ) : (
-              <div className="bg-slate-955/20 rounded-3xl border border-slate-850/90 p-5 max-w-sm mx-auto shadow-inner">
+              /* Bus Layout */
+              <div className="max-w-sm mx-auto bg-slate-955 border border-slate-850 rounded-3xl p-5 shadow-inner relative">
                 
-                {/* Cabin Head */}
-                <div className="flex items-center justify-between mb-5 pb-4 border-b border-dashed border-slate-800">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700">
-                    <div className="w-5 h-5 rounded-full bg-slate-600 flex items-center justify-center text-[9px] font-black text-white">🎛️</div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Driver Section</span>
+                {/* Front Bumper & Driver Cabin */}
+                <div className="flex items-center justify-between pb-4 border-b border-dashed border-slate-800 mb-5 text-slate-450">
+                  <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest bg-slate-900 border border-slate-805 rounded-lg px-2.5 py-1.5">
+                    <DoorOpen size={12} className="text-teal-400" />
+                    Entry Door
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-500/20">
-                    <DoorOpen size={12} className="text-teal-400 animate-pulse" />
-                    <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest">Boarding Door</span>
+                  <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest bg-slate-900 border border-slate-805 rounded-lg px-2.5 py-1.5">
+                    <Bus size={12} className="text-slate-400" />
+                    Driver Cabin
                   </div>
                 </div>
 
-                {/* Seating Grid */}
-                <div className="space-y-2.5">
+                {/* Rows Grid */}
+                <div className="space-y-4">
                   {layout.rows.map((row) => {
                     const rowSeats = seatsByRow[row] || [];
                     const leftSeats = rowSeats.filter((s) => s.col <= 2);
                     const rightSeats = rowSeats.filter((s) => s.col > 2);
                     return (
                       <div key={row} className="flex items-center gap-2.5">
-                        {/* Row letter */}
                         <span className="w-4 text-[10px] font-black text-slate-500 text-center">{row}</span>
 
-                        {/* Left sleepers */}
                         <div className="flex gap-2">
                           {leftSeats.map((seat) => (
                             <SeatCell
@@ -518,12 +810,10 @@ const SeatLayoutModal = ({
                           ))}
                         </div>
 
-                        {/* Aisle */}
                         <div className="flex-1 flex items-center justify-center">
                           <div className="w-full border-t border-dashed border-slate-800 my-auto h-px" />
                         </div>
 
-                        {/* Right sleepers */}
                         <div className="flex gap-2">
                           {rightSeats.map((seat) => (
                             <SeatCell
@@ -537,8 +827,7 @@ const SeatLayoutModal = ({
                           ))}
                         </div>
 
-                        {/* Upper/Lower indicator */}
-                        <span className="text-[8px] font-black text-slate-600 uppercase w-3.5">
+                        <span className="text-[8px] font-black text-slate-605 uppercase w-3.5">
                           {row <= "E" ? "Lwr" : "Upr"}
                         </span>
                       </div>
@@ -548,7 +837,7 @@ const SeatLayoutModal = ({
 
                 {/* Back Rear bumper */}
                 <div className="mt-5 pt-3.5 border-t border-dashed border-slate-800 flex items-center justify-center">
-                  <div className="flex items-center gap-2 text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                  <div className="flex items-center gap-2 text-[8px] font-black text-slate-605 uppercase tracking-widest">
                     <div className="h-px w-6 bg-slate-800" />
                     Rear End
                     <div className="h-px w-6 bg-slate-800" />
@@ -557,7 +846,7 @@ const SeatLayoutModal = ({
               </div>
             )}
 
-            {/* Refresh and Info Strip */}
+            {/* Refresh Strip */}
             <div className="flex flex-col gap-2.5 max-w-sm mx-auto">
               <button
                 type="button"
@@ -632,7 +921,7 @@ const SeatLayoutModal = ({
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="absolute md:relative top-0 right-0 h-full w-full md:w-[380px] bg-slate-950/95 md:bg-slate-950 border-l border-slate-850 z-30 flex flex-col backdrop-blur-xl rounded-l-[28px]"
+              className="absolute md:relative top-0 right-0 h-full w-full md:w-[380px] bg-slate-950 md:bg-slate-950 border-l border-slate-850 z-30 flex flex-col backdrop-blur-xl rounded-l-[28px]"
             >
               {/* Drawer Header */}
               <div className="p-6 border-b border-slate-850 flex items-center justify-between">
@@ -690,16 +979,16 @@ const SeatLayoutModal = ({
                         value={formData.age}
                         onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                         placeholder="Years"
-                        className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Gender</label>
+                      <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Gender</label>
                       <select
                         value={formData.gender}
                         onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                        className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                       >
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
@@ -709,41 +998,39 @@ const SeatLayoutModal = ({
                   </div>
 
                   <div>
-                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Phone Number</label>
+                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Phone Number</label>
                     <input
                       type="tel"
                       required
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="Contact Mobile Number"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Emergency Contact</label>
+                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Email Address</label>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Enter Email Address"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 focus:shadow-[0_0_12px_rgba(20,184,166,0.15)] transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Emergency Contact</label>
                     <input
                       type="tel"
                       required
                       value={formData.emergencyContact}
                       onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
                       placeholder="Emergency Mobile Number"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Seat Berth Preference</label>
-                    <select
-                      value={formData.seatPreference}
-                      onChange={(e) => setFormData({ ...formData, seatPreference: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                    >
-                      <option value="Window">Window Seat</option>
-                      <option value="Aisle">Aisle Seat</option>
-                      <option value="Sleeper Lower">Lower Berth</option>
-                      <option value="Sleeper Upper">Upper Berth</option>
-                    </select>
                   </div>
                 </div>
 
