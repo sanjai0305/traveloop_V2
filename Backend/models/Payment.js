@@ -11,19 +11,53 @@ const paymentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    tripId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AgentTrip",
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     amount: {
       type: Number,
       required: true,
     },
     paymentMethod: {
       type: String,
-      default: "Razorpay",
+      default: "razorpay",
+    },
+    gateway: {
+      type: String,
+      default: "razorpay",
     },
     status: {
       type: String,
-      default: "Paid",
+      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
+      default: "PENDING",
+      set: v => v ? v.toUpperCase() : v
     },
     transactionId: {
+      type: String,
+      default: "",
+    },
+    orderId: {
+      type: String,
+      default: "",
+    },
+    paymentId: {
+      type: String,
+      default: "",
+    },
+    signature: {
+      type: String,
+      default: "",
+    },
+    upiReference: {
+      type: String,
+      default: "",
+    },
+    bankRRN: {
       type: String,
       default: "",
     },

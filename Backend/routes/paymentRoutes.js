@@ -341,6 +341,79 @@ router.post("/verify", protect, async (req, res) => {
   } catch (error) {
     console.error("[Razorpay Verify & Record] Error:", error);
     res.status(400).json({ success: false, message: error.message || "Payment Verification Failed" });
+// @route   POST /api/payment/generate-qr
+// @desc    Generate a dynamic UPI QR Code for booking checkout
+// @access  Private (Traveler)
+router.post("/generate-qr", protect, async (req, res) => {
+  const { bookingId, amount, tripId } = req.body;
+  const userId = req.user._id || req.user.id;
+
+  if (!bookingId || !amount) {
+    return res.status(400).json({ success: false, message: "bookingId and amount are required" });
+  }
+
+  try {
+    const { PaymentService } = await import("../services/paymentService.js");
+    
+    // Acquire a payment transaction lock (900 seconds TTL)
+    await PaymentService.lockPayment(bookingId, 900);
+
+    const qrData = await PaymentService.generateQR(bookingId, amount, tripId, userId);
+    res.status(200).json({
+      success: true,
+      ...qrData,
+    });
+  } catch (error) {
+    console.error("[QR Generation Error]:", error);
+    res.status(500).json({ success: false, message: "Failed to generate QR payment link" });
+  }
+});
+
+// @route   GET /api/payment/status/:bookingId
+// @desc    Poll checkout status for specific booking ID
+// @access  Private (Traveler)
+router.get("/status/:bookingId", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
+      ].filter(Boolean)
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      status: booking.paymentStatus, // PENDING, PAID, FAILED, REFUNDED
+      booking
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/payment/confirm-manual
+// @desc    Simulate/confirm collect or manual QR payments for testing
+// @access  Private (Traveler)
+router.post("/confirm-manual", protect, async (req, res) => {
+  const { bookingId, transactionId, upiReference, paymentMethod } = req.body;
+  if (!bookingId) {
+    return res.status(400).json({ success: false, message: "bookingId is required" });
+  }
+  try {
+    const { PaymentService } = await import("../services/paymentService.js");
+    const result = await PaymentService.confirmManualPayment(bookingId, paymentMethod || "upi_qr", transactionId, upiReference);
+    res.status(200).json({
+      success: true,
+      message: "Payment confirmed successfully",
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
