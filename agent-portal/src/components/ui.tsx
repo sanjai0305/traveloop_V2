@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import { uploadImage, validateImageFile } from "../services/firebase";
+import { uploadCompanyLogo, uploadAgentPhoto } from "../services/cloudinaryUpload";
 
 // ── GlassCard Component ──
 interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -219,9 +220,22 @@ export const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
     setUploadProgress(0);
 
     try {
-      const url = await uploadImage(file, folder, (percent) => {
-        setUploadProgress(percent);
-      });
+      let url = "";
+      if (folder === "logos") {
+        const result = await uploadCompanyLogo(file, (percent) => {
+          setUploadProgress(percent);
+        });
+        url = result.url;
+      } else if (folder === "profiles" || folder === "profileImage" || folder === "agentPhoto") {
+        const result = await uploadAgentPhoto(file, (percent) => {
+          setUploadProgress(percent);
+        });
+        url = result.url;
+      } else {
+        url = await uploadImage(file, folder, (percent) => {
+          setUploadProgress(percent);
+        });
+      }
       onChange(url);
     } catch (e: any) {
       console.error(e);
