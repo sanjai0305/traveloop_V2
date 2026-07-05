@@ -180,6 +180,20 @@ export const Trips: React.FC = () => {
 
   const isProfileCompleted = !!agent?.profileCompleted;
 
+  // ── Close editor: clears all state AND sessionStorage so the restore
+  // useEffect does NOT re-open the editor on next data refetch.
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditingTripId(null);
+    sessionStorage.removeItem("editingTripId");
+    localStorage.removeItem("traveloop_agent_trip_draft");
+    setHasDraft(false);
+    setDraftData(null);
+    setSubmitError(null);
+    setMissingFieldsAlert([]);
+    reset();
+  };
+
   const { data, isLoading } = useQuery({
     queryKey: ["my-trips"],
     queryFn: getMyTrips,
@@ -375,10 +389,7 @@ export const Trips: React.FC = () => {
     mutationFn: createTrip,
     onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      setEditorOpen(false);
-      reset();
-      setSubmitError(null);
-      setMissingFieldsAlert([]);
+      closeEditor();
       if (!isSavingDraft) {
         alert("Trip saved successfully");
         if (resData?.trip) {
@@ -405,8 +416,7 @@ export const Trips: React.FC = () => {
     mutationFn: ({ id, data }: { id: string; data: Partial<AgentTrip> }) => updateTrip(id, data),
     onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      setEditorOpen(false);
-      reset();
+      closeEditor();
       const isPub = resData?.trip?.status === "published";
       if (!isSavingDraft) {
         alert(isPub ? "Package updated successfully" : "Trip saved successfully");
@@ -426,8 +436,7 @@ export const Trips: React.FC = () => {
     mutationFn: ({ id, data }: { id: string; data: Partial<AgentTrip> }) => saveDraft(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      setEditorOpen(false);
-      reset();
+      closeEditor();
     },
   });
 
@@ -563,13 +572,17 @@ export const Trips: React.FC = () => {
     }
   }, [editorOpen]);
 
-  // Restore editor when trips data loads and sessionStorage has an editingTripId
+  // Restore editor on page refresh: fires ONCE when data first loads.
+  // Uses a ref so it only runs once, not on every refetch/invalidate.
+  const didRestoreRef = React.useRef(false);
   useEffect(() => {
+    if (didRestoreRef.current || editorOpen || !data) return;
     const savedId = sessionStorage.getItem("editingTripId");
-    if (!savedId || editorOpen || !data) return;
+    if (!savedId) return;
     const tripList = (data as any)?.trips || (Array.isArray(data) ? data : []);
     const savedTrip = tripList.find((t: any) => t._id === savedId);
     if (savedTrip) {
+      didRestoreRef.current = true;
       openEditMode(savedTrip as any);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1916,7 +1929,7 @@ export const Trips: React.FC = () => {
                         <ArrowLeft className="w-4 h-4 mr-2" /> Back
                       </Button>
                     ) : (
-                      <Button type="button" variant="outline" onClick={() => setEditorOpen(false)}>
+                      <Button type="button" variant="outline" onClick={closeEditor}>
                         Cancel
                       </Button>
                     )}
