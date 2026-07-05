@@ -41,9 +41,15 @@ jobs:
           script: |
             set -e
             echo "=== Starting Backend Deployment ==="
-            cd /home/ubuntu/traveloop_V2/Backend
-            git pull origin main
+            cd /home/ubuntu/traveloop_V2
+            echo "--- Syncing with origin/main (reset strategy) ---"
+            git fetch origin
+            git reset --hard origin/main
+            git clean -fd
+            echo "--- Installing Backend dependencies ---"
+            cd Backend
             npm install
+            echo "--- Restarting PM2 process ---"
             pm2 restart traveloop-backend --update-env || pm2 start server.js --name traveloop-backend --update-env
             pm2 save
             echo "=== Deployment Finished Successfully ==="
