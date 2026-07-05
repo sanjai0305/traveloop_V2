@@ -39,13 +39,18 @@ if (!agent) {
     phone: "9876543210",
     companyName: "Sanjai Tours & Travels",
     gstNumber: "33AABCU9603R1ZV",
+    gstNo: "33AABCU9603R1ZV",
     businessCategory: "Travel Agency",
     address: "No 12, Salem Main Road",
     city: "Salem",
     state: "Tamil Nadu",
     country: "India",
+    mobile: "9876543210",
+    dob: "1990-01-01",
     profileCompleted: true,
     emailVerified: true,
+    mobileVerified: true,
+    kycStatus: "KYC_COMPLETED",
     status: "approved",
   });
 }
