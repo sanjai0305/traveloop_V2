@@ -319,10 +319,11 @@ export const TripDetails = () => {
         theme: {
           color: "#14B8A6", // teal-500
         },
-      options.modal = {
-        ondismiss: () => {
-          toast.info("Payment cancelled.");
-          setBookingStage("confirm");
+        modal: {
+          ondismiss: () => {
+            toast.info("Payment cancelled.");
+            setBookingStage("confirm");
+          },
         },
       };
 
