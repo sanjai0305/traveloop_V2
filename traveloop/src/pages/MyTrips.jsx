@@ -631,12 +631,14 @@ const MyTrips = () => {
   // ── Unread chat subscriptions (personal trips only)
   useEffect(() => {
     if (!user || personalTrips.length === 0 || !isInitialized || !firebaseUser) return;
-    const unsubscribes = personalTrips.map(t =>
-      subscribeUnreadCount(t._id, user.id || user._id, (count) => {
-        setUnreadCounts(prev => ({ ...prev, [t._id]: count }));
-      })
-    );
-    return () => unsubscribes.forEach(u => u());
+    const unsubscribes = personalTrips
+      .filter(t => t && t._id)
+      .map(t =>
+        subscribeUnreadCount(t._id, user.id || user._id, (count) => {
+          setUnreadCounts(prev => ({ ...prev, [t._id]: count }));
+        })
+      );
+    return () => unsubscribes.forEach(u => typeof u === "function" && u());
   }, [personalTrips, user, isInitialized, firebaseUser]);
 
   // ── Update personal trip status
@@ -910,7 +912,7 @@ const MyTrips = () => {
                     </div>
                   )}
                   {visibleBooked.map((booking, i) => (
-                    <BookedPackageCard key={`${booking._id || booking.id || i}-${i}`} booking={booking} index={i} />
+                    <BookedPackageCard key={`booked-pkg-${booking._id || booking.id || i}-${i}`} booking={booking} index={i} />
                   ))}
                 </>
               )}
@@ -931,7 +933,7 @@ const MyTrips = () => {
                   )}
                   {visibleBookedPlans.map((trip, i) => (
                     <PersonalTripCard
-                      key={`${trip._id || trip.id || i}-${i}`}
+                      key={`booked-plan-${trip._id || trip.id || i}-${i}`}
                       trip={trip}
                       index={i}
                       unreadCount={unreadCounts[trip._id] || 0}
@@ -958,7 +960,7 @@ const MyTrips = () => {
                   )}
                   {visiblePersonal.map((trip, i) => (
                     <PersonalTripCard
-                      key={`${trip._id || trip.id || i}-${i}`}
+                      key={`personal-trip-${trip._id || trip.id || i}-${i}`}
                       trip={trip}
                       index={i}
                       unreadCount={unreadCounts[trip._id] || 0}

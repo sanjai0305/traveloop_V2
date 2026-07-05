@@ -284,17 +284,28 @@ export const markSeen = async (tripId, userId) => {
 
 // Subscribe to unread count
 export const subscribeUnreadCount = (tripId, userId, callback) => {
-  const docRef = doc(db, "trips", tripId, "members", userId);
-  return onSnapshot(docRef, (docSnap) => {
-    if (docSnap.exists()) {
-      callback(docSnap.data().unreadCount || 0);
-    } else {
-      callback(0);
-    }
-  }, (err) => {
-    console.error("subscribeUnreadCount error:", err);
+  if (!tripId || !userId) {
+    console.warn("[Chat Service] subscribeUnreadCount cancelled: tripId or userId is missing");
     callback(0);
-  });
+    return () => {};
+  }
+  try {
+    const docRef = doc(db, "trips", tripId, "members", userId);
+    return onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        callback(docSnap.data().unreadCount || 0);
+      } else {
+        callback(0);
+      }
+    }, (err) => {
+      console.error("subscribeUnreadCount error:", err);
+      callback(0);
+    });
+  } catch (err) {
+    console.error("[Chat Service] failed to initialize subscribeUnreadCount snapshot listener:", err);
+    callback(0);
+    return () => {};
+  }
 };
 
 // Presence: update status
