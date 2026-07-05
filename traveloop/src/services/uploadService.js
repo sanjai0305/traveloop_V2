@@ -1,122 +1,90 @@
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { storage } from "./firebase";
+import { compressImage } from "./uploadService.js";
 
 /**
- * Compresses an image file to a specified quality (0 to 1) using Canvas API.
+ * Uploads a file (with optional image compression) directly to our Cloudinary-backed backend API endpoint.
+ * Supports progress tracking and request retries.
+ * 
+ * @param {File} file - Original file (PDF or Image)
+ * @param {string} folder - Folder name on Cloudinary
+ * @param {function} onProgress - Callback receiving progress percentage (0-100)
+ * @param {number} retries - Number of retries on failure (default: 3)
  */
-export const compressImage = (file, quality = 0.7) => {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      // Non-image files (e.g. PDFs) are not compressed
-      return resolve(file);
+export const uploadFile = async (file, folder = "traveloop", onProgress, retries = 3) => {
+  let finalFile = file;
+
+  // 1. Image compression (if it's an image)
+  if (file.type.startsWith("image/")) {
+    try {
+      console.log(`[Upload Service] Compressing image file: ${file.name}`);
+      finalFile = await compressImage(file, 0.75);
+    } catch (compressErr) {
+      console.warn("[Upload Service] Image compression failed, uploading original:", compressErr);
     }
-    
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        
-        // Downscale large images (max 1200px width/height)
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
-        let width = img.width;
-        let height = img.height;
-        
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+  }
+
+  const performUpload = async (attempt) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
+      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+      xhr.open("POST", `${host}/api/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      // Progress Tracker
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            if (response.success) {
+              resolve(response);
+            } else {
+              reject(new Error(response.message || "Upload failed."));
+            }
+          } catch (e) {
+            reject(new Error("Failed to parse upload server response."));
           }
         } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
+          reject(new Error(`Server returned status: ${xhr.status}`));
         }
-        
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              return reject(new Error("Canvas blob extraction failed."));
-            }
-            const compressedFile = new File([blob], file.name, {
-              type: "image/jpeg",
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          },
-          "image/jpeg",
-          quality
-        );
       };
-      img.onerror = (err) => reject(err);
-    };
-    reader.onerror = (err) => reject(err);
-  });
-};
 
-/**
- * Uploads a file (with optional compression for images) to Firebase Storage.
- * @param {File} file - Original file
- * @param {string} path - Storage path prefix (e.g. 'logos', 'profiles', 'documents')
- * @param {function} onProgress - Callback receiving upload percentage (0 - 100)
- */
-export const uploadFileToFirebase = async (file, path, onProgress) => {
-  if (!storage) {
-    throw new Error("Firebase Storage is not initialized.");
-  }
+      xhr.onerror = () => {
+        reject(new Error("Network connection error."));
+      };
 
-  // 1. Perform image compression if it's an image
-  let finalFile = file;
-  try {
-    if (file.type.startsWith("image/")) {
-      console.log(`[Upload Service] Compressing image: ${file.name}`);
-      finalFile = await compressImage(file, 0.75);
-    }
-  } catch (compressErr) {
-    console.warn("[Upload Service] Image compression failed, uploading original file:", compressErr);
-  }
+      const formData = new FormData();
+      formData.append("file", finalFile);
+      formData.append("folder", folder);
 
-  // 2. Setup storage ref
-  const uniqueName = `${Date.now()}-${finalFile.name}`;
-  const storageRef = ref(storage, `${path}/${uniqueName}`);
+      xhr.send(formData);
+    });
+  };
 
-  // 3. Initiate resumable upload
-  const uploadTask = uploadBytesResumable(storageRef, finalFile);
-
-  return new Promise((resolve, reject) => {
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        if (onProgress) onProgress(Math.round(progress));
-      },
-      (error) => {
-        console.error("[Firebase Upload Error]:", error);
-        reject(error);
-      },
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          console.log(`[Upload Service] Upload completed. URL: ${downloadURL}`);
-          resolve(downloadURL);
-        } catch (urlErr) {
-          reject(urlErr);
-        }
+  // 2. Execute upload request with automated retry strategy
+  for (let i = 1; i <= retries; i++) {
+    try {
+      const result = await performUpload(i);
+      return result;
+    } catch (err) {
+      console.warn(`[Upload Service] Attempt ${i} failed. Reason: ${err.message}`);
+      if (i === retries) {
+        throw new Error(`Upload failed after ${retries} attempts. Reason: ${err.message}`);
       }
-    );
-  });
+      // Linear delay backoff before retry (1s, 2s, etc.)
+      await new Promise((res) => setTimeout(res, i * 1000));
+    }
+  }
 };
 
 export default {
-  compressImage,
-  uploadFileToFirebase,
+  uploadFile,
 };
+export { compressImage } from "./uploadService.js";

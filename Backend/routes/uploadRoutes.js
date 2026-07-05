@@ -3,7 +3,8 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import admin from "../config/firebaseAdmin.js";
+import protect from "../middleware/authMiddleware.js";
+import UploadService from "../services/uploadService.js";
 
 const router = express.Router();
 
@@ -28,21 +29,21 @@ const storage = multer.diskStorage({
   },
 });
 
-// File validator
+// File validator (Supports PDF and images)
 const fileFilter = (req, file, cb) => {
-  const allowedExtensions = /jpeg|jpg|png|webp|avif/;
+  const allowedExtensions = /jpeg|jpg|png|webp|pdf/;
   const ext = path.extname(file.originalname).toLowerCase();
   const mimetype = file.mimetype;
 
   console.log(`[Upload Filter] Validating file: ${file.originalname} (${mimetype})`);
 
   const isValidExt = allowedExtensions.test(ext);
-  const isValidMime = mimetype.startsWith("image/") && allowedExtensions.test(mimetype.split("/")[1]);
+  const isValidMime = (mimetype.startsWith("image/") || mimetype === "application/pdf") && allowedExtensions.test(mimetype.split("/")[1] || mimetype.split("/")[0]);
 
-  if (isValidExt && isValidMime) {
+  if (isValidExt || isValidMime) {
     cb(null, true);
   } else {
-    cb(new Error("Invalid file format. Only JPG, JPEG, PNG, WEBP, and AVIF are allowed."));
+    cb(new Error("Invalid file format. Only JPG, JPEG, PNG, WEBP, and PDF are allowed."));
   }
 };
 
@@ -50,19 +51,21 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB limit
+    fileSize: 10 * 1024 * 1024, // 10 MB limit
   },
 });
 
-// Upload route endpoint
-router.post("/", (req, res) => {
+// @route   POST /api/upload
+// @desc    Upload file to Cloudinary
+// @access  Private
+router.post("/", protect, (req, res) => {
   upload.single("file")(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       console.error("[Upload Error] Multer error:", err);
       if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
           success: false,
-          message: "File is too large. Maximum size is 5 MB.",
+          message: "File is too large. Maximum size is 10 MB.",
         });
       }
       return res.status(400).json({ success: false, message: err.message });
@@ -75,60 +78,21 @@ router.post("/", (req, res) => {
       return res.status(400).json({ success: false, message: "No file uploaded." });
     }
 
-    console.log("[Upload Service] File uploaded locally:", req.file.path);
-
-    // Try to upload to Firebase Storage
-    const bucketName = "traveloop-version-2-83bd2.appspot.com";
     try {
-      if (admin.apps.length) {
-        console.log(`[Firebase Admin] Uploading to bucket: ${bucketName}...`);
-        const bucket = admin.storage().bucket(bucketName);
-        const destination = `trips/covers/${Date.now()}_${req.file.filename}`;
-        
-        await bucket.upload(req.file.path, {
-          destination,
-          metadata: {
-            contentType: req.file.mimetype,
-          },
-        });
+      const folderName = req.body.folder || "traveloop";
+      const result = await UploadService.uploadToCloudinary(req.file.path, folderName);
 
-        // Try to make file public
-        try {
-          await bucket.file(destination).makePublic();
-        } catch (pubErr) {
-          console.warn("[Firebase Admin] Could not make file public (rules may apply):", pubErr.message);
-        }
-
-        const downloadURL = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(destination)}?alt=media`;
-        console.log("[Firebase Admin Upload Success] URL:", downloadURL);
-
-        // Delete local temp file
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (unlinkErr) {
-          console.error("Failed to delete local temp file:", unlinkErr);
-        }
-
-        return res.status(200).json({
-          success: true,
-          url: downloadURL,
-          filename: req.file.filename,
-        });
-      } else {
-        throw new Error("Firebase Admin SDK not initialized.");
-      }
-    } catch (firebaseErr) {
-      console.warn("[Firebase Admin Upload Failed] Falling back to local storage URL:", firebaseErr);
-      
-      // Fallback local serving
-      const host = req.get("host");
-      const protocol = req.protocol;
-      const downloadURL = `${protocol}://${host}/uploads/${req.file.filename}`;
-      
       return res.status(200).json({
         success: true,
-        url: downloadURL,
+        url: result.secure_url,
+        public_id: result.public_id,
         filename: req.file.filename,
+      });
+    } catch (uploadErr) {
+      console.error("[Cloudinary Upload Failed]:", uploadErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload file to Cloudinary storage.",
       });
     }
   });
