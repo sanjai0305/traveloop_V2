@@ -49,11 +49,17 @@ export default function Scanner() {
       const code = err.response?.data?.code;
       const backendMessage = err.response?.data?.message;
       const msgs: Record<string, string> = {
-        INVALID_QR:      '❌ Invalid or tampered QR code.',
-        ALREADY_BOARDED: backendMessage || '✅ Passenger already boarded.',
-        WRONG_DRIVER:    '⚠️ This QR is for a different driver/trip.',
-        WRONG_DATE:      '📅 QR is not valid for today.',
-        BOOKING_NOT_FOUND:'🔍 Booking not found.',
+        INVALID_QR:        '❌ Invalid or tampered QR code.',
+        QR_TAMPERED:       '❌ QR Tampered.',
+        QR_EXPIRED:        '⏰ QR Expired.',
+        BOOKING_CANCELLED: '🚫 Booking Cancelled.',
+        PAYMENT_PENDING:   '💳 Payment Pending.',
+        SEAT_NOT_ASSIGNED: '💺 Seat Not Assigned.',
+        BOARDING_LOCKED:   '🔒 Boarding Locked.',
+        ALREADY_BOARDED:   '✅ Passenger Already Boarded.',
+        WRONG_DRIVER:      '⚠️ This QR is for a different driver/trip.',
+        WRONG_DATE:        '📅 QR is not valid for today.',
+        BOOKING_NOT_FOUND: '🔍 Booking Not Found.',
       };
       setError(msgs[code] || backendMessage || 'Scan failed. Try again.');
     } finally { setLoading(false); }

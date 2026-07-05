@@ -505,6 +505,11 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
   }
 });
 
+const generateQrSignature = (payload, secret) => {
+  const dataToSign = `${payload.bookingId}|${payload.tripId}|${payload.passengerId}|${payload.seatNumber}|${payload.issuedAt}|${payload.expiresAt}`;
+  return crypto.createHmac("sha256", secret).update(dataToSign).digest("hex");
+};
+
 // POST /api/driver/scan-boarding and POST /api/driver/scan
 const scanBoardingHandler = async (req, res) => {
   try {
@@ -513,48 +518,100 @@ const scanBoardingHandler = async (req, res) => {
       return res.status(400).json({ success: false, message: "qrToken required" });
     }
 
-    const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET;
+    const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET || "super_secret_jwt_key_for_local_development_traveloop";
     let decoded;
     try {
-      decoded = jwt.verify(qrToken, qrSecret);
+      const decodedText = Buffer.from(qrToken, "base64").toString("utf-8");
+      decoded = JSON.parse(decodedText);
     } catch (err) {
-      return res.status(400).json({ success: false, code: "INVALID_QR", message: "Invalid or expired QR code" });
+      console.log("QR decoding failed:", err.message);
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "QR Tampered" });
+    }
+
+    const { signature, ...payloadWithoutSignature } = decoded;
+    const expectedSignature = generateQrSignature(payloadWithoutSignature, qrSecret);
+    const valid = signature === expectedSignature;
+
+    console.log("Decoded QR", decoded);
+    console.log("Signature Valid", valid);
+    console.log("Expiry", decoded.expiresAt);
+    console.log("Current Time", Date.now());
+
+    // Validate Signature
+    if (!valid) {
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "QR Tampered" });
+    }
+
+    // Validate Expiry
+    if (Date.now() > decoded.expiresAt) {
+      return res.status(400).json({ success: false, code: "QR_EXPIRED", message: "QR Expired" });
     }
 
     if (!decoded.bookingId) {
-      return res.status(400).json({ success: false, code: "INVALID_QR", message: "Invalid token payload" });
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "QR Tampered" });
     }
 
     const booking = await Booking.findById(decoded.bookingId)
       .populate("userId")
       .populate("tripId");
 
+    console.log("Booking", booking);
+    if (booking) {
+      console.log("Boarding Status", booking.boardingStatus);
+    }
+
+    // Booking Lookup validation
     if (!booking) {
-      return res.status(404).json({ success: false, code: "BOOKING_NOT_FOUND", message: "Booking not found" });
-    }
-
-    // Verify paymentStatus
-    const pStatus = (booking.paymentStatus || "").toUpperCase();
-    if (pStatus !== "PAID" && pStatus !== "CONFIRMED") {
-      return res.status(400).json({
-        success: false,
-        code: "PAYMENT_PENDING",
-        message: "Payment not completed"
-      });
-    }
-
-    // Check if already boarded
-    const bStatus = (booking.boardingStatus || "").toUpperCase();
-    if (bStatus === "BOARDED" || bStatus === "BOARDED") {
-      return res.status(400).json({
-        success: false,
-        code: "ALREADY_BOARDED",
-        message: `Passenger already boarded\nTime: ${booking.boardedAt ? new Date(booking.boardedAt).toLocaleTimeString("en-IN") : "N/A"}\nSeat: ${booking.assignedSeat || booking.seatNumber || "N/A"}`
-      });
+      return res.status(404).json({ success: false, code: "BOOKING_NOT_FOUND", message: "Booking Not Found" });
     }
 
     const trip = booking.tripId;
     const user = booking.userId;
+
+    // Check cancelled status
+    const bStatusLower = (booking.bookingStatus || booking.status || "").toLowerCase();
+    const pStatusLower = (booking.paymentStatus || "").toLowerCase();
+    if (bStatusLower === "cancelled" || pStatusLower === "cancelled") {
+      return res.status(400).json({ success: false, code: "BOOKING_CANCELLED", message: "Booking Cancelled" });
+    }
+
+    // Check paymentStatus
+    if (pStatusLower !== "paid" && pStatusLower !== "confirmed") {
+      return res.status(400).json({
+        success: false,
+        code: "PAYMENT_PENDING",
+        message: "Payment Pending"
+      });
+    }
+
+    // Check if already boarded
+    const bStatusUpper = (booking.boardingStatus || "").toUpperCase();
+    if (bStatusUpper === "BOARDED") {
+      return res.status(400).json({
+        success: false,
+        code: "ALREADY_BOARDED",
+        message: "Passenger Already Boarded"
+      });
+    }
+
+    // Verify seat exists/assigned
+    const seat = decoded.seatNumber || booking.assignedSeat || booking.seatNumbers?.[0];
+    if (!seat || seat === "Waiting Assignment") {
+      return res.status(400).json({
+        success: false,
+        code: "SEAT_NOT_ASSIGNED",
+        message: "Seat Not Assigned"
+      });
+    }
+
+    // Check boardingWindow / lock
+    if (!booking.qrUnlocked) {
+      return res.status(400).json({
+        success: false,
+        code: "BOARDING_LOCKED",
+        message: "Boarding Locked"
+      });
+    }
 
     res.json({
       success: true,

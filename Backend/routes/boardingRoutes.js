@@ -9,6 +9,11 @@ import { triggerNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
 
+const generateQrSignature = (payload, secret) => {
+  const dataToSign = `${payload.bookingId}|${payload.tripId}|${payload.passengerId}|${payload.seatNumber}|${payload.issuedAt}|${payload.expiresAt}`;
+  return crypto.createHmac("sha256", secret).update(dataToSign).digest("hex");
+};
+
 // POST /api/boarding/generate-qr
 router.post("/generate-qr", protect, async (req, res) => {
   try {
@@ -76,23 +81,27 @@ router.post("/generate-qr", protect, async (req, res) => {
       });
     }
 
-    const tripEndOfDay = new Date(trip.startDate + "T23:59:59");
-    const expiry = Math.floor(tripEndOfDay.getTime() / 1000);
+    const tripDate = trip.startDate ? new Date(trip.startDate) : new Date();
+    tripDate.setHours(23, 59, 59, 999);
+    const expiryTime = tripDate.getTime();
 
-    const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET;
-    const qrToken = jwt.sign(
-      {
-        bookingId: booking._id.toString(),
-        tripId: trip._id.toString(),
-        seatNumber: booking.assignedSeat || booking.seatNumber || "Waiting Assignment",
-        issuedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-      },
-      qrSecret,
-      { expiresIn: "2h" }
-    );
+    const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET || "super_secret_jwt_key_for_local_development_traveloop";
 
-    console.log("Generated QR Token:", qrToken);
+    const payload = {
+      bookingId: booking._id.toString(),
+      tripId: trip._id.toString(),
+      passengerId: booking.userId ? booking.userId.toString() : "USR_001",
+      seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "Waiting Assignment",
+      issuedAt: Date.now(),
+      expiresAt: expiryTime,
+    };
+
+    const signature = generateQrSignature(payload, qrSecret);
+    const fullPayload = { ...payload, signature };
+
+    console.log("Generated QR Payload", fullPayload);
+
+    const qrToken = Buffer.from(JSON.stringify(fullPayload)).toString("base64");
 
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrToken)}`;
 
@@ -128,7 +137,7 @@ router.post("/generate-qr", protect, async (req, res) => {
       success: true,
       qrImage,
       token: qrToken,
-      expiresAt: new Date(expiry * 1000),
+      expiresAt: new Date(expiryTime),
       boardingId: resultBooking._id.toString(),
       booking: resultBooking,
     });
