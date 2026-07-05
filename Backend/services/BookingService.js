@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import AgentTrip from "../models/AgentTrip.js";
@@ -240,7 +241,7 @@ export class BookingService {
       paymentStatus,
       status: paymentStatus,
       bookingStatus,
-      boardingStatus: "Pending",
+      boardingStatus: "LOCKED",
       paymentVerified,
       paymentDate,
       assignedSeat: seatNumbers[0] || "",
@@ -257,7 +258,7 @@ export class BookingService {
       gatewayFee,
       agentAmount,
       pickupLocation,
-      token: "",
+      token: crypto.randomUUID(),
     });
 
     // 6. Update AgentTrip seat counters & occupancy recalculation

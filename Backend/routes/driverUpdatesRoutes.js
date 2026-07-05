@@ -125,7 +125,7 @@ router.delete("/:tripId/:updateId", protectDriver, async (req, res) => {
     const update = await DriverUpdate.findOneAndUpdate(
       { _id: updateId, trip: tripId, driver: driverId },
       { isDeleted: true },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!update) {

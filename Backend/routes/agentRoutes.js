@@ -399,7 +399,7 @@ router.put("/profile", protectAgent, async (req, res) => {
       updatedAgent = await Agent.findByIdAndUpdate(
         req.agent._id,
         { $set: fieldsToUpdate },
-        { new: true, runValidators: true }
+        { returnDocument: "after", runValidators: true }
       );
     } else {
       // In-Memory Fallback
@@ -842,19 +842,203 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
           busNumber: req.body.busNumber || trip.busNumber,
           driverPhoto: req.body.driverPhoto || trip.driverPhoto,
           emergencyContact: req.body.emergencyContact || trip.emergencyContact
-        }, req.agent._id);
-        req.body.driver = driverId;
-        req.body.driverId = driverId;
-      }
-
-      trip = await AgentTrip.findByIdAndUpdate(req.params.id, req.body, {
-        new: true,
-        runValidators: true,
+message: "Database validation error",
+        missingFields: mongoFields,
       });
+    }
+    res.status(500).json({ success: false, message: "Server Error creating trip", reason: error.message });
+  }
+});
+
+
+// @route   GET /api/trips/my-trips
+// @desc    Get all trips managed by logged-in agent
+router.get("/trips/my-trips", protectAgent, async (req, res) => {
+  console.log("Authenticated Agent:", req.agent);
+  try {
+    let trips = [];
+
+    if (isDbConnected()) {
+      trips = await AgentTrip.find({ agentId: req.agent._id, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
+    } else {
+      trips = Array.from(fallbackTrips.values())
+        .filter(t => (t.agentId || t.agent || "").toString() === req.agent._id.toString() && t.isDeleted !== true)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    console.log(trips.map(t => t._id));
+    console.log("Trips found:", trips.length);
+
+    res.set('Cache-Control', 'no-store');
+    res.status(200).json({
+      success: true,
+      trips,
+    });
+  } catch (error) {
+    console.error("Get trips error:", error);
+    res.status(500).json({ success: false, message: "Server Error retrieving trips list" });
+  }
+});
+
+// @route   GET /api/agent/trip/:id or /api/agent/trips/:id
+// @desc    Get trip details by ID
+router.get(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
+  try {
+    let trip;
+
+    if (isDbConnected()) {
+      const data = await AgentTrip.findById(req.params.id).populate("driverId");
+      trip = data ? { ...data.toObject(), _id: data._id, driver: data.driverId } : null;
     } else {
       trip = fallbackTrips.get(req.params.id);
+    }
+
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    // Deconstruct fields to construct clean response sub-objects
+    const driver = trip.driver || {
+      name: trip.driverName || "Not Assigned",
+      phone: trip.driverPhone || "N/A",
+      alternateMobile: trip.driverAlternateMobile || "",
+      licenseNumber: trip.driverLicenseNumber || "",
+      experience: trip.driverExperience || 0,
+      photo: trip.driverPhoto || "",
+      emergencyContact: trip.emergencyContact || ""
+    };
+
+    const pricing = {
+      pricePerPerson: trip.pricePerPerson,
+      originalPrice: trip.originalPrice || 0,
+      offerPrice: trip.offerPrice || 0,
+      discountPercentage: trip.discountPercentage || 0,
+      commissionAmount: trip.commissionAmount || 0,
+      refundPolicy: trip.refundPolicy || "Fully Refundable"
+    };
+
+    const vehicle = {
+      busType: trip.busType,
+      busNumber: trip.busNumber,
+      busImages: trip.busImages || [],
+      seatLayoutImage: trip.seatLayoutImage || ""
+    };
+
+    const schedule = {
+      startDate: trip.startDate,
+      endDate: trip.endDate,
+      departureTime: trip.departureTime,
+      arrivalTime: trip.arrivalTime,
+      reportingTime: trip.reportingTime,
+      boardingStatus: trip.boardingStatus,
+      boardingOpenedAt: trip.boardingOpenedAt,
+      boardingClosedAt: trip.boardingClosedAt
+    };
+
+    const stats = {
+      totalSeats: trip.totalSeats,
+      availableSeats: trip.availableSeats,
+      bookedSeats: trip.bookedSeats || 0,
+      maleCount: trip.maleCount || 0,
+      femaleCount: trip.femaleCount || 0,
+      childrenCount: trip.childrenCount || 0,
+      boardedCount: trip.boardedCount || 0
+    };
+
+    res.status(200).json({
+      success: true,
+      trip,
+      driver,
+      pricing,
+      vehicle,
+      schedule,
+      stats
+    });
+  } catch (error) {
+    console.error("Get trip details error:", error);
+    res.status(500).json({ success: false, message: "Server Error retrieving trip details" });
+  }
+});
+
+// @route   PUT /api/agent/trip/:id or /api/agent/trips/:id
+// @desc    Update trip by ID
+router.put(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
+  try {
+    let trip;
+
+    if (isDbConnected()) {
+      trip = await AgentTrip.findById(req.params.id);
       if (!trip) {
         return res.status(404).json({ success: false, message: "Trip not found" });
+      }
+      
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
+      if (!ownerId) {
+        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      }
+
+      if (ownerId.toString() !== req.agent._id.toString()) {
+        return res.status(403).json({ success: false, message: "Unauthorized edit request" });
+      }
+
+      // 1. Check bookings count/capacity lock rules
+      const currentBooked = trip.bookedSeats || 0;
+      if (currentBooked > 0) {
+        // Disallow editing startDate, endDate
+        if (req.body.startDate !== undefined && req.body.startDate !== trip.startDate) {
+          return res.status(400).json({ success: false, message: "Cannot edit start date after bookings have been made." });
+        }
+        if (req.body.endDate !== undefined && req.body.endDate !== trip.endDate) {
+          return res.status(400).json({ success: false, message: "Cannot edit end date after bookings have been made." });
+        }
+        // Disallow deleting selected activities
+        if (req.body.selectedActivities !== undefined) {
+          const currentActs = trip.selectedActivities || [];
+          const newActs = req.body.selectedActivities || [];
+          const missingAct = currentActs.find(a => !newActs.includes(a));
+          if (missingAct) {
+            return res.status(400).json({ success: false, message: `Cannot remove booked activity: ${missingAct}` });
+          }
+        }
+      }
+
+      // 2. Validate bookingDeadline
+      if (req.body.bookingDeadline || req.body.startDate) {
+        const startDate = req.body.startDate || trip.startDate;
+        const resolvedBookingDeadline = handleBookingDeadline(startDate, req.body.bookingDeadline);
+        if (!validateBookingDeadline(startDate, resolvedBookingDeadline)) {
+          return res.status(400).json({
+            success: false,
+            message: "Booking deadline must be strictly before start date."
+          });
+        }
+        req.body.bookingDeadline = resolvedBookingDeadline;
+      }
+
+      // 3. Enforce capacity protection
+      if (req.body.totalSeats !== undefined) {
+        const totalSeatsVal = Number(req.body.totalSeats);
+        if (currentBooked > 0 && totalSeatsVal < currentBooked) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot reduce total seats below currently booked seats: ${currentBooked}`
+          });
+        }
+        // Recalculate availableSeats
+        req.body.availableSeats = totalSeatsVal - currentBooked;
+      }
+
+      if (req.body.driverGmail) {
+        const driverId = await handleDriverCreation({
+          driverGmail: req.body.driverGmail,
+          driverName: req.body.driverName || trip.driverName,
+          driverPhone: req.body.driverPhone || trip.driverPhone,
+          driverLicenseNumber: req.body.driverLicenseNumber || trip.driverLicenseNumber,
+          busNumber: req.body.busNumber || trip.busNumber,
+          driverPhoto: req.body.driverPhoto || trip.driverPhoto,
+          emergencyContact: req.body.emergencyContact || trip.emergencyContact
+        }, req.agent._id);
+        req.body.driver = driverId;
       }
 
       const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
@@ -1206,7 +1390,7 @@ router.put("/bookings/:id/status", protectAgent, async (req, res) => {
       const updatedBooking = await Booking.findByIdAndUpdate(
         data._id,
         { paymentStatus },
-        { new: true }
+        { returnDocument: "after" }
       );
 
       const previousStatus = data.paymentStatus;
@@ -1697,7 +1881,7 @@ router.patch(["/trips/:id/draft", "/trips/draft"], protectAgent, async (req, res
         ...req.body,
         status: "draft",
         publishStatus: "draft",
-      }, { new: true });
+      }, { returnDocument: "after" });
     } else {
       trip = fallbackTrips.get(id);
       if (!trip) {

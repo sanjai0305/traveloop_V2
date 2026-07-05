@@ -105,7 +105,7 @@ router.post("/generate-qr", protect, async (req, res) => {
     const updatedBooking = await Booking.findByIdAndUpdate(
       bookingId,
       updatePayload,
-      { new: true }
+      { returnDocument: "after" }
     );
 
     const resultBooking = {

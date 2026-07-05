@@ -459,7 +459,7 @@ export const updateTrip = async (req, res) => {
         longitude,
         image,
       },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     );
 
     if (req.user && req.user.id) {
@@ -613,7 +613,7 @@ export const generateShareToken = async (req, res) => {
     const trip = await Trip.findByIdAndUpdate(
       req.params.id,
       updateFields,
-      { new: true }
+      { returnDocument: "after" }
     );
 
     if (!trip) {

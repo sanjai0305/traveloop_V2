@@ -43,7 +43,7 @@ const bookingSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED"],
+      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
       default: "PENDING",
       set: v => v ? v.toUpperCase() : v
     },
@@ -57,7 +57,7 @@ const bookingSchema = new mongoose.Schema(
     },
     boardingStatus: {
       type: String,
-      enum: ["LOCKED", "OPEN", "BOARDED", "CLOSED"],
+      enum: ["LOCKED", "OPEN", "BOARDED", "CLOSED", "NO_SHOW"],
       default: "LOCKED",
       set: v => v ? v.toUpperCase() : v
     },

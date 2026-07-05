@@ -369,7 +369,7 @@ router.post("/:bookingId/cancel", protect, async (req, res) => {
     const updatedBooking = await Booking.findByIdAndUpdate(
       bookingId,
       { paymentStatus: "Cancelled" },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     res.status(200).json({

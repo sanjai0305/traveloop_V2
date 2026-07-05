@@ -52,8 +52,17 @@ api.interceptors.response.use(
         requestUrl.includes("/agent/me") ||
         requestUrl.includes("/agent/profile");
 
-      if (!token || isAuthRoute) {
-        console.warn(`[API] 401 on auth route or no token — clearing session. URL: ${requestUrl}`);
+      const errCode = error.response?.data?.code;
+      const errMsg = error.response?.data?.message || "";
+      const isExplicitAuthFailure =
+        errCode === "AGENT_NOT_FOUND" ||
+        errCode === "USER_NOT_FOUND" ||
+        errCode === "TOKEN_EXPIRED" ||
+        errMsg.toLowerCase().includes("not authorized") ||
+        errMsg.toLowerCase().includes("expired");
+
+      if (!token || isAuthRoute || isExplicitAuthFailure) {
+        console.warn(`[API] 401 auth failure (token missing/auth route/explicit code) — clearing session. URL: ${requestUrl}`);
 
         // Soft logout via Zustand store (lazy import to avoid circular deps)
         try {

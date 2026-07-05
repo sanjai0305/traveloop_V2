@@ -108,7 +108,7 @@ export const sendMessage = async (req, res) => {
     await ChatReadStatus.findOneAndUpdate(
       { tripId, userId: req.user.id },
       { lastSeenAt: new Date() },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
 
     // Socket.io Broadcast
@@ -169,7 +169,7 @@ export const markSeen = async (req, res) => {
     await ChatReadStatus.findOneAndUpdate(
       { tripId, userId: req.user.id },
       { lastSeenAt: new Date() },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: "after" }
     );
 
     res.json({ success: true, message: "Marked as read" });

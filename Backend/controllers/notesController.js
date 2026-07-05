@@ -95,7 +95,7 @@ export const updateNote = async (req, res) => {
     const note = await Note.findByIdAndUpdate(
       id,
       { title, content, day, pinned, tags, type },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     );
 
     const userName = req.user.firstName || req.user.email;

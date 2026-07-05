@@ -567,7 +567,7 @@ export const loginUser = async (req, res) => {
     }
     user.lastLogin = updateData.lastLogin;
 
-    await User.findByIdAndUpdate(user.id, updateData, { new: true })
+    await User.findByIdAndUpdate(user.id, updateData, { returnDocument: "after" })
 
     // Sync state to Firestore
     try {
@@ -840,7 +840,7 @@ export const googleAuth = async (req, res) => {
           } : {}),
         };
         Object.assign(userRow, updateData);
-        await User.findByIdAndUpdate(userRow._id, updateData, { new: true });
+        await User.findByIdAndUpdate(userRow._id, updateData, { returnDocument: "after" });
       } else {
         const nameParts = name ? name.split(" ") : ["Google", "User"];
         const firstName = nameParts[0] || "Google";
@@ -924,7 +924,7 @@ export const acceptTerms = async (req, res) => {
       termsVersion,
     };
 
-    await User.findByIdAndUpdate(userRow.id, updateData, { new: true })
+    await User.findByIdAndUpdate(userRow.id, updateData, { returnDocument: "after" })
 
     res.status(200).json({
       success: true,

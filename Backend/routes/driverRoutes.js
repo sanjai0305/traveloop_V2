@@ -283,7 +283,7 @@ router.post("/trips/:tripId/open-boarding", protectDriver, async (req, res) => {
         boardingOpenedAt: now,
         boardingClosesAt: closesAt,
       },
-      { new: true }
+      { returnDocument: "after" }
     );
 
     const io = req.app.get("io");
@@ -609,7 +609,7 @@ router.post("/no-show/:bookingId", protectDriver, async (req, res) => {
     const booking = await Booking.findByIdAndUpdate(
       bookingId,
       { boardingStatus: "no_show" },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!booking) {
       return res.status(404).json({ success: false, message: "Booking not found" });

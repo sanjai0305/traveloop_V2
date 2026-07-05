@@ -211,7 +211,7 @@ export const updateItinerary = async (req, res) => {
     if (category !== undefined) updateFields.category = category;
     if (budget !== undefined) updateFields.budget = Number(budget) || 0;
 
-    const updatedRow = await Itinerary.findByIdAndUpdate(id, updateFields, { new: true });
+    const updatedRow = await Itinerary.findByIdAndUpdate(id, updateFields, { returnDocument: "after" });
 
     const itinerary = {
       ...updatedRow.toObject(),

@@ -51,6 +51,7 @@ const protectAgent = async (req, res, next) => {
         return res.status(401).json({
           success: false,
           message: "Agent account not found",
+          code: "AGENT_NOT_FOUND",
         });
       }
 
