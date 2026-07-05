@@ -308,17 +308,17 @@ export const Bookings: React.FC = () => {
 
     const boardedCount = manifestData?.tripStats?.boardedCount !== undefined
       ? manifestData.tripStats.boardedCount
-      : activeBookings.filter((b) => b.boardingStatus === "boarded").length;
+      : activeBookings.filter((b) => (b.boardingStatus || "").toUpperCase() === "BOARDED").length;
 
     const pendingBoardingCount = manifestData?.tripStats?.pendingBoardingCount !== undefined
       ? manifestData.tripStats.pendingBoardingCount
-      : activeBookings.filter((b) => b.boardingStatus !== "boarded").length;
+      : activeBookings.filter((b) => (b.boardingStatus || "").toUpperCase() !== "BOARDED").length;
 
     const cancelledCount = manifestData?.tripStats?.cancelledCount !== undefined
       ? manifestData.tripStats.cancelledCount
       : tripBookings.filter((b: any) => 
-          b.paymentStatus === "Cancelled" || 
-          b.status === "Cancelled"
+          (b.paymentStatus || "").toUpperCase() === "CANCELLED" || 
+          (b.status || "").toUpperCase() === "CANCELLED"
         ).length;
 
     console.log("Trip:", selectedTrip);
@@ -326,30 +326,34 @@ export const Bookings: React.FC = () => {
     console.log("Booked Seats:", totalBookedSeats);
     console.log("Revenue:", totalRevenue);
 
-    // Apply Filter & Search
+    // Apply Filter & Search (normalize statuses to uppercase for case-insensitive comparison)
     const filteredTripBookings = tripBookings.filter((b) => {
+      const payment = (b.paymentStatus || "PENDING").toUpperCase();
+      const boarding = (b.boardingStatus || "PENDING").toUpperCase();
+
       // 1. Filter Status
-      if (filterStatus === "Paid" && b.paymentStatus !== "Paid") return false;
-      if (filterStatus === "Pending" && b.paymentStatus !== "Pending") return false;
-      if (filterStatus === "Cancelled" && b.paymentStatus !== "Cancelled") return false;
-      if (filterStatus === "Boarded" && b.boardingStatus !== "boarded") return false;
-      if (filterStatus === "Not Boarded" && b.boardingStatus !== "not_boarded" && b.boardingStatus !== "") return false;
-      if (filterStatus === "Male" && b.gender !== "Male") return false;
-      if (filterStatus === "Female" && b.gender !== "Female") return false;
-      if (filterStatus === "Checked In" && b.boardingStatus !== "boarded") return false;
+      if (filterStatus === "Paid" && payment !== "PAID") return false;
+      if (filterStatus === "Pending" && payment !== "PENDING") return false;
+      if (filterStatus === "Cancelled" && payment !== "CANCELLED") return false;
+      if (filterStatus === "Boarded" && boarding !== "BOARDED") return false;
+      if (filterStatus === "Not Boarded" && boarding === "BOARDED") return false;
+      if (filterStatus === "Male" && (b.gender || "") !== "Male") return false;
+      if (filterStatus === "Female" && (b.gender || "") !== "Female") return false;
+      if (filterStatus === "Checked In" && boarding !== "BOARDED") return false;
       if (filterStatus === "QR Generated" && !b.qrCode) return false;
       
       const hasSeatAssigned = b.assignedSeat || (b.seatNumbers && b.seatNumbers.length > 0);
       if (filterStatus === "Seat Assigned" && !hasSeatAssigned) return false;
       if (filterStatus === "Waiting Seat" && hasSeatAssigned) return false;
 
-      // 2. Search
+      // 2. Search (null-guarded)
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const matchesId = b.bookingId.toLowerCase().includes(query);
-        const matchesName = b.travelerName.toLowerCase().includes(query);
-        const matchesPhone = b.contactNumber.toLowerCase().includes(query);
-        const matchesSeat = b.seatNumbers.some((s) => s.toLowerCase().includes(query)) || (b.assignedSeat && b.assignedSeat.toLowerCase().includes(query));
+        const matchesId = (b.bookingId || "").toLowerCase().includes(query);
+        const matchesName = (b.travelerName || "").toLowerCase().includes(query);
+        const matchesPhone = (b.contactNumber || "").toLowerCase().includes(query);
+        const matchesSeat = (b.seatNumbers || []).some((s: string) => s.toLowerCase().includes(query))
+          || ((b.assignedSeat || "").toLowerCase().includes(query));
         return matchesId || matchesName || matchesPhone || matchesSeat;
       }
       return true;
@@ -754,18 +758,22 @@ export const Bookings: React.FC = () => {
                       </tr>
                     ) : (
                       filteredTripBookings.map((b) => {
-                        let statusLabel = b.boardingStatus || "Pending";
+                        const rawBoarding = (b.boardingStatus || "PENDING").toUpperCase();
+                        let statusLabel = "Pending";
                         let statusColor = "text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700";
                         
-                        if (statusLabel === "Boarded" || statusLabel === "boarded") {
+                        if (rawBoarding === "BOARDED") {
                           statusLabel = "Boarded";
                           statusColor = "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-500/20";
-                        } else if (statusLabel === "Checked-In" || statusLabel === "Checked-in" || statusLabel === "Checked In" || statusLabel === "checked_in") {
+                        } else if (rawBoarding === "CHECKED_IN" || rawBoarding === "CHECKED-IN" || rawBoarding === "CHECKED IN") {
                           statusLabel = "Checked-In";
                           statusColor = "text-amber-600 bg-amber-50 dark:bg-amber-950/20 border border-amber-500/20";
-                        } else if (statusLabel === "NoShow" || statusLabel === "no_show" || statusLabel === "No Show" || statusLabel === "NoShow") {
+                        } else if (rawBoarding === "NO_SHOW" || rawBoarding === "NOSHOW" || rawBoarding === "NO SHOW") {
                           statusLabel = "No Show";
                           statusColor = "text-rose-500 bg-rose-50 dark:bg-rose-950/20 border border-rose-500/20";
+                        } else if (rawBoarding === "OPEN") {
+                          statusLabel = "QR Active";
+                          statusColor = "text-teal-600 bg-teal-50 dark:bg-teal-950/20 border border-teal-500/20";
                         } else {
                           statusLabel = "Pending";
                           statusColor = "text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700";
@@ -808,22 +816,25 @@ export const Bookings: React.FC = () => {
 
                             {/* Payment Status badge */}
                             <td className="px-3 py-3 text-center">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide ${
-                                  b.paymentStatus === "Paid"
-                                    ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20"
-                                    : b.paymentStatus === "Pending"
-                                    ? "text-amber-500 bg-amber-50 dark:bg-amber-950/20"
-                                    : "text-rose-500 bg-rose-50 dark:bg-rose-950/20"
-                                }`}
-                              >
-                                {b.paymentStatus}
-                              </span>
+                              {(() => {
+                                const pStatus = (b.paymentStatus || "PENDING").toUpperCase();
+                                const pLabel = pStatus === "PAID" ? "Paid" : pStatus === "CANCELLED" ? "Cancelled" : "Pending";
+                                const pColor = pStatus === "PAID"
+                                  ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-500/20"
+                                  : pStatus === "CANCELLED"
+                                  ? "text-rose-500 bg-rose-50 dark:bg-rose-950/20 border border-rose-500/20"
+                                  : "text-amber-500 bg-amber-50 dark:bg-amber-950/20 border border-amber-500/20";
+                                return (
+                                  <span className={`inline-flex items-center justify-center h-7 px-3 rounded-full text-xs font-semibold ${pColor}`}>
+                                    {pLabel}
+                                  </span>
+                                );
+                              })()}
                             </td>
 
                             {/* Boarding Status badge */}
                             <td className="px-3 py-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide ${statusColor}`}>
+                              <span className={`inline-flex items-center justify-center h-7 px-3 rounded-full text-xs font-semibold ${statusColor}`}>
                                 {statusLabel}
                               </span>
                             </td>

@@ -1,6 +1,6 @@
 // c:/Users/sanja/Trip-Planner-Hackathon/agent-portal/src/pages/Trips.tsx — Complete Redesigned 10-Step Wizard
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import socket from "../services/socket";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
@@ -161,7 +161,7 @@ export const Trips: React.FC = () => {
   const navigate = useNavigate();
   const { agent } = useAuthStore();
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingTripId, setEditingTripId] = useState<string | null>(null);
+  const [editingTripId, setEditingTripId] = useState<string | null>(() => sessionStorage.getItem("editingTripId"));
   const [activeTab, setActiveTab] = useState(1);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -330,6 +330,7 @@ export const Trips: React.FC = () => {
     }
     reset();
     setEditingTripId(null);
+    sessionStorage.removeItem("editingTripId");
     setEditorOpen(true);
     setActiveTab(1);
   };
@@ -365,6 +366,7 @@ export const Trips: React.FC = () => {
       itinerary: formattedItinerary as any,
     });
     setEditingTripId(trip._id);
+    sessionStorage.setItem("editingTripId", trip._id);
     setEditorOpen(true);
     setActiveTab(1);
   };
@@ -560,6 +562,18 @@ export const Trips: React.FC = () => {
       }
     }
   }, [editorOpen]);
+
+  // Restore editor when trips data loads and sessionStorage has an editingTripId
+  useEffect(() => {
+    const savedId = sessionStorage.getItem("editingTripId");
+    if (!savedId || editorOpen || !data) return;
+    const tripList = (data as any)?.trips || (Array.isArray(data) ? data : []);
+    const savedTrip = tripList.find((t: any) => t._id === savedId);
+    if (savedTrip) {
+      openEditMode(savedTrip as any);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   // ── Build the final sanitised payload (shared by both Submit and Save Draft)
   const buildFinalPayload = (data: TripFormData, asDraft = false) => {
