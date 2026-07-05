@@ -17,6 +17,8 @@ import {
 import { subscribeToMessages, sendMessage, markSeen, bootstrapTripMembers } from "../services/chatService";
 import { auth } from "../services/firebase";
 import { signInAnonymously } from "firebase/auth";
+import { useToast } from "../components/mobile/MobileToast";
+import { loadRazorpay } from "../utils/loadRazorpay";
 import { useAuth } from "../context/AuthContext";
 import { getApiUrl } from "../utils/api";
 import { QRCodeSVG } from "qrcode.react";
@@ -208,6 +210,11 @@ const BookedPackageDetail = () => {
   const [expenses,      setExpenses]     = useState([]);
   const [expenseForm,   setExpenseForm]  = useState({ label: "", amount: "", category: "Food" });
 
+  // Add Passenger Flow states
+  const [showAddPassengerModal, setShowAddPassengerModal] = useState(false);
+  const [newPassenger, setNewPassenger] = useState({ name: "", age: "", gender: "Male", seat: "", phone: "", emergencyContact: "" });
+  const [addPassengerLoading, setAddPassengerLoading] = useState(false);
+
   const trip = booking?.agentTrip || booking?.tripId || {};
 
   const allowCancellation = trip.allowCancellation !== false;
@@ -373,6 +380,111 @@ const BookedPackageDetail = () => {
       alert("Error cancelling booking");
     } finally {
       setCancelLoading(false);
+    }
+  };
+
+  const toast = useToast();
+
+  const handleAddPassengerPayment = async (e) => {
+    e.preventDefault();
+    if (!newPassenger.name || !newPassenger.age || !newPassenger.gender) {
+      toast.error("Please fill in name, age, and gender.");
+      return;
+    }
+
+    setAddPassengerLoading(true);
+    try {
+      const isRazorpayLoaded = await loadRazorpay();
+      if (!isRazorpayLoaded) {
+        toast.error("Razorpay SDK failed to load. Are you offline?");
+        setAddPassengerLoading(false);
+        return;
+      }
+
+      const token = localStorage.getItem("token");
+      const price = trip.offerPrice || trip.pricePerPerson || 0;
+      const additionalAmount = price;
+
+      // 1. Create Order for additional amount
+      const orderRes = await fetch(getApiUrl("payment/create-order"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tripId: trip._id,
+          seats: 1
+        })
+      });
+      const orderData = await orderRes.json();
+      if (!orderData.success) {
+        toast.error(orderData.message || "Failed to initiate payment");
+        setAddPassengerLoading(false);
+        return;
+      }
+
+      // 2. Open Razorpay Checkout Dialog
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+        amount: orderData.amount * 100, // paise
+        currency: orderData.currency || "INR",
+        name: "Traveloop - Add Passenger",
+        description: `Add passenger to ${trip.title}`,
+        order_id: orderData.orderId,
+        handler: async (response) => {
+          try {
+            // Verify and update the existing booking document
+            const verifyRes = await fetch(getApiUrl("payment/verify"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                bookingId: booking._id,
+                additionalPassengers: [newPassenger],
+                additionalAmount
+              })
+            });
+
+            const verifyData = await verifyRes.json();
+            if (verifyData.success) {
+              toast.success("Passenger successfully added!");
+              setShowAddPassengerModal(false);
+              setNewPassenger({ name: "", age: "", gender: "Male", seat: "", phone: "", emergencyContact: "" });
+              fetchBooking();
+            } else {
+              toast.error(verifyData.message || "Payment verification failed");
+            }
+          } catch (err) {
+            toast.error("Verification error. Please contact support.");
+          }
+        },
+        prefill: {
+          name: newPassenger.name,
+          contact: newPassenger.phone,
+        },
+        theme: {
+          color: "#14B8A6"
+        },
+        modal: {
+          ondismiss: () => {
+            toast.info("Payment cancelled.");
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error(err);
+      toast.error("Checkout failed. Try again.");
+    } finally {
+      setAddPassengerLoading(false);
     }
   };
 
@@ -991,7 +1103,11 @@ const BookedPackageDetail = () => {
               <p className="text-sm font-bold text-white truncate">{trip.busNumber || "N/A"} · <span className="text-[10px] text-slate-400">{trip.busType}</span></p>
             </div>
             <div>
-              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Reporting Time</p>
+              <p className="text-[9px] text-slate-455 uppercase tracking-wider">Total Amount Paid</p>
+              <p className="text-sm font-bold text-teal-400">₹{(booking.pricePaid || booking.amount || 0).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-[9px] text-slate-450 uppercase tracking-wider">Reporting Time</p>
               <p className="text-sm font-extrabold text-indigo-400">{trip.reportingTime || "N/A"}</p>
             </div>
             <div>
@@ -1002,6 +1118,22 @@ const BookedPackageDetail = () => {
               <p className="text-[9px] text-slate-455 uppercase tracking-wider">Emergency Contact</p>
               <p className="text-sm font-mono font-bold text-rose-450 mt-0.5">{trip.emergencyContact || "N/A"}</p>
             </div>
+
+            {booking.travellers && booking.travellers.length > 0 && (
+              <div className="col-span-2 mt-2 pt-2 border-t border-white/5 space-y-1.5">
+                <p className="text-[9px] text-slate-400 uppercase tracking-wider">Passengers List ({booking.travellers.length})</p>
+                <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                  {booking.travellers.map((trav, idx) => (
+                    <div key={`ticket-trav-${idx}`} className="flex justify-between text-[11px] text-white">
+                      <span>{idx + 1}. {trav.name} ({trav.age} yrs · {trav.gender})</span>
+                      <span className="text-teal-400 font-mono">
+                        {booking.seatNumbers?.[idx] ? `Seat ${booking.seatNumbers[idx]}` : "No Seat Assigned"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Ticket Footer / Action Area */}
@@ -1165,6 +1297,12 @@ const BookedPackageDetail = () => {
                 className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-white/10 col-span-2"
               >
                 🖼️ Save Image
+              </button>
+              <button
+                onClick={() => setShowAddPassengerModal(true)}
+                className="py-2.5 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-400 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 border border-teal-500/30 col-span-2 font-bold"
+              >
+                👤 Add Passenger
               </button>
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.pickupLocation || trip.pickupLocation || "")}`}
@@ -2476,6 +2614,118 @@ const BookedPackageDetail = () => {
               >
                 Close
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* ── ADD PASSENGER MODAL ── */}
+      <AnimatePresence>
+        {showAddPassengerModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowAddPassengerModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl w-full max-w-sm overflow-hidden p-6 text-slate-800 text-left border border-slate-100"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                <h3 className="font-extrabold text-slate-850 text-base">Add Passenger Details</h3>
+                <button onClick={() => setShowAddPassengerModal(false)} className="text-slate-400 font-extrabold text-sm hover:text-slate-650">✕</button>
+              </div>
+
+              <form onSubmit={handleAddPassengerPayment} className="space-y-3.5 mt-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Passenger Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter full name"
+                    value={newPassenger.name}
+                    onChange={e => setNewPassenger(prev => ({ ...prev, name: e.target.value }))}
+                    className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-teal-400 transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Age</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="Age"
+                      value={newPassenger.age}
+                      onChange={e => setNewPassenger(prev => ({ ...prev, age: e.target.value }))}
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-teal-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Gender</label>
+                    <select
+                      value={newPassenger.gender}
+                      onChange={e => setNewPassenger(prev => ({ ...prev, gender: e.target.value }))}
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none bg-white focus:border-teal-400 transition-all"
+                    >
+                      <option>Male</option>
+                      <option>Female</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Seat Preference</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 12A, Window"
+                      value={newPassenger.seat}
+                      onChange={e => setNewPassenger(prev => ({ ...prev, seat: e.target.value }))}
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-teal-400 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Phone Number</label>
+                    <input
+                      type="tel"
+                      placeholder="Phone"
+                      value={newPassenger.phone}
+                      onChange={e => setNewPassenger(prev => ({ ...prev, phone: e.target.value }))}
+                      className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-teal-400 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Emergency Contact</label>
+                  <input
+                    type="tel"
+                    placeholder="Emergency Contact Phone"
+                    value={newPassenger.emergencyContact}
+                    onChange={e => setNewPassenger(prev => ({ ...prev, emergencyContact: e.target.value }))}
+                    className="mt-1 w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-teal-400 transition-all"
+                  />
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-650">
+                  <span>Additional Amount:</span>
+                  <span className="text-teal-600 text-sm">₹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={addPassengerLoading}
+                  className="mt-2 w-full py-3.5 rounded-2xl font-bold text-sm bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow shadow-teal-500/20 active:scale-[0.985] hover:opacity-95 transition-all flex items-center justify-center gap-1.5"
+                >
+                  💳 {addPassengerLoading ? "Processing payment..." : "Pay & Add Passenger"}
+                </button>
+              </form>
             </motion.div>
           </motion.div>
         )}

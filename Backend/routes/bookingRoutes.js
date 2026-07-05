@@ -193,6 +193,22 @@ router.post("/", protect, async (req, res) => {
 
   try {
     const userId = req.user._id || req.user.id;
+
+    // Check if booking already exists for this user and trip (and is not cancelled)
+    const existingBooking = await Booking.findOne({
+      userId,
+      tripId,
+      status: { $ne: "cancelled" }
+    });
+
+    if (existingBooking) {
+      return res.status(200).json({
+        success: true,
+        action: "UPDATE_EXISTING_BOOKING",
+        bookingId: existingBooking._id
+      });
+    }
+
     const { booking, userTrip } = await BookingService.createBooking({
       tripId,
       userId,

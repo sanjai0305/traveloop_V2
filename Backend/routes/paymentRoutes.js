@@ -154,34 +154,71 @@ router.post("/verify", protect, async (req, res) => {
       });
     }
 
+    const { additionalPassengers = [], additionalAmount = 0 } = req.body;
+
     if (booking) {
-      // SCENARIO A: Existing booking update
+      // SCENARIO A: Existing booking update or additional passenger payment verification
       trip = await AgentTrip.findById(booking.tripId);
       if (!trip) {
         return res.status(400).json({ success: false, message: "Trip not found" });
       }
-      finalAmount = booking.pricePaid || booking.amount || 0;
-      totalTravellers = booking.seats || 1;
 
-      // Verify seats availability (if not already counted)
-      if (booking.paymentStatus !== "Paid" && (trip.availableSeats || 0) < totalTravellers) {
-        return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
-      }
+      if (additionalPassengers.length > 0) {
+        // Additional passenger payment flow
+        finalAmount = additionalAmount;
+        totalTravellers = additionalPassengers.length;
 
-      if (booking.paymentStatus !== "Paid") {
-        booking.paymentStatus = "Paid";
-        booking.status = "Paid";
-        booking.bookingStatus = "confirmed";
-        booking.paymentVerified = true;
-        booking.paymentDate = new Date();
+        if ((trip.availableSeats || 0) < totalTravellers) {
+          return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
+        }
+
+        // Add additional passengers to travellers arrays
+        const normalizeGender = (g) => {
+          if (!g) return "Other";
+          const lower = g.toLowerCase();
+          if (lower === "male") return "Male";
+          if (lower === "female") return "Female";
+          return "Other";
+        };
+
+        additionalPassengers.forEach(p => {
+          booking.travellers.push({
+            name: p.name,
+            age: Number(p.age || 0),
+            gender: normalizeGender(p.gender),
+            phone: p.phone || "",
+          });
+          if (p.seat) {
+            booking.seatNumbers.push(p.seat);
+          }
+        });
+
+        booking.seats = (booking.seats || 0) + totalTravellers;
+        booking.pricePaid = (booking.pricePaid || 0) + additionalAmount;
+        booking.amount = (booking.amount || 0) + additionalAmount;
+        booking.amountPaid = (booking.amountPaid || 0) + additionalAmount;
+
+        // Recalculate counts
+        let mCount = 0;
+        let fCount = 0;
+        additionalPassengers.forEach(p => {
+          const gen = normalizeGender(p.gender);
+          if (gen === "Male") mCount++;
+          if (gen === "Female") fCount++;
+        });
+
+        booking.maleCount = (booking.maleCount || 0) + mCount;
+        booking.femaleCount = (booking.femaleCount || 0) + fCount;
+        booking.adults = (booking.adults || 0) + totalTravellers;
+
         await booking.save();
 
         // Update trip counters
         trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
         trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - totalTravellers);
-        
-        const totalS = trip.totalSeats || 40;
-        trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+        trip.maleCount = (trip.maleCount || 0) + mCount;
+        trip.femaleCount = (trip.femaleCount || 0) + fCount;
+        trip.occupancy = trip.totalSeats > 0 ? Math.round((trip.bookedSeats / trip.totalSeats) * 100) : 0;
         await trip.save();
 
         // Update Agent statistics
@@ -198,8 +235,50 @@ router.post("/verify", protect, async (req, res) => {
           agent.revenue = (agent.revenue || 0) + finalAmount;
           agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
           agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
-          agent.totalBookings = (agent.totalBookings || 0) + 1;
           await agent.save();
+        }
+      } else {
+        // Standard confirm checkout payment flow
+        finalAmount = booking.pricePaid || booking.amount || 0;
+        totalTravellers = booking.seats || 1;
+
+        if (booking.paymentStatus !== "Paid" && (trip.availableSeats || 0) < totalTravellers) {
+          return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
+        }
+
+        if (booking.paymentStatus !== "Paid") {
+          booking.paymentStatus = "Paid";
+          booking.status = "Paid";
+          booking.bookingStatus = "confirmed";
+          booking.paymentVerified = true;
+          booking.paymentDate = new Date();
+          await booking.save();
+
+          // Update trip counters
+          trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
+          trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - totalTravellers);
+          
+          const totalS = trip.totalSeats || 40;
+          trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+          await trip.save();
+
+          // Update Agent statistics
+          const agent = await Agent.findById(trip.agentId || trip.agent);
+          if (agent) {
+            const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
+            const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
+            const commissionRate = agent.commissionRate !== undefined ? agent.commissionRate : defaultRate;
+
+            const commissionAmount = finalAmount * (commissionRate / 100);
+            const gatewayFee = finalAmount * 0.02;
+            const agentAmount = finalAmount - commissionAmount - gatewayFee;
+
+            agent.revenue = (agent.revenue || 0) + finalAmount;
+            agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
+            agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
+            agent.totalBookings = (agent.totalBookings || 0) + 1;
+            await agent.save();
+          }
         }
       }
     } else if (bookingPayload) {
