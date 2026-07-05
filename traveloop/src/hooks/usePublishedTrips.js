@@ -55,6 +55,13 @@ export const usePublishedTrips = () => {
 
   useEffect(() => {
     fetchTrips();
+    
+    // Fallback polling: fetch every 30 seconds (bypass cache)
+    const intervalId = setInterval(() => {
+      fetchTrips(true);
+    }, 30000);
+
+    return () => clearInterval(intervalId);
   }, [fetchTrips]);
 
   useEffect(() => {
@@ -66,11 +73,26 @@ export const usePublishedTrips = () => {
       setData(prev => (prev ? prev.filter(t => t._id !== deletedId) : []));
     };
 
+    const handleTripPublished = (tripId) => {
+      console.log("[usePublishedTrips] Live trip_published event:", tripId);
+      fetchTrips(true);
+    };
+
+    const handleTripUpdated = (tripId) => {
+      console.log("[usePublishedTrips] Live trip_updated event:", tripId);
+      fetchTrips(true);
+    };
+
     socket.on("trip_deleted", handleTripDeleted);
+    socket.on("trip_published", handleTripPublished);
+    socket.on("trip_updated", handleTripUpdated);
+
     return () => {
       socket.off("trip_deleted", handleTripDeleted);
+      socket.off("trip_published", handleTripPublished);
+      socket.off("trip_updated", handleTripUpdated);
     };
-  }, []);
+  }, [fetchTrips]);
 
   return {
     data,

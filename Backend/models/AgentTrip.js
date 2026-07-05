@@ -258,18 +258,25 @@ const agentTripSchema = new mongoose.Schema(
     itinerary: [
       {
         day: { type: Number },
-        title: { type: String },
-        description: { type: String },
+        date: { type: String, default: "" },
+        startLocation: { type: String, default: "" },
+        departureTime: { type: String, default: "" },
+        destination: { type: String, default: "" },
+        arrivalTime: { type: String, default: "" },
+        placesCovered: { type: [String], default: [] },
+        activities: { type: [String], default: [] },
+        duration: { type: String, default: "" },
+        hotelName: { type: String, default: "" },
+        nightStay: { type: String, default: "" },
+        notes: { type: String, default: "" },
+        title: { type: String, default: "" },
+        description: { type: String, default: "" },
         hotel: { type: String, default: "" },
         images: { type: [String], default: [] },
         activity: { type: String, default: "" },
         time: { type: String, default: "" },
-        duration: { type: String, default: "" },
-        destination: { type: String, default: "" },
-        placesCovered: { type: String, default: "" },
         lunch: { type: String, default: "" },
-        stay: { type: String, default: "" },
-        nightStay: { type: String, default: "" }
+        stay: { type: String, default: "" }
       }
     ],
     allowCancellation: {
@@ -390,11 +397,27 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    coverImages: {
+      type: [String],
+      default: [],
+    },
+    mainDestinationBanner: {
+      type: [String],
+      default: [],
+    },
+    amenities: {
+      type: [String],
+      default: [],
+    },
     busImages: {
       type: [String],
       default: [],
     },
     gallery: {
+      type: [String],
+      default: [],
+    },
+    galleryImages: {
       type: [String],
       default: [],
     },
@@ -428,18 +451,59 @@ const agentTripSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: { virtuals: true },
-    toObject: { virtuals: true },
   }
 );
 
-// Keep driver/driverId and destination synced; recalculate occupancy
+// Keep driver/driverId and destination synced; recalculate occupancy; sync coverImages and amenities; auto-populate destinations from itinerary
 agentTripSchema.pre("save", function () {
+  // Sync mainDestinationBanner and coverImages
+  if (Array.isArray(this.mainDestinationBanner) && this.mainDestinationBanner.length > 0) {
+    this.coverImages = this.mainDestinationBanner;
+  } else if (Array.isArray(this.coverImages) && this.coverImages.length > 0) {
+    this.mainDestinationBanner = this.coverImages;
+  }
+
+  // Sync galleryImages and gallery
+  if (Array.isArray(this.galleryImages) && this.galleryImages.length > 0) {
+    this.gallery = this.galleryImages;
+  } else if (Array.isArray(this.gallery) && this.gallery.length > 0) {
+    this.galleryImages = this.gallery;
+  }
+
   if (this.driver && !this.driverId) {
     this.driverId = this.driver;
   }
   if (this.driverId && !this.driver) {
     this.driver = this.driverId;
   }
+
+  // Cover image sync
+  if (Array.isArray(this.coverImages) && this.coverImages.length > 0) {
+    this.coverImage = this.coverImages[0];
+  } else if (this.coverImage && (!this.coverImages || this.coverImages.length === 0)) {
+    this.coverImages = [this.coverImage];
+  }
+
+  // Amenities sync
+  if (Array.isArray(this.amenities) && this.amenities.length > 0) {
+    this.busAmenities = this.amenities;
+  } else if (Array.isArray(this.busAmenities) && this.busAmenities.length > 0) {
+    this.amenities = this.busAmenities;
+  }
+
+  // Auto-populate destinations from itinerary
+  if (Array.isArray(this.itinerary) && this.itinerary.length > 0) {
+    const destList = [];
+    this.itinerary.forEach(day => {
+      if (day.destination && !destList.includes(day.destination)) {
+        destList.push(day.destination);
+      }
+    });
+    if (destList.length > 0) {
+      this.destinations = destList;
+    }
+  }
+
   if (Array.isArray(this.destinations) && this.destinations.length > 0 && !this.destination) {
     this.destination = this.destinations[0];
   }

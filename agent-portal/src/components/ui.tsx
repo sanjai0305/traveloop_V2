@@ -1,7 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
-import { uploadImage, validateImageFile } from "../services/firebase";
-import { uploadCompanyLogo, uploadAgentPhoto } from "../services/cloudinaryUpload";
+import { uploadImage, validateImageFile, uploadCompanyLogo, uploadAgentPhoto } from "../services/cloudinaryUpload";
 
 // ── GlassCard Component ──
 interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {

@@ -1,4 +1,4 @@
-// src/pages/TripDetails.jsx — Published Group Trip Details & Booking Flow
+// src/pages/TripDetails.jsx â Published Group Trip Details & Booking Flow
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,6 +14,29 @@ import SeatLayoutModal from "../components/trip/SeatLayoutModal";
 import PassengerFormModal from "../components/trip/PassengerFormModal";
 import UPIPaymentModal from "../components/trip/UPIPaymentModal";
 import TicketModal from "../components/trip/TicketModal";
+
+const PackingChecklistItem = ({ item }) => {
+  const [checked, setChecked] = useState(false);
+  return (
+    <div
+      onClick={() => setChecked(!checked)}
+      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all ${
+        checked
+          ? "bg-teal-50/30 dark:bg-teal-950/10 border-teal-200/50 dark:border-teal-900/40 text-teal-655 dark:text-teal-400"
+          : "bg-slate-50/50 dark:bg-slate-900/30 border-slate-100/50 dark:border-slate-850 text-slate-600 dark:text-slate-355 hover:border-slate-250"
+      }`}
+    >
+      <div className={`w-4.5 h-4.5 rounded-lg flex items-center justify-center border transition-all ${
+        checked
+          ? "bg-teal-500 border-teal-500 text-white"
+          : "border-slate-300 dark:border-slate-650 bg-white dark:bg-slate-800"
+      }`}>
+        {checked && <CheckCircle2 size={12} className="stroke-[3.5]" />}
+      </div>
+      <span className={`text-xs font-semibold ${checked ? "line-through opacity-70" : ""}`}>{item}</span>
+    </div>
+  );
+};
 
 export const TripDetails = () => {
   const { id } = useParams();
@@ -43,7 +66,8 @@ export const TripDetails = () => {
   const [bookedSeats, setBookedSeats] = useState([]);
 
   // New seat-reservation flow state
-  const [selectedSeats, setSelectedSeatsList] = useState([]);
+  const [selectedSeats, setSelectedSeats] = useState([]);
+  const setSelectedSeatsList = setSelectedSeats;
   const [passengers, setPassengers] = useState([]);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [ticketData, setTicketData] = useState(null);
@@ -63,7 +87,6 @@ export const TripDetails = () => {
   const [children, setChildren] = useState(0);
 
   // Seat selection state
-  const [selectedSeats, setSelectedSeats] = useState([]);
 
   // Additional travelers
   const [additionalTravellers, setAdditionalTravellers] = useState([]);
@@ -690,6 +713,44 @@ export const TripDetails = () => {
                   </div>
                 </div>
               )}
+
+              {/* Vehicle Photos */}
+              {((trip.transportImages && (trip.transportImages.frontImage || trip.transportImages.backImage || (trip.transportImages.interiorImages || []).length > 0 || (trip.transportImages.seatImages || []).length > 0)) || (trip.busImages && trip.busImages.length > 0)) && (
+                <div className="border-t border-slate-50 dark:border-slate-750 pt-4 space-y-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Vehicle Photos</span>
+                  <div className="flex gap-2.5 overflow-x-auto pb-1 no-scrollbar">
+                    {trip.transportImages?.frontImage && (
+                      <div className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-150 flex-shrink-0 border border-slate-100/50">
+                        <img src={trip.transportImages.frontImage} alt="Bus Exterior Front" className="w-full h-full object-cover" />
+                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[8px] px-1 py-0.5 rounded">Front</span>
+                      </div>
+                    )}
+                    {trip.transportImages?.backImage && (
+                      <div className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-150 flex-shrink-0 border border-slate-100/50">
+                        <img src={trip.transportImages.backImage} alt="Bus Exterior Back" className="w-full h-full object-cover" />
+                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[8px] px-1 py-0.5 rounded">Back</span>
+                      </div>
+                    )}
+                    {(trip.transportImages?.interiorImages || []).map((img, idx) => (
+                      <div key={`int-${idx}`} className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-150 flex-shrink-0 border border-slate-100/50">
+                        <img src={img} alt={`Bus Interior ${idx + 1}`} className="w-full h-full object-cover" />
+                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[8px] px-1 py-0.5 rounded">Interior</span>
+                      </div>
+                    ))}
+                    {(trip.transportImages?.seatImages || []).map((img, idx) => (
+                      <div key={`seat-${idx}`} className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-150 flex-shrink-0 border border-slate-100/50">
+                        <img src={img} alt={`Bus Seats ${idx + 1}`} className="w-full h-full object-cover" />
+                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[8px] px-1 py-0.5 rounded">Seat Layout</span>
+                      </div>
+                    ))}
+                    {(trip.busImages || []).map((img, idx) => (
+                      <div key={`bus-${idx}`} className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-150 flex-shrink-0 border border-slate-100/50">
+                        <img src={img} alt={`Bus Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -730,35 +791,192 @@ export const TripDetails = () => {
             </div>
           </div>
 
-          {/* Itinerary */}
-          {(trip.itinerary || []).length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Daily Travel Plan</h3>
-              <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-4">
-                {(trip.itinerary || []).map((day, idx) => (
-                  <div key={idx} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="w-7 h-7 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-600 font-bold text-[11px] flex items-center justify-center flex-shrink-0 shadow-xs border border-teal-200/50">
-                        D{day.day}
+            {/* Itinerary */}
+            {(trip.itinerary || []).length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Daily Travel Plan</h3>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-4">
+                  {(trip.itinerary || []).map((day, idx) => {
+                    const hasNewFields = day.startLocation || day.destination;
+                    const dayTitle = day.title || (hasNewFields ? `${day.startLocation} to ${day.destination}` : `Day ${day.day}`);
+                    
+                    return (
+                      <div key={idx} className="flex gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="w-7 h-7 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-600 font-bold text-[11px] flex items-center justify-center flex-shrink-0 shadow-xs border border-teal-200/50">
+                            D{day.day}
+                          </div>
+                          {idx < (trip.itinerary || []).length - 1 && (
+                            <div className="w-0.5 bg-slate-100 dark:bg-slate-850 flex-1 my-1" />
+                          )}
+                        </div>
+                        <div className="flex-1 pb-4 space-y-2">
+                          <div>
+                            <div className="flex items-center justify-between flex-wrap gap-1.5">
+                              <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{dayTitle}</h4>
+                              {day.date && (
+                                <span className="text-[10px] text-slate-400 font-semibold">{day.date}</span>
+                              )}
+                            </div>
+                            
+                            {hasNewFields && (day.departureTime || day.arrivalTime || day.duration) && (
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
+                                {day.departureTime && `Departs: ${day.departureTime}`}
+                                {day.arrivalTime && ` | Arrives: ${day.arrivalTime}`}
+                                {day.duration && ` (${day.duration})`}
+                              </p>
+                            )}
+                          </div>
+
+                          {day.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{day.description}</p>
+                          )}
+
+                          {/* Places Covered & Activities */}
+                          {((day.placesCovered || []).length > 0 || (day.activities || []).length > 0) && (
+                            <div className="space-y-1.5 pt-1">
+                              {day.placesCovered && day.placesCovered.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-[9px] text-slate-455 font-bold uppercase tracking-wider self-center mr-1">Visits:</span>
+                                  {day.placesCovered.map((place, pIdx) => (
+                                    <span key={pIdx} className="px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-400 font-semibold">
+                                      {place}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {day.activities && day.activities.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-[9px] text-slate-455 font-bold uppercase tracking-wider self-center mr-1">Activities:</span>
+                                  {day.activities.map((act, aIdx) => (
+                                    <span key={aIdx} className="px-2 py-0.5 rounded-md bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100/30 dark:border-teal-900/30 text-[10px] text-teal-650 dark:text-teal-400 font-semibold">
+                                      {act}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Stay & Hotel */}
+                          {(day.hotel || day.hotelName) && (
+                            <div className="text-[10px] text-teal-650 dark:text-teal-400 font-bold bg-teal-50/30 dark:bg-teal-900/10 px-2 py-0.5 rounded w-max border border-teal-100/30 dark:border-teal-950/50">
+                              Stay: {day.hotelName || day.hotel} {day.nightStay ? `(${day.nightStay})` : ""}
+                            </div>
+                          )}
+
+                          {day.notes && (
+                            <p className="text-[10px] italic text-slate-450 dark:text-slate-500 bg-slate-50/50 dark:bg-slate-900/20 p-2 rounded-xl border border-slate-100/30 dark:border-slate-880/30">
+                              Note: {day.notes}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      {idx < (trip.itinerary || []).length - 1 && (
-                        <div className="w-0.5 bg-slate-100 dark:bg-slate-850 flex-1 my-1" />
-                      )}
-                    </div>
-                    <div className="flex-1 pb-4">
-                      <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200">{day.title}</h4>
-                      <p className="text-xs text-slate-450 dark:text-slate-500 mt-1 leading-relaxed">{day.description}</p>
-                      {day.hotel && (
-                        <div className="text-[10px] text-teal-600 font-bold bg-teal-50/40 dark:bg-teal-900/20 px-2 py-0.5 rounded mt-2 w-max border border-teal-100 dark:border-teal-900/50">
-                          🏨 Stay: {day.hotel}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Hotels / Stays Details */}
+            {trip.hotels && trip.hotels.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Hotel & Accommodation Stays</h3>
+                <div className="space-y-4">
+                  {trip.hotels.map((hotel, hIdx) => (
+                    <div key={hIdx} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-3.5 shadow-xs">
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 truncate">{hotel.name}</h4>
+                            <span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/30 text-[9px] font-extrabold text-amber-600 dark:text-amber-400 border border-amber-100/50 dark:border-amber-900/50">
+                              {hotel.category || "3 Star"}
+                            </span>
+                          </div>
+                          {hotel.address && (
+                            <p className="text-[10px] text-slate-400 font-semibold mt-0.5 line-clamp-1">{hotel.address}</p>
+                          )}
+                        </div>
+                        
+                        {hotel.mapsLink && (
+                          <a
+                            href={hotel.mapsLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-[10px] font-extrabold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 px-2.5 py-1 rounded-xl border border-teal-100 dark:border-teal-850 hover:bg-teal-100 transition-colors flex-shrink-0"
+                          >
+                            Map
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Stay Stats */}
+                      <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100/50 dark:border-slate-850 text-[10px] text-slate-550 dark:text-slate-400 font-bold">
+                        <div className="text-center">
+                          <span className="text-[9px] text-slate-400 block">Room</span>
+                          <span className="text-slate-700 dark:text-slate-200 block mt-0.5">{hotel.roomType || "Double"}</span>
+                        </div>
+                        <div className="text-center border-x border-slate-100 dark:border-slate-800">
+                          <span className="text-[9px] text-slate-400 block">Occupancy</span>
+                          <span className="text-slate-700 dark:text-slate-200 block mt-0.5">{hotel.occupancy ? `${hotel.occupancy} Sharing` : "2 Sharing"}</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[9px] text-slate-400 block">Duration</span>
+                          <span className="text-slate-700 dark:text-slate-200 block mt-0.5">{hotel.nightStayCount ? `${hotel.nightStayCount} Night(s)` : "1 Night"}</span>
+                        </div>
+                      </div>
+
+                      {/* Hotel Photos */}
+                      {hotel.photos && hotel.photos.length > 0 && (
+                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
+                          {hotel.photos.map((photo, pIdx) => (
+                            <div key={pIdx} className="relative h-20 w-32 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-100/30">
+                              <img src={photo} alt={`${hotel.name} - ${pIdx + 1}`} className="w-full h-full object-cover" />
+                            </div>
+                          ))}
                         </div>
                       )}
+
+                      {hotel.notes && (
+                        <p className="text-[10px] text-slate-455 dark:text-slate-500 leading-relaxed italic border-t border-slate-50 dark:border-slate-750 pt-2">
+                          Stay info: {hotel.notes}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* Activities Included Section */}
+            {trip.activities && trip.activities.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Featured Activities</h3>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xs flex flex-wrap gap-2">
+                  {trip.activities.map((act, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100/30 dark:border-teal-900/30 text-xs font-bold text-teal-600 dark:text-teal-400">
+                      {act}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Packing Checklist Section */}
+            {trip.packingChecklist && trip.packingChecklist.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Packing & Checklist Planner</h3>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xs">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-3">Prepare for your journey</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {trip.packingChecklist.map((item, idx) => (
+                      <PackingChecklistItem key={idx} item={item} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Terms & Policies */}
           <div className="space-y-2">
@@ -789,17 +1007,17 @@ export const TripDetails = () => {
           <div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-lg font-black text-teal-600 dark:text-teal-400">
-                ₹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}
+                â¹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}
               </span>
               {trip.originalPrice > 0 && (
                 <span className="text-xs text-slate-400 line-through">
-                  ₹{trip.originalPrice.toLocaleString()}
+                  â¹{trip.originalPrice.toLocaleString()}
                 </span>
               )}
             </div>
             {discountAmount > 0 && (
               <span className="text-[10px] text-emerald-600 font-extrabold uppercase bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-200">
-                Save ₹{discountAmount.toLocaleString()}
+                Save â¹{discountAmount.toLocaleString()}
               </span>
             )}
           </div>
@@ -829,7 +1047,7 @@ export const TripDetails = () => {
           )}
         </div>
 
-        {/* ─── BOOKING MODAL SHEET ─── */}
+        {/* âââ BOOKING MODAL SHEET âââ */}
         <AnimatePresence>
           {showBookingModal && (
             <>
@@ -1170,7 +1388,7 @@ export const TripDetails = () => {
                         <div className="py-2">
                           <div className="flex justify-between items-center max-w-sm mx-auto mb-6 px-4 py-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             <span>[ ] Driver's Cabin</span>
-                            <span>Entry Door 🚪</span>
+                            <span>Entry Door ðª</span>
                           </div>
 
                           <div className="grid grid-cols-5 gap-2.5 max-w-sm mx-auto bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-150 dark:border-slate-850 shadow-inner">
@@ -1243,35 +1461,35 @@ export const TripDetails = () => {
                             <div className="space-y-1.5 pb-3 border-b border-slate-200 dark:border-slate-800">
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Offer Price (Per Seat):</span>
-                                <span className="font-extrabold text-slate-800 dark:text-white">₹{bookingDetails.basePrice.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-800 dark:text-white">â¹{bookingDetails.basePrice.toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Adults Subtotal:</span>
                                 <span className="font-extrabold text-slate-850 dark:text-white">
-                                  {bookingDetails.adults} × ₹{bookingDetails.basePrice.toLocaleString()} = ₹{bookingDetails.adultsSubtotal.toLocaleString()}
+                                  {bookingDetails.adults} Ã â¹{bookingDetails.basePrice.toLocaleString()} = â¹{bookingDetails.adultsSubtotal.toLocaleString()}
                                 </span>
                               </div>
                               {bookingDetails.children > 0 && (
                                 <div className="flex justify-between">
                                   <span className="text-slate-400">Children Subtotal (50% Off):</span>
                                   <span className="font-extrabold text-slate-850 dark:text-white">
-                                    {bookingDetails.children} × ₹{bookingDetails.childPrice.toLocaleString()} = ₹{bookingDetails.childrenSubtotal.toLocaleString()}
+                                    {bookingDetails.children} Ã â¹{bookingDetails.childPrice.toLocaleString()} = â¹{bookingDetails.childrenSubtotal.toLocaleString()}
                                   </span>
                                 </div>
                               )}
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Tax & GST (5%):</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.tax.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">â¹{bookingDetails.tax.toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Convenience fee:</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.convenienceFee.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">â¹{bookingDetails.convenienceFee.toLocaleString()}</span>
                               </div>
                             </div>
 
                             <div className="flex justify-between items-center">
                               <span className="font-black text-slate-800 dark:text-slate-300">Grand Total Amount:</span>
-                              <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{bookingDetails.pricePaid.toLocaleString()}</span>
+                              <span className="font-black text-base text-teal-600 dark:text-teal-400">â¹{bookingDetails.pricePaid.toLocaleString()}</span>
                             </div>
                           </div>
                         </div>
@@ -1292,7 +1510,7 @@ export const TripDetails = () => {
                       {bookingStage === "success" && (
                         <div className="py-4 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
                           <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500 flex items-center justify-center text-2xl border border-emerald-250">
-                            🎉
+                            ð
                           </div>
                           <div>
                             <h3 className="text-base font-black text-emerald-600 dark:text-emerald-400">Booking Confirmed!</h3>
@@ -1303,7 +1521,7 @@ export const TripDetails = () => {
                             <p className="flex justify-between"><span>Journey:</span><span className="font-extrabold text-slate-700 dark:text-white">{trip.title}</span></p>
                             <p className="flex justify-between"><span>Primary contact:</span><span className="font-extrabold text-slate-700 dark:text-white">{bookingDetails?.travellers?.[0]?.name}</span></p>
                             <p className="flex justify-between"><span>Reserved seats:</span><span className="font-extrabold text-slate-700 dark:text-white">{bookingDetails?.selectedSeats?.join(", ")}</span></p>
-                            <p className="flex justify-between"><span>Paid amount:</span><span className="font-black text-teal-650 dark:text-teal-400">₹{bookingDetails?.pricePaid?.toLocaleString()}</span></p>
+                            <p className="flex justify-between"><span>Paid amount:</span><span className="font-black text-teal-650 dark:text-teal-400">â¹{bookingDetails?.pricePaid?.toLocaleString()}</span></p>
                           </div>
                         </div>
                       )}
@@ -1311,7 +1529,7 @@ export const TripDetails = () => {
                       {bookingStage === "failure" && (
                         <div className="py-8 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
                           <div className="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/20 text-rose-500 flex items-center justify-center text-2xl border border-rose-250">
-                            ✕
+                            â
                           </div>
                           <div>
                             <h3 className="text-base font-black text-rose-650 dark:text-rose-450">Payment Verification Failed</h3>
@@ -1362,7 +1580,7 @@ export const TripDetails = () => {
                           </div>
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-black text-slate-800 dark:text-slate-400">Grand Total:</span>
-                            <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{bookingDetails?.pricePaid?.toLocaleString()}</span>
+                            <span className="font-black text-base text-teal-600 dark:text-teal-400">â¹{bookingDetails?.pricePaid?.toLocaleString()}</span>
                           </div>
                           <div className="flex gap-3">
                             <button
@@ -1438,9 +1656,9 @@ export const TripDetails = () => {
             </>
           )}
         </AnimatePresence>
-        {/* ═══════════════════════════════════════════════════════════════
-            NEW BOOKING FLOW: Seat Select → Passenger Form → UPI → Ticket
-            ═══════════════════════════════════════════════════════════════ */}
+        {/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+            NEW BOOKING FLOW: Seat Select â Passenger Form â UPI â Ticket
+            âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
         <AnimatePresence>
           {showBookingModal && bookingStage === "seat_select" && trip && (
             <SeatLayoutModal

@@ -19,12 +19,7 @@ import {
   onDisconnect as rOnDisconnect, 
   remove as rRemove 
 } from "firebase/database";
-import { 
-  ref as sRef, 
-  uploadBytes, 
-  getDownloadURL 
-} from "firebase/storage";
-import { db, rtdb, storage } from "./firebase";
+import { db, rtdb } from "./firebase";
 
 // Helper to convert dataURL/base64 to Blob
 function dataURLtoBlob(dataurl) {
@@ -150,6 +145,32 @@ export const subscribeToMessages = (tripId, callback) => {
   });
 };
 
+// Helper to upload media file to Cloudinary
+const uploadToCloudinary = async (blob, fileName) => {
+  const file = new File([blob], fileName, { type: blob.type });
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append(
+    "upload_preset",
+    import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "traveloop_agents"
+  );
+  
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "hf0hgprc";
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+  
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Failed to upload to Cloudinary");
+  }
+  return data.secure_url;
+};
+
 // Send a message
 export const sendMessage = async (tripId, payload) => {
   let fileUrl = payload.fileUrl || "";
@@ -168,9 +189,7 @@ export const sendMessage = async (tripId, payload) => {
       blob = dataURLtoBlob(compressedBase64);
       fileName = `${fileName}.jpg`;
     }
-    const fileRef = sRef(storage, `trip-chat/${tripId}/${fileName}`);
-    const snapshot = await uploadBytes(fileRef, blob);
-    fileUrl = await getDownloadURL(snapshot.ref);
+    fileUrl = await uploadToCloudinary(blob, fileName);
   }
 
   const messagesCollectionRef = collection(db, "trips", tripId, "messages");

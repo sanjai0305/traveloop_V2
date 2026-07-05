@@ -11,7 +11,6 @@ const firebaseConfig = {
     : "AIzaSyBEHvDMDVGXejyqg_rLROm9CW6va73802Y",
   authDomain: process.env.FIREBASE_AUTH_DOMAIN || "traveloop-version-2-83bd2.firebaseapp.com",
   projectId: process.env.FIREBASE_PROJECT_ID || "traveloop-version-2-83bd2",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "traveloop-version-2-83bd2.appspot.com",
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "740933888609",
   appId: process.env.FIREBASE_APP_ID || "1:740933888609:web:4cfdd9521d5af064205820",
   measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-RW489M96SW",

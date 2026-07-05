@@ -1257,6 +1257,11 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
       trip = updated;
     }
 
+    const io = req.app.get("io");
+    if (io && (trip.status === "published" || trip.publishStatus === "published" || trip.published)) {
+      io.emit("trip_updated", trip._id || req.params.id);
+    }
+
     res.status(200).json({
       success: true,
       trip
@@ -1491,6 +1496,11 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
       trip = updated;
     }
 
+    const io = req.app.get("io");
+    if (io && (trip.status === "published" || trip.publishStatus === "published" || trip.published)) {
+      io.emit("trip_updated", trip._id || req.params.id);
+    }
+
     res.status(200).json({
       success: true,
       trip,
@@ -1545,6 +1555,11 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgent
       trip.publishStatus = "published";
       trip.publishedAt = new Date();
       fallbackTrips.set(req.params.id, trip);
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("trip_published", trip._id || req.params.id);
     }
 
     res.status(200).json({
@@ -2398,6 +2413,11 @@ router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], prote
       trip.publishedAt = new Date();
       trip.progressPercentage = 100;
       fallbackTrips.set(id, trip);
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("trip_published", trip._id || id);
     }
 
     res.status(200).json({

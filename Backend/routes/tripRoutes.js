@@ -40,8 +40,11 @@ router.get("/published", async (req, res) => {
   try {
     const data = await AgentTrip.find({
       isDeleted: { $ne: true },
-      published: true,
-      status: "published"
+      $or: [
+        { published: true },
+        { status: "published" },
+        { publishStatus: "published" }
+      ]
     }).populate("agentId", "companyName email").sort({ createdAt: -1 });
 
     const now = new Date();
@@ -63,6 +66,7 @@ router.get("/published", async (req, res) => {
         return mapped;
       })
       .filter(t => {
+        if (t.availableSeats !== undefined && t.availableSeats !== null && t.availableSeats <= 0) return false;
         if (!t.bookingDeadline || !t.startDate) return false;
         const deadline = new Date(t.bookingDeadline);
         const start = new Date(t.startDate);

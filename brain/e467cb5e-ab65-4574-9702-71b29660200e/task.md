@@ -1,8 +1,12 @@
-- [x] Backend
-  - [x] models/Agent.js — Add KYC fields (dob, mobile, mobileVerified, companyLogo, agentPhoto, kycStatus, OTP fields)
+- [ ] Backend
+  - [/] models/Agent.js — Add KYC fields (dob, mobile, mobileVerified, companyLogo, agentPhoto, kycStatus, OTP fields)
   - [x] middleware/kycMiddleware.js — checkAgentKYC() guard
-  - [x] middleware/agentAuthMiddleware.js — include new fields in select projection
-  - [x] routes/agentRoutes.js — 8 KYC endpoints + trip creation guard
+  - [x] Backend Route updates: `status` query and seat checking in `tripRoutes.js`
+- [x] Backend Socket events: Emit `trip_published` and `trip_updated` in `agentRoutes.js`
+- [x] usePublishedTrips.js: Socket listeners for `trip_published`/`trip_updated` and 30s polling
+- [x] Activities.jsx: Search logic matching all fields and dynamic filter chips
+- [/] TripDetails.jsx: Render rich itinerary timeline, stay details, vehicle photos, and packing checklist
+- [ ] Verify build and functionality
 
 - [x] Frontend
   - [x] types/agent.ts — Add kycStatus, dob, mobile, mobileVerified, agentPhoto, companyLogo

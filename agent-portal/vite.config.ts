@@ -14,7 +14,6 @@ export default defineConfig({
       'firebase/firestore': path.resolve(__dirname, 'node_modules/firebase/firestore'),
       'firebase/auth': path.resolve(__dirname, 'node_modules/firebase/auth'),
       'firebase/database': path.resolve(__dirname, 'node_modules/firebase/database'),
-      'firebase/storage': path.resolve(__dirname, 'node_modules/firebase/storage'),
       'firebase': path.resolve(__dirname, 'node_modules/firebase'),
       '@shared-ui': path.resolve(__dirname, '../shared-ui/src'),
       'react': path.resolve(__dirname, 'node_modules/react'),

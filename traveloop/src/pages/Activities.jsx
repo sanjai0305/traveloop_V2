@@ -308,27 +308,50 @@ const Activities = () => {
       const matchDest = (t.destinations || []).some(d => d.toLowerCase().includes(query));
       const matchOrigin = (t.originCity || "").toLowerCase().includes(query);
       const matchAgent = (t.agent?.companyName || t.agent?.displayName || "").toLowerCase().includes(query);
-      return matchTitle || matchSub || matchDest || matchOrigin || matchAgent;
+      const matchPickup = (t.pickupLocation || "").toLowerCase().includes(query) || (t.pickupPoint || "").toLowerCase().includes(query);
+      const matchTripType = (t.tripType || "").toLowerCase().includes(query);
+      
+      const matchAmenities = (t.amenities || []).some(a => a.toLowerCase().includes(query)) ||
+                             (t.busAmenities || []).some(a => a.toLowerCase().includes(query));
+      
+      const matchHotels = (t.hotelName || "").toLowerCase().includes(query) ||
+                          (t.hotels || []).some(h => (h.name || "").toLowerCase().includes(query));
+      
+      const matchActivities = (t.activities || []).some(a => a.toLowerCase().includes(query)) ||
+                              (t.itinerary || []).some(day => 
+                                (day.activities || []).some(act => act.toLowerCase().includes(query))
+                              );
+
+      return matchTitle || matchSub || matchDest || matchOrigin || matchAgent || matchPickup || matchTripType || matchAmenities || matchHotels || matchActivities;
     });
   }, [publishedTrips, discoverSearch, inlineSearch]);
 
   const popularChips = useMemo(() => {
     if (!publishedTrips || publishedTrips.length === 0) {
-      return ["Salem", "Tokyo", "Paris", "Bali", "Dubai", "Goa"];
+      return ["Salem", "Adventure Ride", "Temple Tour", "Corporate Tour", "Ooty Hills", "Madurai"];
     }
     const counts = {};
     publishedTrips.forEach((t) => {
       (t.destinations || []).forEach((d) => {
-        counts[d] = (counts[d] || 0) + 1;
+        if (d) counts[d] = (counts[d] || 0) + 1;
+      });
+      if (t.originCity) {
+        counts[t.originCity] = (counts[t.originCity] || 0) + 1;
+      }
+      if (t.tripType) {
+        counts[t.tripType] = (counts[t.tripType] || 0) + 1.5;
+      }
+      (t.amenities || []).slice(0, 3).forEach((a) => {
+        if (a) counts[a] = (counts[a] || 0) + 0.8;
       });
     });
     const sorted = Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .map(([name]) => name);
 
-    const defaults = ["Salem", "Tokyo", "Paris", "Bali", "Dubai", "Goa"];
+    const defaults = ["Salem", "Adventure Ride", "Temple Tour", "Corporate Tour", "Ooty Hills", "Madurai"];
     const merged = Array.from(new Set([...sorted, ...defaults]));
-    return merged.slice(0, 6);
+    return merged.slice(0, 8);
   }, [publishedTrips]);
 
   // ── Fetch saved destinations ──────────────────────────────────────────────
