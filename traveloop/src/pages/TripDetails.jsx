@@ -57,6 +57,13 @@ export const TripDetails = () => {
     hour: "2-digit",
     minute: "2-digit"
   }) : "";
+  const pickupPoint = trip?.pickupLocation || trip?.pickupPoint || trip?.meetingPoint || "";
+  const dropPoint = trip?.dropPoint || trip?.destination || trip?.dropLocation || "";
+  const coverImageUrl = trip?.coverImages?.[0] || trip?.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80";
+  const itineraryItems = trip?.itinerary || [];
+  const hotelItems = trip?.hotels || [];
+  const activityItems = trip?.activities || [];
+  const packingItems = trip?.packingChecklist || [];
 
   // Booking Flow States
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -112,6 +119,7 @@ export const TripDetails = () => {
   useEffect(() => {
     const fetchTripDetails = async () => {
       try {
+        console.log("Trip ID:", id);
         setLoading(true);
         const token = localStorage.getItem("token");
         const headers = {};
@@ -120,14 +128,24 @@ export const TripDetails = () => {
         }
         const res = await fetch(getApiUrl(`trips/published/${id}`), { headers });
         const data = await res.json();
+        console.log("Trip Response:", data);
+        console.log("Trip:", data?.trip);
+        console.log("Images:", data?.trip?.coverImages);
+        console.log("Itinerary:", data?.trip?.itinerary);
+        console.log("Hotels:", data?.trip?.hotels);
+        console.log("Transport:", data?.trip?.transport);
+        console.log("Activities:", data?.trip?.activities);
+        console.log("Packing:", data?.trip?.packingChecklist);
         if (data.success && data.trip) {
           setTrip(data.trip);
           setBookedSeats(data.bookedSeatNumbers || []);
           if (data.trip.pickupLocation) {
             setPickupLocation(data.trip.pickupLocation);
           }
+        } else if (data.success && !data.trip) {
+          setError("No trip details available");
         } else {
-          setError(data.message || "Failed to load trip details");
+          setError(data.message || "Trip not found");
         }
       } catch (err) {
         setError("Error connecting to server. Please try again.");
@@ -149,6 +167,10 @@ export const TripDetails = () => {
   }, []);
 
   const handleOpenBooking = () => {
+    if (!trip) {
+      toast.error("Trip details are still loading. Please wait.");
+      return;
+    }
     const token = localStorage.getItem("token");
     if (!token) {
       toast.error("Please login to book this trip.");
@@ -557,7 +579,7 @@ export const TripDetails = () => {
         {/* Cover Image & Header Hero */}
         <div className="relative h-64 md:h-80 w-full overflow-hidden">
           <img
-            src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80"}
+            src={coverImageUrl}
             alt={trip.title}
             className="w-full h-full object-cover"
           />
@@ -664,8 +686,43 @@ export const TripDetails = () => {
           <div className="space-y-2">
             <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">About the Journey</h3>
             <p className="text-xs text-slate-500 dark:text-slate-450 leading-relaxed bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
-              {trip.description}
+              {trip.description || "No description available for this trip."}
             </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Pickup Point</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-450 mt-2">
+                {pickupPoint || "Pickup details unavailable."}
+              </p>
+              {trip.pickupMapsLink && (
+                <a
+                  href={trip.pickupMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 text-[10px] font-bold text-teal-600 dark:text-teal-300"
+                >
+                  View Pickup Map
+                </a>
+              )}
+            </div>
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Drop Point</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-450 mt-2">
+                {dropPoint || "Drop details unavailable."}
+              </p>
+              {trip.dropMapsLink && (
+                <a
+                  href={trip.dropMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 text-[10px] font-bold text-teal-600 dark:text-teal-300"
+                >
+                  View Drop Map
+                </a>
+              )}
+            </div>
           </div>
 
           {/* Destinations Multi-stop timeline */}
@@ -792,11 +849,11 @@ export const TripDetails = () => {
           </div>
 
             {/* Itinerary */}
-            {(trip.itinerary || []).length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Daily Travel Plan</h3>
-                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-4">
-                  {(trip.itinerary || []).map((day, idx) => {
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Daily Travel Plan</h3>
+              <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-4">
+                {itineraryItems.length > 0 ? (
+                  itineraryItems.map((day, idx) => {
                     const hasNewFields = day.startLocation || day.destination;
                     const dayTitle = day.title || (hasNewFields ? `${day.startLocation} to ${day.destination}` : `Day ${day.day}`);
                     
@@ -879,11 +936,11 @@ export const TripDetails = () => {
             )}
 
             {/* Hotels / Stays Details */}
-            {trip.hotels && trip.hotels.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Hotel & Accommodation Stays</h3>
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Hotel & Accommodation Stays</h3>
+              {hotelItems.length > 0 ? (
                 <div className="space-y-4">
-                  {trip.hotels.map((hotel, hIdx) => (
+                  {hotelItems.map((hotel, hIdx) => (
                     <div key={hIdx} className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-3.5 shadow-xs">
                       {/* Header */}
                       <div className="flex items-start justify-between gap-3">
@@ -946,37 +1003,49 @@ export const TripDetails = () => {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-450 text-center">
+                  No hotels configured for this trip.
+                </div>
+              )}
+            </div>
 
             {/* Activities Included Section */}
-            {trip.activities && trip.activities.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Featured Activities</h3>
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Featured Activities</h3>
+              {activityItems.length > 0 ? (
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xs flex flex-wrap gap-2">
-                  {trip.activities.map((act, idx) => (
+                  {activityItems.map((act, idx) => (
                     <div key={idx} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100/30 dark:border-teal-900/30 text-xs font-bold text-teal-600 dark:text-teal-400">
                       {act}
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-450 text-center">
+                  No activities configured for this trip.
+                </div>
+              )}
+            </div>
 
             {/* Packing Checklist Section */}
-            {trip.packingChecklist && trip.packingChecklist.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Packing & Checklist Planner</h3>
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-slate-200">Packing & Checklist Planner</h3>
+              {packingItems.length > 0 ? (
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xs">
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-3">Prepare for your journey</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {trip.packingChecklist.map((item, idx) => (
+                    {packingItems.map((item, idx) => (
                       <PackingChecklistItem key={idx} item={item} />
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-450 text-center">
+                  No packing list available for this trip.
+                </div>
+              )}
+            </div>
 
           {/* Terms & Policies */}
           <div className="space-y-2">
