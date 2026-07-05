@@ -1,41 +1,35 @@
 import cloudinary from "../config/cloudinary.js";
-import fs from "fs";
 
 export class UploadService {
   /**
-   * Upload local file path directly to Cloudinary.
-   * @param {string} localFilePath - Path to local file (e.g. from multer)
+   * Upload file buffer directly to Cloudinary using upload_stream.
+   * @param {Buffer} fileBuffer - The file buffer from memoryStorage
    * @param {string} folder - Destination folder on Cloudinary
    */
-  static async uploadToCloudinary(localFilePath, folder = "traveloop") {
-    try {
-      console.log(`[Cloudinary Service] Uploading file: ${localFilePath} to folder: ${folder}...`);
-      const response = await cloudinary.uploader.upload(localFilePath, {
-        folder: folder,
-        resource_type: "auto", // Automatically detect PDF, image, etc.
-      });
-
-      // Delete local temporary file
-      try {
-        fs.unlinkSync(localFilePath);
-      } catch (unlinkErr) {
-        console.warn("[Cloudinary Service] Local temp file cleanup failed:", unlinkErr.message);
-      }
-
-      return {
-        secure_url: response.secure_url,
-        public_id: response.public_id,
-      };
-    } catch (error) {
-      console.error("[Cloudinary Service Error]:", error);
-      // Ensure local temp file cleanup on error
-      try {
-        if (fs.existsSync(localFilePath)) {
-          fs.unlinkSync(localFilePath);
+  static uploadToCloudinary(fileBuffer, folder = "traveloop") {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: folder,
+          resource_type: "auto", // Automatically handle images, PDFs, etc.
+        },
+        (error, result) => {
+          if (error) {
+            console.error("[Cloudinary Stream Upload Error]:", error);
+            return reject(error);
+          }
+          resolve({
+            secure_url: result.secure_url,
+            public_id: result.public_id,
+            bytes: result.bytes,
+            format: result.format,
+          });
         }
-      } catch (e) {}
-      throw error;
-    }
+      );
+
+      // Write file buffer directly into the stream
+      uploadStream.end(fileBuffer);
+    });
   }
 
   /**
