@@ -17,6 +17,6 @@ export const getAgentProfile = async (): Promise<{ agent: Agent }> => {
 };
 
 export const updateAgentProfile = async (formData: Partial<Agent>): Promise<{ agent: Agent }> => {
-  const response = await api.put("/agent/profile", formData);
+  const response = await api.put("/agent/profile/update", formData);
   return response.data;
 };

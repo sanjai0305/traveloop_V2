@@ -4,14 +4,9 @@ import { useForm } from "react-hook-form";
 import {
   ShieldCheck,
   ShieldAlert,
-  Building2,
-  FileText,
-  Upload,
-  Globe,
   User2,
   Phone,
   MapPin,
-  AtSign,
   Sparkles,
   Save,
   AlertTriangle,
@@ -19,11 +14,10 @@ import {
 import { GlassCard, Button, Input, ImageUploadBox } from "../components/ui";
 import { updateAgentProfile } from "../services/authService";
 import { useAuthStore } from "../store/authStore";
-import { uploadImage } from "../services/firebase";
 
 /* ────────────────────────────────────────────────────────────────────────────
    Helpers
-──────────────────────────────────────────────────────────────────────────── */
+   ──────────────────────────────────────────────────────────────────────────── */
 
 /** Safe initial for avatar fallback — never throws on empty/undefined string */
 const getInitial = (name?: string | null): string => {
@@ -33,7 +27,7 @@ const getInitial = (name?: string | null): string => {
 
 /* ────────────────────────────────────────────────────────────────────────────
    Error Boundary — prevents white screen on any render error
-──────────────────────────────────────────────────────────────────────────── */
+   ──────────────────────────────────────────────────────────────────────────── */
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -89,37 +83,28 @@ class ProfileErrorBoundary extends React.Component<
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Profile Form — field names aligned with Backend Agent model
-   Backend fields: displayName, phone, companyName, gstNumber, businessCategory,
-                   address, city, state, country, website, instagram, facebook,
-                   logo, profileImage, profileCompleted, emailVerified
-──────────────────────────────────────────────────────────────────────────── */
+   Profile Form
+   ──────────────────────────────────────────────────────────────────────────── */
 
 const ProfileForm: React.FC = () => {
   const { agent, updateAgent } = useAuthStore();
-  const [docUploading, setDocUploading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Safe defaults — all fields from the Agent model with fallbacks to ""
+  // Safe defaults — KYC details ONLY
   const safeAgent = {
     displayName:      agent?.displayName      ?? "",
-    companyName:      agent?.companyName      ?? "",
-    phone:            agent?.phone            ?? "",
-    gstNumber:        agent?.gstNumber        ?? "",
-    businessCategory: agent?.businessCategory ?? "",
-    address:          agent?.address          ?? "",
-    city:             agent?.city             ?? "",
-    state:            agent?.state            ?? "",
-    country:          agent?.country          ?? "",
-    website:          agent?.website          ?? "",
-    instagram:        agent?.instagram        ?? "",
-    facebook:         agent?.facebook         ?? "",
-    logo:             agent?.logo             ?? "",
-    profileImage:     agent?.profileImage     ?? "",
-    profileCompleted: agent?.profileCompleted ?? false,
-    emailVerified:    agent?.emailVerified    ?? false,
+    dob:              agent?.dob              ?? "",
     email:            agent?.email            ?? "",
-    documents:        (agent as any)?.documents ?? [],
+    mobile:           agent?.mobile           ?? "",
+    state:            agent?.state            ?? "",
+    country:          agent?.country          ?? "India",
+    companyName:      agent?.companyName      ?? "",
+    gstNo:            agent?.gstNo || agent?.gstNumber || "",
+    companyLogo:      agent?.companyLogo || agent?.logo || "",
+    agentPhoto:       agent?.agentPhoto || agent?.profileImage || "",
+    emailVerified:    agent?.emailVerified    ?? false,
+    mobileVerified:   agent?.mobileVerified   ?? false,
+    kycStatus:        agent?.kycStatus        ?? "PENDING",
   };
 
   const {
@@ -132,8 +117,8 @@ const ProfileForm: React.FC = () => {
     defaultValues: safeAgent,
   });
 
-  const watchLogo        = watch("logo");
-  const watchProfileImage = watch("profileImage");
+  const watchLogo = watch("companyLogo");
+  const watchAgentPhoto = watch("agentPhoto");
 
   const profileMutation = useMutation({
     mutationFn: updateAgentProfile,
@@ -150,35 +135,18 @@ const ProfileForm: React.FC = () => {
     },
   });
 
-  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0] || !agent) return;
-    const file = e.target.files[0];
-    setDocUploading(true);
-    try {
-      const url = await uploadImage(file, "verification_docs");
-      const newDoc = { name: file.name, url, uploadedAt: new Date().toISOString() };
-      const updatedDocs = [...safeAgent.documents, newDoc];
-      profileMutation.mutate({ documents: updatedDocs } as any);
-    } catch (err) {
-      console.error("[Profile] Document upload failed:", err);
-      alert("Document upload failed. Please try again.");
-    } finally {
-      setDocUploading(false);
-    }
-  };
-
-  const removeDoc = (idx: number) => {
-    if (!agent || !confirm("Delete this document?")) return;
-    const updatedDocs = [...safeAgent.documents];
-    updatedDocs.splice(idx, 1);
-    profileMutation.mutate({ documents: updatedDocs } as any);
-  };
-
   const onSubmit = (data: any) => {
-    profileMutation.mutate(data);
+    // Keep internal aliases in sync
+    const payload = {
+      ...data,
+      name: data.displayName,
+      logo: data.companyLogo,
+      profileImage: data.agentPhoto,
+      gstNumber: data.gstNo,
+    };
+    profileMutation.mutate(payload);
   };
 
-  // Derive display name + avatar initial safely
   const displayName = safeAgent.displayName || safeAgent.companyName || safeAgent.email || "Agent";
   const avatarInitial = getInitial(displayName);
 
@@ -196,9 +164,9 @@ const ProfileForm: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-6">
         <div className="flex items-center gap-4">
           <div className="relative">
-            {safeAgent.profileImage ? (
+            {safeAgent.agentPhoto ? (
               <img
-                src={safeAgent.profileImage}
+                src={safeAgent.agentPhoto}
                 alt={displayName}
                 className="w-16 h-16 rounded-full object-cover border-2 border-primary"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -208,9 +176,9 @@ const ProfileForm: React.FC = () => {
                 {avatarInitial}
               </div>
             )}
-            {safeAgent.logo && (
+            {safeAgent.companyLogo && (
               <img
-                src={safeAgent.logo}
+                src={safeAgent.companyLogo}
                 alt="Logo"
                 className="w-8 h-8 rounded-lg object-cover absolute -bottom-1 -right-1 border border-white dark:border-slate-900 shadow-md"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -222,19 +190,19 @@ const ProfileForm: React.FC = () => {
               <h1 className="text-2xl font-extrabold text-slate-850 dark:text-slate-100">
                 {safeAgent.companyName || "Your Agency"}
               </h1>
-              {safeAgent.profileCompleted ? (
+              {safeAgent.kycStatus === "KYC_COMPLETED" || safeAgent.kycStatus === "APPROVED" ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-200">
                   <ShieldCheck className="w-3.5 h-3.5" /> Profile Complete
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/20 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-200">
-                  <ShieldAlert className="w-3.5 h-3.5" /> Pending Completion
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-955/20 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-200">
+                  <ShieldAlert className="w-3.5 h-3.5" /> Pending Verification
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-1">
               {displayName}
-              {safeAgent.gstNumber ? ` | GSTIN: ${safeAgent.gstNumber}` : " | GST not set"}
+              {safeAgent.gstNo ? ` | GSTIN: ${safeAgent.gstNo}` : " | GST not set"}
             </p>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
               {safeAgent.email}
@@ -243,20 +211,19 @@ const ProfileForm: React.FC = () => {
         </div>
 
         {/* Profile completion hint */}
-        {!safeAgent.profileCompleted && (
-          <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 max-w-xs">
+        {safeAgent.kycStatus !== "KYC_COMPLETED" && safeAgent.kycStatus !== "APPROVED" && (
+          <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-955/20 border border-amber-100 dark:border-amber-900/30 max-w-xs">
             <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold leading-relaxed">
-              Complete your profile to unlock trip publishing, bookings, and analytics.
+              Complete your KYC details and OTP verifications to unlock trip publishing.
             </p>
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ── Left Column: Branding + Documents ── */}
+        {/* ── Card 1: Agency Branding ── */}
         <div className="space-y-6">
-          {/* Logo & profile photo uploads */}
           <GlassCard>
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-150 mb-4">
               Agency Branding
@@ -266,13 +233,13 @@ const ProfileForm: React.FC = () => {
                 label="Company Logo"
                 folder="logos"
                 value={watchLogo || ""}
-                onChange={(url) => setValue("logo", url)}
+                onChange={(url) => setValue("companyLogo", url)}
               />
               <ImageUploadBox
-                label="Profile Picture"
+                label="Agent Photo"
                 folder="profiles"
-                value={watchProfileImage || ""}
-                onChange={(url) => setValue("profileImage", url)}
+                value={watchAgentPhoto || ""}
+                onChange={(url) => setValue("agentPhoto", url)}
                 circular
               />
             </div>
@@ -284,197 +251,117 @@ const ProfileForm: React.FC = () => {
               Update Brand Images
             </Button>
           </GlassCard>
-
-          {/* Verification Documents */}
-          <GlassCard>
-            <h3 className="text-sm font-bold text-slate-855 dark:text-slate-150 mb-3">
-              Verification Documents
-            </h3>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold leading-relaxed mb-4">
-              Upload commercial licenses, company incorporation certificates, or taxation registrations (PDF/Image).
-            </p>
-
-            <div className="space-y-3 mb-4">
-              {safeAgent.documents.length > 0 ? (
-                safeAgent.documents.map((doc: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800"
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      <a
-                        href={doc?.url || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-primary truncate hover:underline"
-                      >
-                        {doc?.name || "Document"}
-                      </a>
-                    </div>
-                    <button
-                      onClick={() => removeDoc(idx)}
-                      className="text-[10px] font-bold text-rose-500 hover:underline pl-2 flex-shrink-0"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-slate-400 py-6 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                  No documents uploaded.
-                </div>
-              )}
-            </div>
-
-            <label className="block w-full">
-              <input
-                type="file"
-                onChange={handleDocumentUpload}
-                className="hidden"
-                disabled={docUploading}
-                accept=".pdf,.jpg,.jpeg,.png,.webp"
-              />
-              <div className="flex items-center justify-center gap-2 p-3 border border-dashed border-primary/45 rounded-xl text-primary hover:bg-primary/5 cursor-pointer text-xs font-bold transition-all">
-                {docUploading ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" /> Upload Document
-                  </>
-                )}
-              </div>
-            </label>
-          </GlassCard>
         </div>
 
-        {/* ── Right Column: Edit Profile ── */}
+        {/* ── Card 2: Agent Details ── */}
         <GlassCard className="lg:col-span-2">
-          <h3 className="text-sm font-bold text-slate-850 dark:text-slate-150 mb-6">
-            Agency Configuration
+          <h3 className="text-sm font-bold text-slate-855 dark:text-slate-150 mb-6">
+            Agent Details
           </h3>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Row 1 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="relative">
                 <Input
-                  label="Agent Name / Primary Contact"
+                  label="Full Name"
                   type="text"
-                  {...register("displayName")}
+                  {...register("displayName", { required: "Full name is required" })}
                   error={(errors as any).displayName?.message}
                 />
                 <User2 className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
               </div>
-              <div className="relative">
-                <Input
-                  label="Agency Legal Name"
-                  type="text"
-                  {...register("companyName", { required: "Company name is required" })}
-                  error={(errors as any).companyName?.message}
-                />
-                <Building2 className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
-              </div>
+              <Input
+                label="Date of Birth"
+                type="date"
+                {...register("dob", { required: "Date of birth is required" })}
+                error={(errors as any).dob?.message}
+              />
             </div>
 
-            {/* Row 2 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Gmail Address"
+                type="email"
+                {...register("email")}
+                disabled
+                readOnly
+              />
               <div className="relative">
                 <Input
-                  label="Operations Phone"
+                  label="Mobile Number"
                   type="tel"
-                  {...register("phone", { required: "Phone is required" })}
-                  error={(errors as any).phone?.message}
+                  maxLength={10}
+                  {...register("mobile", {
+                    required: "Mobile number is required",
+                    pattern: { value: /^[0-9]{10}$/, message: "Exactly 10 digits required" }
+                  })}
+                  error={(errors as any).mobile?.message}
                 />
                 <Phone className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
               </div>
-              <Input
-                label="GST Number"
-                type="text"
-                placeholder="22AAAAA0000A1Z5"
-                {...register("gstNumber")}
-              />
             </div>
 
-            {/* Row 3 */}
-            <div className="relative">
-              <Input
-                label="Office Street Address"
-                type="text"
-                {...register("address")}
-              />
-              <MapPin className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
-            </div>
-
-            {/* Row 4: City / State / Country */}
-            <div className="grid grid-cols-3 gap-3">
-              <Input label="City"    type="text" {...register("city")} />
-              <Input label="State"   type="text" {...register("state")} />
-              <Input label="Country" type="text" {...register("country")} />
-            </div>
-
-            {/* Row 5: Social */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="relative">
                 <Input
-                  label="Website URL"
-                  type="url"
-                  placeholder="https://agency.com"
-                  {...register("website")}
-                />
-                <Globe className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
-              </div>
-              <div className="relative">
-                <Input
-                  label="Instagram"
+                  label="State"
                   type="text"
-                  placeholder="@username"
-                  {...register("instagram")}
+                  {...register("state", { required: "State is required" })}
+                  error={(errors as any).state?.message}
                 />
-                <AtSign className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
+                <MapPin className="absolute right-3 bottom-3.5 w-4 h-4 text-slate-300 pointer-events-none" />
+              </div>
+              <Input
+                label="Country"
+                type="text"
+                {...register("country", { required: "Country is required" })}
+                error={(errors as any).country?.message}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="Company Name"
+                type="text"
+                {...register("companyName", { required: "Company name is required" })}
+                error={(errors as any).companyName?.message}
+              />
+              <Input
+                label="GST Number"
+                type="text"
+                {...register("gstNo", { required: "GST number is required" })}
+                error={(errors as any).gstNo?.message}
+              />
+            </div>
+
+            {/* Verification Status */}
+            <div className="p-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 space-y-3 mt-4">
+              <h4 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Verification & KYC Status
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${safeAgent.emailVerified ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`} />
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Email Verified: {safeAgent.emailVerified ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${safeAgent.mobileVerified ? "bg-emerald-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`} />
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Mobile Verified: {safeAgent.mobileVerified ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${(safeAgent.kycStatus === "KYC_COMPLETED" || safeAgent.kycStatus === "APPROVED") ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`} />
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    KYC Status: {safeAgent.kycStatus}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Row 6: Facebook */}
-            <Input
-              label="Facebook Page"
-              type="text"
-              placeholder="https://facebook.com/yourpage"
-              {...register("facebook")}
-            />
-
-            {/* Row 7: Business category */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                Business Category
-              </label>
-              <select
-                {...register("businessCategory")}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-800 dark:text-slate-100 text-xs font-semibold focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-              >
-                <option value="">Select category</option>
-                <option value="Tour Operator">Tour Operator</option>
-                <option value="Travel Agency">Travel Agency</option>
-                <option value="Bus Operator">Bus Operator</option>
-                <option value="Hotel Partner">Hotel Partner</option>
-                <option value="Pilgrim Tour Specialist">Pilgrim Tour Specialist</option>
-                <option value="Adventure Travel">Adventure Travel</option>
-                <option value="Corporate Travel">Corporate Travel</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            {/* Submit */}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-6 flex items-center justify-between">
-              {!safeAgent.profileCompleted && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1">
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  Fill all required fields to complete your profile
-                </p>
-              )}
               <Button
                 type="submit"
                 loading={profileMutation.isPending}
@@ -493,7 +380,7 @@ const ProfileForm: React.FC = () => {
 
 /* ────────────────────────────────────────────────────────────────────────────
    Exported page component — wrapped in ErrorBoundary
-──────────────────────────────────────────────────────────────────────────── */
+   ──────────────────────────────────────────────────────────────────────────── */
 
 export const Profile: React.FC = () => {
   const { agent, isLoading } = useAuthStore();
