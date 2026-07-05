@@ -261,7 +261,7 @@ export const sendItineraryEmail = async (to, itineraryData) => {
   });
 };
 
-export const sendInvoiceEmail = async (to, invoiceData) => {
+export const sendGenericInvoiceEmail = async (to, invoiceData) => {
   const transporter = await createTransporter();
   const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
 
