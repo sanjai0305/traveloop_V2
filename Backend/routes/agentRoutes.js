@@ -9,6 +9,8 @@ import Agent from "../models/Agent.js";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
 import Driver from "../models/Driver.js";
+import AgentSettings from "../models/AgentSettings.js";
+import AgentReferral from "../models/AgentReferral.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
 import { checkAgentKYC } from "../middleware/kycMiddleware.js";
 import { sendOtpEmail } from "../services/emailService.js";
@@ -943,6 +945,57 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
   }
 
   try {
+    // ── Trip Slot Limit Check ──
+    const isDbConnected = () => mongoose.connection.readyState === 1;
+    let settings = null;
+    if (isDbConnected()) {
+      settings = await AgentSettings.findOne({ settingId: "global" });
+    }
+    const defaultSlots = settings ? settings.defaultTripSlots : 2;
+
+    const agent = isDbConnected() 
+      ? await Agent.findById(req.agent._id) 
+      : fallbackAgents.get(req.agent._id.toString());
+
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent profile not found" });
+    }
+
+    const baseSlots = agent.tripSlots !== undefined ? agent.tripSlots : defaultSlots;
+    const bonusSlots = agent.bonusSlots || 0;
+    const purchasedSlots = agent.purchasedSlots || 0;
+    const totalAvailableSlots = baseSlots + bonusSlots + purchasedSlots;
+
+    let activeTripsCount = 0;
+    if (isDbConnected()) {
+      activeTripsCount = await AgentTrip.countDocuments({
+        agentId: req.agent._id,
+        status: { $nin: ["completed", "Completed", "cancelled", "Cancelled"] },
+        isDeleted: { $ne: true }
+      });
+    } else {
+      activeTripsCount = Array.from(fallbackTrips.values()).filter(
+        t => t.agentId.toString() === req.agent._id.toString() &&
+             !["completed", "Completed", "cancelled", "Cancelled"].includes(t.status) &&
+             t.isDeleted !== true
+      ).length;
+    }
+
+    if (activeTripsCount >= totalAvailableSlots) {
+      return res.status(400).json({
+        success: false,
+        message: "Trip slot limit reached. Complete existing trips or earn bonus slots through referrals."
+      });
+    }
+
+    // Update usedSlots
+    agent.usedSlots = activeTripsCount + 1;
+    if (isDbConnected()) {
+      await Agent.findByIdAndUpdate(agent._id, { usedSlots: agent.usedSlots });
+    } else {
+      fallbackAgents.set(agent._id.toString(), agent);
+    }
+
     let trip;
     let driverId = null;
 
@@ -1290,6 +1343,33 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
     const io = req.app.get("io");
     if (io && (trip.status === "published" || trip.publishStatus === "published" || trip.published)) {
       io.emit("trip_updated", trip._id || req.params.id);
+    }
+
+    // Recalculate usedSlots
+    try {
+      const isDbConnected = () => mongoose.connection.readyState === 1;
+      let activeTripsCount = 0;
+      if (isDbConnected()) {
+        activeTripsCount = await AgentTrip.countDocuments({
+          agentId: req.agent._id,
+          status: { $nin: ["completed", "Completed", "cancelled", "Cancelled"] },
+          isDeleted: { $ne: true }
+        });
+        await Agent.findByIdAndUpdate(req.agent._id, { usedSlots: activeTripsCount });
+      } else {
+        activeTripsCount = Array.from(fallbackTrips.values()).filter(
+          t => t.agentId.toString() === req.agent._id.toString() &&
+               !["completed", "Completed", "cancelled", "Cancelled"].includes(t.status) &&
+               t.isDeleted !== true
+        ).length;
+        const agent = fallbackAgents.get(req.agent._id.toString());
+        if (agent) {
+          agent.usedSlots = activeTripsCount;
+          fallbackAgents.set(req.agent._id.toString(), agent);
+        }
+      }
+    } catch (slotRecalcErr) {
+      console.error("Error recalculating slots:", slotRecalcErr);
     }
 
     res.status(200).json({
@@ -1740,6 +1820,33 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
     if (io) {
       io.emit("trip_deleted", req.params.id);
       console.log(`[Socket.io] Broadcasted trip_deleted event for: ${req.params.id}`);
+    }
+
+    // Recalculate usedSlots
+    try {
+      const isDbConnected = () => mongoose.connection.readyState === 1;
+      let activeTripsCount = 0;
+      if (isDbConnected()) {
+        activeTripsCount = await AgentTrip.countDocuments({
+          agentId: req.agent._id,
+          status: { $nin: ["completed", "Completed", "cancelled", "Cancelled"] },
+          isDeleted: { $ne: true }
+        });
+        await Agent.findByIdAndUpdate(req.agent._id, { usedSlots: activeTripsCount });
+      } else {
+        activeTripsCount = Array.from(fallbackTrips.values()).filter(
+          t => t.agentId.toString() === req.agent._id.toString() &&
+               !["completed", "Completed", "cancelled", "Cancelled"].includes(t.status) &&
+               t.isDeleted !== true
+        ).length;
+        const agent = fallbackAgents.get(req.agent._id.toString());
+        if (agent) {
+          agent.usedSlots = activeTripsCount;
+          fallbackAgents.set(req.agent._id.toString(), agent);
+        }
+      }
+    } catch (slotRecalcErr) {
+      console.error("Error recalculating slots:", slotRecalcErr);
     }
 
     res.status(200).json({
@@ -3145,6 +3252,160 @@ router.post("/trips/:tripId/schedule-change/apply", protectAgent, async (req, re
     });
   } catch (error) {
     console.error("[ScheduleChange] Apply error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /agent/slots
+ * Retrieve agent slots allocation details
+ */
+router.get("/slots", protectAgent, async (req, res) => {
+  try {
+    const isDbConnected = () => mongoose.connection.readyState === 1;
+    let settings = null;
+    if (isDbConnected()) {
+      settings = await AgentSettings.findOne({ settingId: "global" });
+    }
+    const defaultSlots = settings ? settings.defaultTripSlots : 2;
+
+    const agent = isDbConnected()
+      ? await Agent.findById(req.agent._id)
+      : fallbackAgents.get(req.agent._id.toString());
+
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    // Auto-generate referral code if not exists
+    if (!agent.referralCode) {
+      const cleanName = (agent.companyName || "AGT").replace(/[^a-zA-Z]/g, "").toUpperCase();
+      agent.referralCode = `AGT-${cleanName.slice(0, 5)}-${Math.floor(1000 + Math.random() * 9000)}`;
+      if (isDbConnected()) {
+        await agent.save();
+      } else {
+        fallbackAgents.set(agent._id.toString(), agent);
+      }
+    }
+
+    const baseSlots = agent.tripSlots !== undefined ? agent.tripSlots : defaultSlots;
+    const bonusSlots = agent.bonusSlots || 0;
+    const purchasedSlots = agent.purchasedSlots || 0;
+    const totalSlots = baseSlots + bonusSlots + purchasedSlots;
+
+    let activeTripsCount = 0;
+    if (isDbConnected()) {
+      activeTripsCount = await AgentTrip.countDocuments({
+        agentId: req.agent._id,
+        status: { $nin: ["completed", "Completed", "cancelled", "Cancelled"] },
+        isDeleted: { $ne: true }
+      });
+    } else {
+      activeTripsCount = Array.from(fallbackTrips.values()).filter(
+        t => t.agentId.toString() === req.agent._id.toString() &&
+             !["completed", "Completed", "cancelled", "Cancelled"].includes(t.status) &&
+             t.isDeleted !== true
+      ).length;
+    }
+
+    res.status(200).json({
+      success: true,
+      tripSlots: totalSlots,
+      usedSlots: activeTripsCount,
+      bonusSlots,
+      purchasedSlots,
+      baseSlots,
+      remainingSlots: Math.max(0, totalSlots - activeTripsCount),
+      referralCode: agent.referralCode,
+      referralCount: agent.referralCount || 0,
+    });
+  } catch (error) {
+    console.error("Get agent slots error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /agent/referral-settings
+ * Retrieve slot purchasing configurations
+ */
+router.get("/referral-settings", protectAgent, async (req, res) => {
+  try {
+    const isDbConnected = () => mongoose.connection.readyState === 1;
+    let settings = null;
+    if (isDbConnected()) {
+      settings = await AgentSettings.findOne({ settingId: "global" });
+    }
+
+    res.status(200).json({
+      success: true,
+      settings: {
+        slotPrice: settings ? (settings.slotPrice || 1000) : 1000,
+        slotPurchaseEnabled: settings ? (settings.slotPurchaseEnabled !== false) : true,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /agent/apply-referral
+ * Apply another agent's referral invite code
+ */
+router.post("/apply-referral", protectAgent, async (req, res) => {
+  try {
+    const { referralCode } = req.body;
+    if (!referralCode) {
+      return res.status(400).json({ success: false, message: "Referral code is required." });
+    }
+
+    const isDbConnected = () => mongoose.connection.readyState === 1;
+    if (!isDbConnected()) {
+      return res.status(200).json({
+        success: true,
+        message: "Referral code verified (Demo Mode).",
+        inviterName: "Demo Partner",
+      });
+    }
+
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found" });
+    }
+
+    if (agent.referredBy) {
+      return res.status(400).json({ success: false, message: "You have already applied a referral code." });
+    }
+
+    const inviter = await Agent.findOne({ referralCode: referralCode.trim().toUpperCase() });
+    if (!inviter) {
+      return res.status(400).json({ success: false, message: "Invalid referral code. Agent not found." });
+    }
+
+    if (inviter._id.toString() === agent._id.toString()) {
+      return res.status(400).json({ success: false, message: "You cannot refer yourself." });
+    }
+
+    agent.referredBy = inviter.referralCode;
+    await agent.save();
+
+    await AgentReferral.create({
+      inviterAgentId: inviter._id,
+      newAgentId: agent._id,
+      rewardGranted: false,
+      conditionsMet: false,
+    });
+
+    inviter.referralCount = (inviter.referralCount || 0) + 1;
+    await inviter.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Referral code verified! Invited by ${inviter.companyName || "Partner Agent"}.`,
+      inviterName: inviter.companyName,
+    });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });

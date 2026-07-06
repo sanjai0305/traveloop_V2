@@ -5,11 +5,23 @@ const paymentSchema = new mongoose.Schema(
     bookingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
-      required: true,
     },
     bookingRef: {
       type: String,
       default: "",
+    },
+    type: {
+      type: String,
+      enum: ["booking", "slot_purchase"],
+      default: "booking",
+    },
+    agentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
+    },
+    slotsGranted: {
+      type: Number,
+      default: 0,
     },
     tripId: {
       type: mongoose.Schema.Types.ObjectId,

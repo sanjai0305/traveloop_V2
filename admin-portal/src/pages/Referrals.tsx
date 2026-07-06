@@ -20,14 +20,16 @@ interface ReferralSettings {
 export const Referrals: React.FC = () => {
   const [settings, setSettings] = useState<ReferralSettings | null>(null);
   const [coupons, setCoupons] = useState<any[]>([]);
+  const [agentStats, setAgentStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [settingsRes, bookingsRes] = await Promise.all([
+      const [settingsRes, bookingsRes, statsRes] = await Promise.all([
         api.get("/admin/referral/settings"),
-        api.get("/admin/bookings")
+        api.get("/admin/bookings"),
+        api.get("/admin/referral/stats").catch(() => ({ data: { success: false } }))
       ]);
 
       if (settingsRes.data.success) {
@@ -45,6 +47,10 @@ export const Referrals: React.FC = () => {
           referral_prob_gold: settingsRes.data.referral_prob_gold ?? 15,
           referral_prob_diamond: settingsRes.data.referral_prob_diamond ?? 10
         });
+      }
+
+      if (statsRes.data.success) {
+        setAgentStats(statsRes.data.stats);
       }
 
       if (bookingsRes.data.success) {
@@ -155,6 +161,80 @@ export const Referrals: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Agent Referrals & Slots Overview */}
+      {agentStats && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Agent Referral Statistics */}
+          <div className="lg:col-span-2 glass-panel p-6 rounded-[20px] bg-white border border-slate-200 space-y-4 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 font-poppins flex items-center gap-2">
+                <Users className="w-4 h-4 text-[#14B8A6]" />
+                <span>Agent Referral & Slots Metrics</span>
+              </h3>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Admin-configured slots consumed, available, and bonuses granted.</p>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Agents Referred</span>
+                <span className="text-xl font-black text-slate-800 font-mono mt-1 block">{agentStats.agentsReferred}</span>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Bonus Slots Granted</span>
+                <span className="text-xl font-black text-teal-600 font-mono mt-1 block">+{agentStats.bonusSlotsGranted}</span>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Slots Consumed</span>
+                <span className="text-xl font-black text-slate-800 font-mono mt-1 block">{agentStats.slotsConsumed}</span>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Total Available Slots</span>
+                <span className="text-xl font-black text-blue-600 font-mono mt-1 block">{agentStats.slotsAvailable}</span>
+              </div>
+            </div>
+
+            <div className="bg-teal-50/50 p-4 rounded-2xl border border-teal-100 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-teal-800 block">Trips Created Through Referral</span>
+                <span className="text-[10px] font-semibold text-teal-600 mt-0.5 block">Total active trips published by referred agent partners.</span>
+              </div>
+              <span className="text-2xl font-black text-teal-700 font-mono">{agentStats.tripsCreatedThroughReferral}</span>
+            </div>
+          </div>
+
+          {/* Top Referring Agents Leaderboard */}
+          <div className="glass-panel p-6 rounded-[20px] bg-white border border-slate-200 space-y-4 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 font-poppins flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-yellow-500 animate-pulse" />
+                <span>Top Referring Agents</span>
+              </h3>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Top performing host partnerships.</p>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              {agentStats.topReferringAgents && agentStats.topReferringAgents.length > 0 ? (
+                agentStats.topReferringAgents.map((agent: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="overflow-hidden pr-2">
+                      <span className="text-xs font-bold text-slate-800 block truncate">{agent.companyName || "Host Partner"}</span>
+                      <span className="text-[9px] text-slate-400 block truncate mt-0.5">{agent.email}</span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black text-[#14B8A6] font-mono">{agent.referralCount} Invites</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6 text-[10px] text-slate-400 font-semibold">
+                  No active host partner referrals yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Coupons ledger */}
       <div className="space-y-3">

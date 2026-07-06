@@ -25,6 +25,15 @@ export const Settings: React.FC = () => {
   const [probGold, setProbGold] = useState<number>(15);
   const [probDiamond, setProbDiamond] = useState<number>(10);
 
+  // Agent Trip Slot settings state
+  const [defaultTripSlots, setDefaultTripSlots] = useState<number>(2);
+  const [extraSlotsPerReferral, setExtraSlotsPerReferral] = useState<number>(1);
+  const [maxSlots, setMaxSlots] = useState<number>(5);
+  const [approvalTimeLimit, setApprovalTimeLimit] = useState<number>(1);
+  const [tripSlotBonusEnabled, setTripSlotBonusEnabled] = useState<boolean>(true);
+  const [slotPrice, setSlotPrice] = useState<number>(1000);
+  const [slotPurchaseEnabled, setSlotPurchaseEnabled] = useState<boolean>(true);
+
   const [savingReferral, setSavingReferral] = useState(false);
   const [referralSaveSuccess, setReferralSaveSuccess] = useState(false);
 
@@ -77,6 +86,15 @@ export const Settings: React.FC = () => {
           setProbSilver(res.data.referral_prob_silver ?? 25);
           setProbGold(res.data.referral_prob_gold ?? 15);
           setProbDiamond(res.data.referral_prob_diamond ?? 10);
+
+          // Agent settings
+          setDefaultTripSlots(res.data.defaultTripSlots ?? 2);
+          setExtraSlotsPerReferral(res.data.extraSlotsPerReferral ?? 1);
+          setMaxSlots(res.data.maxSlots ?? 5);
+          setApprovalTimeLimit(res.data.approvalTimeLimit ?? 1);
+          setTripSlotBonusEnabled(res.data.tripSlotBonusEnabled ?? true);
+          setSlotPrice(res.data.slotPrice ?? 1000);
+          setSlotPurchaseEnabled(res.data.slotPurchaseEnabled ?? true);
         }
       } catch (err) {
         console.warn("Failed to fetch referral settings", err);
@@ -127,6 +145,15 @@ export const Settings: React.FC = () => {
         referral_prob_silver: probSilver,
         referral_prob_gold: probGold,
         referral_prob_diamond: probDiamond,
+
+        // Agent settings
+        defaultTripSlots,
+        extraSlotsPerReferral,
+        maxSlots,
+        approvalTimeLimit,
+        tripSlotBonusEnabled,
+        slotPrice,
+        slotPurchaseEnabled,
       });
       if (res.data.success) {
         setReferralSaveSuccess(true);
@@ -657,6 +684,154 @@ export const Settings: React.FC = () => {
                 ⚠️ Current total: {probBronze + probSilver + probGold + probDiamond}%. Sum must equal exactly 100%.
               </p>
             )}
+          </div>
+        </div>
+
+        {/* Agent Trip Slot & Referral Settings Section */}
+        <div className="border-t border-slate-100 pt-4 space-y-4">
+          <h4 className="text-[10px] font-bold text-[#14B8A6] font-poppins uppercase tracking-wider">Agent Trip Slot & Referral Settings</h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Trip Slot Bonus Toggle */}
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Trip Slot Bonus
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTripSlotBonusEnabled(true)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    tripSlotBonusEnabled
+                      ? "bg-[#14B8A6] text-white border-[#14B8A6]"
+                      : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                  }`}
+                >
+                  Enabled
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTripSlotBonusEnabled(false)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    !tripSlotBonusEnabled
+                      ? "bg-rose-500 text-white border-rose-500"
+                      : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                  }`}
+                >
+                  Disabled
+                </button>
+              </div>
+            </div>
+
+            {/* Extra Slots per Referral */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Extra Slots Per Referral
+              </label>
+              <input
+                type="number"
+                min={0}
+                required
+                value={extraSlotsPerReferral}
+                onChange={(e) => setExtraSlotsPerReferral(Number(e.target.value))}
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:border-[#14B8A6] font-bold"
+              />
+            </div>
+
+            {/* Maximum Bonus Slots */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Maximum Bonus Slots Cap
+              </label>
+              <input
+                type="number"
+                min={1}
+                required
+                value={maxSlots}
+                onChange={(e) => setMaxSlots(Number(e.target.value))}
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:border-[#14B8A6] font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Initial Free Slots */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Default Initial Trip Slots
+              </label>
+              <input
+                type="number"
+                min={1}
+                required
+                value={defaultTripSlots}
+                onChange={(e) => setDefaultTripSlots(Number(e.target.value))}
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:border-[#14B8A6] font-bold"
+              />
+            </div>
+
+            {/* SLA hours */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Admin Approval SLA (Hours)
+              </label>
+              <input
+                type="number"
+                min={1}
+                required
+                value={approvalTimeLimit}
+                onChange={(e) => setApprovalTimeLimit(Number(e.target.value))}
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:border-[#14B8A6] font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            {/* Allow Slot Purchase Toggle */}
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Allow Agent Paid Slot Purchase
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSlotPurchaseEnabled(true)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    slotPurchaseEnabled
+                      ? "bg-[#14B8A6] text-white border-[#14B8A6]"
+                      : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                  }`}
+                >
+                  Enabled
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSlotPurchaseEnabled(false)}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    !slotPurchaseEnabled
+                      ? "bg-rose-500 text-white border-rose-500"
+                      : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                  }`}
+                >
+                  Disabled
+                </button>
+              </div>
+            </div>
+
+            {/* Slot Price */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                Price Per Slot (₹)
+              </label>
+              <input
+                type="number"
+                min={0}
+                required
+                value={slotPrice}
+                onChange={(e) => setSlotPrice(Number(e.target.value))}
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:border-[#14B8A6] font-bold"
+              />
+            </div>
           </div>
         </div>
 

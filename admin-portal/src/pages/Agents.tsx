@@ -14,6 +14,10 @@ interface Agent {
   totalRevenue: number;
   pendingRevenue: number;
   settledRevenue: number;
+  tripSlots?: number;
+  usedSlots?: number;
+  bonusSlots?: number;
+  purchasedSlots?: number;
 }
 
 export const Agents: React.FC = () => {
@@ -23,6 +27,9 @@ export const Agents: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
   const [newComm, setNewComm] = useState<number>(10);
+  const [newTripSlots, setNewTripSlots] = useState<number>(2);
+  const [newBonusSlots, setNewBonusSlots] = useState<number>(0);
+  const [newPurchasedSlots, setNewPurchasedSlots] = useState<number>(0);
   const [saving, setSaving] = useState(false);
 
   const loadAgents = async () => {
@@ -73,18 +80,29 @@ export const Agents: React.FC = () => {
     setSaving(true);
     try {
       const res = await api.patch(`/admin/agents/${editAgent._id}`, {
-        commissionRate: newComm
+        commissionRate: newComm,
+        tripSlots: newTripSlots,
+        bonusSlots: newBonusSlots,
+        purchasedSlots: newPurchasedSlots,
       });
       if (res.data.success) {
         setAgents(
           agents.map((a) =>
-            a._id === editAgent._id ? { ...a, commissionRate: newComm } : a
+            a._id === editAgent._id
+              ? {
+                  ...a,
+                  commissionRate: newComm,
+                  tripSlots: newTripSlots,
+                  bonusSlots: newBonusSlots,
+                  purchasedSlots: newPurchasedSlots,
+                }
+              : a
           )
         );
         setEditAgent(null);
       }
     } catch (err) {
-      alert("Failed to save commission rate");
+      alert("Failed to save agent settings");
     } finally {
       setSaving(false);
     }
@@ -145,6 +163,7 @@ export const Agents: React.FC = () => {
                 <th className="py-4 px-6">Email & Phone</th>
                 <th className="py-4 px-6 text-center">Status</th>
                 <th className="py-4 px-6 text-center">Commission %</th>
+                <th className="py-4 px-6 text-center">Trip Slots</th>
                 <th className="py-4 px-6 text-right">Wallet Balance</th>
                 <th className="py-4 px-6 text-right">Pending Payouts</th>
                 <th className="py-4 px-6 text-center">Actions</th>
@@ -199,6 +218,17 @@ export const Agents: React.FC = () => {
                       {agent.commissionRate || 10}%
                     </td>
 
+                    {/* Trip Slots */}
+                    <td className="py-4 px-6 text-center font-mono">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                        (agent.usedSlots || 0) >= ((agent.tripSlots ?? 2) + (agent.bonusSlots ?? 0) + (agent.purchasedSlots ?? 0))
+                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                          : "bg-slate-800/40 text-slate-300 border border-slate-700/30"
+                      }`}>
+                        {agent.usedSlots || 0} / {(agent.tripSlots ?? 2) + (agent.bonusSlots ?? 0) + (agent.purchasedSlots ?? 0)}
+                      </span>
+                    </td>
+
                     {/* Wallet */}
                     <td className="py-4 px-6 text-right font-mono font-semibold text-emerald-400">
                       {fmt(agent.walletBalance || 0)}
@@ -216,8 +246,11 @@ export const Agents: React.FC = () => {
                           onClick={() => {
                             setEditAgent(agent);
                             setNewComm(agent.commissionRate || 10);
+                            setNewTripSlots(agent.tripSlots ?? 2);
+                            setNewBonusSlots(agent.bonusSlots ?? 0);
+                            setNewPurchasedSlots(agent.purchasedSlots ?? 0);
                           }}
-                          title="Edit Commission Rate"
+                          title="Edit Agent Details & Slots"
                           className="p-1.5 rounded-lg bg-slate-800 hover:bg-teal-500 hover:text-slate-950 text-slate-400 transition-all duration-200"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -250,56 +283,137 @@ export const Agents: React.FC = () => {
         </div>
       </div>
 
-      {/* ── COMMISSION RATE MODAL EDITOR ── */}
+      {/* ── COMMISSION & TRIP SLOTS MODAL EDITOR ── */}
       {editAgent && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
             <div>
-              <h3 className="text-md font-bold text-white font-poppins">Edit Commission Rate</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">Override commission rate for: {editAgent.companyName || editAgent.displayName}</p>
+              <h3 className="text-md font-bold text-white font-poppins">Edit Agent Settings</h3>
+              <p className="text-[10px] text-slate-400 mt-0.5">Override commission policy and trip slots allocation for: {editAgent.companyName || editAgent.displayName}</p>
             </div>
-
-            <div className="space-y-3">
+ 
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
               {/* Presets */}
-              <div className="flex justify-between items-center gap-2">
-                {[
-                  { label: "Enterprise (5%)", val: 5 },
-                  { label: "Premium (8%)", val: 8 },
-                  { label: "Standard (10%)", val: 10 }
-                ].map((preset) => (
-                  <button
-                    key={preset.val}
-                    onClick={() => setNewComm(preset.val)}
-                    className={`flex-1 text-[10px] font-semibold py-2 rounded-xl transition-all border ${
-                      newComm === preset.val
-                        ? "bg-teal-500 border-teal-500 text-slate-950 shadow-md shadow-teal-500/10"
-                        : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Custom Input */}
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
-                  Custom Percentage
-                </label>
-                <div className="relative">
+                <label className="text-[10px] uppercase font-bold text-slate-450 tracking-wider">Commission Preset</label>
+                <div className="flex justify-between items-center gap-2">
+                  {[
+                    { label: "Enterprise (5%)", val: 5 },
+                    { label: "Premium (8%)", val: 8 },
+                    { label: "Standard (10%)", val: 10 }
+                  ].map((preset) => (
+                    <button
+                      key={preset.val}
+                      onClick={() => setNewComm(preset.val)}
+                      type="button"
+                      className={`flex-1 text-[10px] font-semibold py-2 rounded-xl transition-all border ${
+                        newComm === preset.val
+                          ? "bg-teal-500 border-teal-500 text-slate-950 shadow-md shadow-teal-500/10"
+                          : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+ 
+              {/* Custom Input */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                    Commission %
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={newComm}
+                      onChange={(e) => setNewComm(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-teal-500 font-bold"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-500 text-xs font-bold font-mono">%</div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                    Base Slots
+                  </label>
                   <input
                     type="number"
                     min={0}
-                    max={100}
-                    value={newComm}
-                    onChange={(e) => setNewComm(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-teal-500"
+                    value={newTripSlots}
+                    onChange={(e) => setNewTripSlots(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-teal-500 font-bold font-mono"
                   />
-                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none text-slate-500 text-xs font-bold font-mono">%</div>
                 </div>
               </div>
-            </div>
 
+              {/* Bonus and Purchased Slots */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                    Bonus Slots (Referral)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newBonusSlots}
+                    onChange={(e) => setNewBonusSlots(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-teal-500 font-bold font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                    Purchased Slots
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newPurchasedSlots}
+                    onChange={(e) => setNewPurchasedSlots(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-teal-500 font-bold font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Slot Management Presets / Reset */}
+              <div className="flex gap-2 justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTripSlots(prev => prev + 1);
+                  }}
+                  className="flex-1 py-1.5 bg-slate-850 hover:bg-slate-800 text-teal-400 font-bold rounded-xl text-[10px] transition-colors border border-slate-800"
+                >
+                  +1 Base Slot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTripSlots(prev => Math.max(0, prev - 1));
+                  }}
+                  className="flex-1 py-1.5 bg-slate-850 hover:bg-slate-800 text-rose-400 font-bold rounded-xl text-[10px] transition-colors border border-slate-800"
+                >
+                  -1 Base Slot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTripSlots(2);
+                    setNewBonusSlots(0);
+                    setNewPurchasedSlots(0);
+                  }}
+                  className="flex-1 py-1.5 bg-slate-950 hover:bg-rose-950/20 text-slate-400 hover:text-rose-400 font-bold rounded-xl text-[10px] transition-colors border border-slate-800"
+                >
+                  Reset Slots
+                </button>
+              </div>
+            </div>
+ 
             {/* Modal Actions */}
             <div className="flex gap-3 pt-2">
               <button
@@ -311,9 +425,9 @@ export const Agents: React.FC = () => {
               <button
                 onClick={handleSaveCommission}
                 disabled={saving}
-                className="flex-1 py-2 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs transition-colors"
+                className="flex-1 py-2 px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-lg shadow-teal-500/10"
               >
-                {saving ? "Saving..." : "Apply Rate"}
+                {saving ? "Saving..." : "Apply Settings"}
               </button>
             </div>
           </div>

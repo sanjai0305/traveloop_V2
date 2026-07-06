@@ -363,7 +363,20 @@ const agentTripSchema = new mongoose.Schema(
     },
     approvalStatus: {
       type: String,
-      default: "approved",
+      enum: ["pending", "approved", "rejected", "changes_requested"],
+      default: "pending",
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    approvedBy: {
+      type: String,
+      default: "",
+    },
+    rejectionReason: {
+      type: String,
+      default: "",
     },
     maleCount: {
       type: Number,

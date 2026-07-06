@@ -135,6 +135,36 @@ const agentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ── Trip Slot System ─────────────────────────────────────────────────────
+    tripSlots: {
+      type: Number,
+      default: 2,
+    },
+    usedSlots: {
+      type: Number,
+      default: 0,
+    },
+    bonusSlots: {
+      type: Number,
+      default: 0,
+    },
+    purchasedSlots: {
+      type: Number,
+      default: 0,
+    },
+
+    // ── Agent Referral System ────────────────────────────────────────────────
+    referralCode: {
+      type: String,
+      default: "",
+      unique: true,
+      sparse: true,
+    },
+    referralCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

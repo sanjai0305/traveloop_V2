@@ -73,3 +73,46 @@ export const getAgentMetrics = async (): Promise<{
   const response = await api.get("/agent/metrics");
   return response.data;
 };
+
+export interface SlotResponse {
+  success: boolean;
+  tripSlots: number;
+  usedSlots: number;
+  bonusSlots: number;
+  purchasedSlots?: number;
+  baseSlots?: number;
+  remainingSlots?: number;
+  referralCode: string;
+  referralCount: number;
+}
+
+export const getAgentSlots = async (): Promise<SlotResponse> => {
+  const response = await api.get("/agent/slots");
+  return response.data;
+};
+
+export const applyAgentReferral = async (referralCode: string): Promise<{ success: boolean; message: string; inviterName?: string }> => {
+  const response = await api.post("/agent/apply-referral", { referralCode });
+  return response.data;
+};
+
+export const getAgentReferralSettings = async (): Promise<{ success: boolean; settings: any }> => {
+  const response = await api.get("/agent/referral-settings");
+  return response.data;
+};
+
+export const createSlotOrder = async (slotsCount: number): Promise<{ success: boolean; orderId: string; amount: number; slotsGranted: number }> => {
+  const response = await api.post("/payment/agent/create-slot-order", { slotsCount });
+  return response.data;
+};
+
+export const verifySlotPurchase = async (payload: {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature?: string;
+  slotsCount: number;
+  amount: number;
+}): Promise<{ success: boolean; message: string; purchasedSlots: number }> => {
+  const response = await api.post("/payment/agent/verify-slot-purchase", payload);
+  return response.data;
+};

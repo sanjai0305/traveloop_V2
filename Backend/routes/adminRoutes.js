@@ -34,6 +34,7 @@ import {
   seedMockData,
   getReferralSettings,
   updateReferralSettings,
+  getReferralStats,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -142,6 +143,7 @@ router.patch("/withdrawals/:id", verifyAdmin, async (req, res) => {
 // Referral Settings
 router.get("/referral/settings", verifyAdmin, getReferralSettings);
 router.patch("/referral/settings", verifyAdmin, updateReferralSettings);
+router.get("/referral/stats", verifyAdmin, getReferralStats);
 
 // Dev only mock seeder
 router.post("/seed", seedMockData);

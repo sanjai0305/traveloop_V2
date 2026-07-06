@@ -24,6 +24,13 @@ interface Stats {
   cancelledTrips: number;
   pendingRefunds: number;
   pendingRefundsAmount: number;
+  pendingReviews?: number;
+  pendingReviewsOverLimit?: number;
+  defaultSlots?: number;
+  agentsUsingAllSlots?: number;
+  activeAgents?: number;
+  purchasedSlotsRevenue?: number;
+  referralBonusSlots?: number;
 }
 
 export const Dashboard: React.FC = () => {
@@ -144,6 +151,45 @@ export const Dashboard: React.FC = () => {
       desc: fmt(stats.pendingRefundsAmount) + " in process",
       icon: FolderSync,
       color: "from-orange-500/10 to-rose-500/5 text-orange-600 bg-orange-50"
+    },
+    {
+      title: "Pending Approvals",
+      value: stats.pendingReviews || 0,
+      desc: (stats.pendingReviewsOverLimit || 0) > 0 
+        ? `${stats.pendingReviewsOverLimit} waiting over 1h ⚠️`
+        : "All caught up within SLA ✅",
+      icon: BellRing,
+      color: (stats.pendingReviewsOverLimit || 0) > 0
+        ? "from-orange-500/10 to-amber-500/5 text-orange-600 bg-orange-50 ring-1 ring-orange-550/20"
+        : "from-[#14B8A6]/10 to-emerald-500/5 text-[#14B8A6] bg-teal-50"
+    },
+    {
+      title: "Global Default Slots",
+      value: stats.defaultSlots !== undefined ? stats.defaultSlots : 2,
+      desc: "Base slots allocated to new operators",
+      icon: Briefcase,
+      color: "from-blue-500/10 to-indigo-500/5 text-blue-600 bg-blue-50"
+    },
+    {
+      title: "Slot Purchase Revenue",
+      value: fmt(stats.purchasedSlotsRevenue || 0),
+      desc: "Direct revenue from operators upgrading capacity",
+      icon: DollarSign,
+      color: "from-emerald-500/10 to-teal-500/5 text-emerald-600 bg-emerald-50"
+    },
+    {
+      title: "Referral Bonus Slots",
+      value: stats.referralBonusSlots !== undefined ? stats.referralBonusSlots : 0,
+      desc: "Capacity granted via agent invitations",
+      icon: Users,
+      color: "from-purple-500/10 to-pink-500/5 text-purple-600 bg-purple-50"
+    },
+    {
+      title: "Limit-Exceeded Agents",
+      value: stats.agentsUsingAllSlots !== undefined ? stats.agentsUsingAllSlots : 0,
+      desc: "Operators currently using maximum capacity",
+      icon: AlertTriangle,
+      color: "from-rose-500/10 to-pink-500/5 text-rose-600 bg-rose-50"
     }
   ];
 

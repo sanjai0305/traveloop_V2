@@ -19,6 +19,7 @@ interface Trip {
   isFeatured: boolean;
   isDeleted?: boolean;
   status?: string;
+  createdAt?: string;
   agent: {
     companyName: string;
     displayName: string;
@@ -200,31 +201,40 @@ export const Trips: React.FC = () => {
             <p className="text-xs font-bold text-slate-400">No matching trip packages found.</p>
           </div>
         ) : (
-          filteredTrips.map((trip) => (
-            <div key={trip._id} className="glass-panel overflow-hidden flex flex-col justify-between hover:shadow-md transition-all duration-300 bg-white border border-slate-200 rounded-[20px]">
-              <div>
-                {/* Banner Image */}
-                <div className="relative h-44 w-full bg-slate-50">
-                  <img
-                    src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600"}
-                    alt={trip.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600";
-                    }}
-                  />
-                  {/* Status Badges Overlay */}
-                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                      trip.approvalStatus === "approved"
-                        ? "bg-emerald-500 text-white"
-                        : trip.approvalStatus === "rejected"
-                        ? "bg-rose-500 text-white"
-                        : "bg-amber-500 text-white"
-                    }`}>
-                      {trip.approvalStatus}
-                    </span>
-                    {trip.isHidden && (
+          filteredTrips.map((trip) => {
+            const isOverdue = trip.approvalStatus === "pending" && trip.createdAt && (Date.now() - new Date(trip.createdAt).getTime() > 60 * 60 * 1000);
+            return (
+              <div key={trip._id} className={`glass-panel overflow-hidden flex flex-col justify-between hover:shadow-md transition-all duration-300 bg-white border rounded-[20px] ${
+                isOverdue ? "border-orange-500 ring-2 ring-orange-550/20" : "border-slate-200"
+              }`}>
+                <div>
+                  {/* Banner Image */}
+                  <div className="relative h-44 w-full bg-slate-50">
+                    <img
+                      src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600"}
+                      alt={trip.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600";
+                      }}
+                    />
+                    {/* Status Badges Overlay */}
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                        trip.approvalStatus === "approved"
+                          ? "bg-emerald-500 text-white"
+                          : trip.approvalStatus === "rejected"
+                          ? "bg-rose-500 text-white"
+                          : "bg-amber-500 text-white"
+                      }`}>
+                        {trip.approvalStatus}
+                      </span>
+                      {isOverdue && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-orange-500 text-white animate-pulse">
+                          ⚠️ Overdue (over 1h)
+                        </span>
+                      )}
+                      {trip.isHidden && (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-900 text-white">
                         Hidden
                       </span>
@@ -376,7 +386,8 @@ export const Trips: React.FC = () => {
                 </div>
               </div>
             </div>
-          ))
+          );
+        })
         )}
       </div>
     </div>

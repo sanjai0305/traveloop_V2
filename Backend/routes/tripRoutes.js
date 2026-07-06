@@ -40,6 +40,7 @@ router.get("/published", async (req, res) => {
   try {
     const data = await AgentTrip.find({
       isDeleted: { $ne: true },
+      approvalStatus: "approved",
       $or: [
         { published: true },
         { status: "published" },
@@ -111,10 +112,14 @@ router.put("/:id/publish", protect, async (req, res) => {
 // 2. Get specific published trip detail
 router.get("/published/:id", async (req, res) => {
   try {
-    const tripData = await AgentTrip.findById(req.params.id).populate("agentId", "companyName email");
+    const tripData = await AgentTrip.findOne({
+      _id: req.params.id,
+      approvalStatus: "approved",
+      isDeleted: { $ne: true }
+    }).populate("agentId", "companyName email");
 
     if (!tripData) {
-      return res.status(404).json({ success: false, message: "Trip not found" });
+      return res.status(404).json({ success: false, message: "Trip not found or not approved" });
     }
 
     const trip = { ...tripData.toObject(), _id: tripData._id };

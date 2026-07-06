@@ -271,9 +271,43 @@ export const getDashboardStats = async (req, res) => {
     const cancelledTrips = await AgentTrip.countDocuments({ status: "cancelled" });
     const pendingRefunds = await Booking.countDocuments({ refundStatus: "requested" });
 
+    const pendingReviews = await AgentTrip.countDocuments({ approvalStatus: "pending", isDeleted: { $ne: true } });
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const pendingReviewsOverLimit = await AgentTrip.countDocuments({
+      approvalStatus: "pending",
+      createdAt: { $lt: oneHourAgo },
+      isDeleted: { $ne: true }
+    });
+
+    // ── Slot Economy Stats Calculations ──
+    const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+    const settings = await AgentSettings.findOne({ settingId: "global" });
+    const defaultSlots = settings ? settings.defaultTripSlots : 2;
+
+    const agents = await Agent.find({});
+    let referralBonusSlots = 0;
+    let agentsUsingAllSlots = 0;
+    agents.forEach(a => {
+      referralBonusSlots += a.bonusSlots || 0;
+      const base = a.tripSlots !== undefined ? a.tripSlots : defaultSlots;
+      const bonus = a.bonusSlots || 0;
+      const purchased = a.purchasedSlots || 0;
+      const total = base + bonus + purchased;
+      if (a.usedSlots >= total) {
+        agentsUsingAllSlots++;
+      }
+    });
+
+    const slotPayments = await Payment.find({ type: "slot_purchase", status: "PAID" });
+    let purchasedSlotsRevenue = 0;
+    slotPayments.forEach(p => {
+      purchasedSlotsRevenue += p.amount || 0;
+    });
+
+    const activeAgents = await Agent.countDocuments({ status: "approved" });
+
     res.status(200).json({
       success: true,
-      // Visual dashboard cards expected values
       stats: {
         totalRevenue,
         platformRevenue,
@@ -285,8 +319,14 @@ export const getDashboardStats = async (req, res) => {
         cancelledTrips,
         pendingRefunds,
         pendingRefundsAmount: refundAmount,
+        pendingReviews,
+        pendingReviewsOverLimit,
+        defaultSlots,
+        agentsUsingAllSlots,
+        activeAgents,
+        purchasedSlotsRevenue,
+        referralBonusSlots,
       },
-      // Backend expected response variables
       totalAgents,
       totalDrivers,
       totalUsers,
@@ -297,6 +337,13 @@ export const getDashboardStats = async (req, res) => {
       commissionRevenue: platformRevenue,
       refundAmount,
       pendingSettlements,
+      pendingReviews,
+      pendingReviewsOverLimit,
+      defaultSlots,
+      agentsUsingAllSlots,
+      activeAgents,
+      purchasedSlotsRevenue,
+      referralBonusSlots,
     });
   } catch (error) {
     console.error("[Admin Dashboard Stats] Error:", error);
@@ -511,7 +558,7 @@ export const getAgents = async (req, res) => {
 
 export const updateAgent = async (req, res) => {
   const { id } = req.params;
-  const { status, commissionRate, kycStatus } = req.body;
+  const { status, commissionRate, kycStatus, tripSlots, bonusSlots, purchasedSlots } = req.body;
 
   try {
     const agent = await Agent.findById(id);
@@ -542,6 +589,16 @@ export const updateAgent = async (req, res) => {
         return res.status(400).json({ success: false, message: "Invalid commission rate" });
       }
       agent.commissionRate = commissionRate;
+    }
+
+    if (tripSlots !== undefined) {
+      agent.tripSlots = Number(tripSlots);
+    }
+    if (bonusSlots !== undefined) {
+      agent.bonusSlots = Number(bonusSlots);
+    }
+    if (purchasedSlots !== undefined) {
+      agent.purchasedSlots = Number(purchasedSlots);
     }
 
     await agent.save();
@@ -627,9 +684,61 @@ export const updateTrip = async (req, res) => {
         trip.publishStatus = "published";
         trip.status = "published";
         trip.publishedAt = new Date();
+        trip.approvedAt = new Date();
+        trip.approvedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+
+        // Referral bonus slot system award check
+        try {
+          const Agent = await import("../models/Agent.js").then(m => m.default);
+          const AgentReferral = await import("../models/AgentReferral.js").then(m => m.default);
+          const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+
+          const agent = await Agent.findById(trip.agentId);
+          if (agent) {
+            // Count approved trips
+            const approvedTripsCount = await AgentTrip.countDocuments({
+              agentId: agent._id,
+              approvalStatus: "approved",
+              isDeleted: { $ne: true }
+            });
+            // If this is about to be their first approved trip (approvedTripsCount currently 0)
+            if (approvedTripsCount === 0) {
+              const referral = await AgentReferral.findOne({ newAgentId: agent._id, rewardGranted: false });
+              if (referral) {
+                const settings = await AgentSettings.findOne({ settingId: "global" });
+                const extraSlots = settings ? settings.extraSlotsPerReferral : 1;
+                const maxSlotsLimit = settings ? settings.maxSlots : 5;
+
+                const inviter = await Agent.findById(referral.inviterAgentId);
+                if (inviter) {
+                  const currentTotalSlots = (inviter.tripSlots || 2) + (inviter.bonusSlots || 0);
+                  if (currentTotalSlots < maxSlotsLimit) {
+                    const slotsToAdd = Math.min(extraSlots, maxSlotsLimit - currentTotalSlots);
+                    inviter.bonusSlots = (inviter.bonusSlots || 0) + slotsToAdd;
+                    inviter.referralCount = (inviter.referralCount || 0) + 1;
+                    await inviter.save();
+
+                    referral.rewardGranted = true;
+                    referral.bonusSlotsAdded = slotsToAdd;
+                    referral.conditionsMet = true;
+                    await referral.save();
+
+                    console.log(`[Referral Bonus] Awarded +${slotsToAdd} bonus slots to inviter ${inviter.email}`);
+                  }
+                }
+              }
+            }
+          }
+        } catch (refErr) {
+          console.error("Error awarding referral bonus slots:", refErr);
+        }
+
+        console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Approved | Message: Your trip has been approved and is now live.`);
       } else if (approvalStatus === "rejected") {
-        trip.publishStatus = "draft";
-        trip.status = "draft";
+        trip.publishStatus = "rejected";
+        trip.status = "rejected";
+        trip.rejectionReason = req.body.reason || req.body.rejectReason || "Does not comply with policies";
+        console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Rejected | Message: Your trip has been rejected. Reason: ${trip.rejectionReason}`);
       }
     }
 
@@ -672,7 +781,10 @@ export const updateTrip = async (req, res) => {
       status: trip.status,
       publishedAt: trip.publishedAt,
       isHidden: trip.isHidden,
-      isFeatured: trip.isFeatured
+      isFeatured: trip.isFeatured,
+      approvedAt: trip.approvedAt,
+      approvedBy: trip.approvedBy,
+      rejectionReason: trip.rejectionReason
     });
 
     const updatedTripData = await AgentTrip.findById(id).populate("agentId", "companyName email");
@@ -1101,6 +1213,25 @@ export const getReferralSettings = async (req, res) => {
     const probGoldSetting = await SystemSetting.findOne({ key: "referral_prob_gold" });
     const probDiamondSetting = await SystemSetting.findOne({ key: "referral_prob_diamond" });
 
+    const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+    let agentSettings = await AgentSettings.findOne({ settingId: "global" });
+    if (!agentSettings) {
+      agentSettings = await AgentSettings.create({
+        settingId: "global",
+        defaultTripSlots: 2,
+        extraSlotsPerReferral: 1,
+        maxSlots: 5,
+        approvalTimeLimit: 1,
+        referralEnabled: true,
+        referralDiscountPercent: 5,
+        inviterCoins: 100,
+        scratchRewardsEnabled: true,
+        minRewardPercent: 5,
+        maxRewardPercent: 30,
+        tripSlotBonusEnabled: true
+      });
+    }
+
     res.status(200).json({
       success: true,
       enabled: enabledSetting ? enabledSetting.value === true : false,
@@ -1116,6 +1247,21 @@ export const getReferralSettings = async (req, res) => {
       referral_prob_silver: probSilverSetting ? Number(probSilverSetting.value) : 25,
       referral_prob_gold: probGoldSetting ? Number(probGoldSetting.value) : 15,
       referral_prob_diamond: probDiamondSetting ? Number(probDiamondSetting.value) : 10,
+
+      // Agent settings
+      defaultTripSlots: agentSettings.defaultTripSlots !== undefined ? agentSettings.defaultTripSlots : 2,
+      extraSlotsPerReferral: agentSettings.extraSlotsPerReferral !== undefined ? agentSettings.extraSlotsPerReferral : 1,
+      maxSlots: agentSettings.maxSlots !== undefined ? agentSettings.maxSlots : 5,
+      approvalTimeLimit: agentSettings.approvalTimeLimit !== undefined ? agentSettings.approvalTimeLimit : 1,
+      referralEnabled: agentSettings.referralEnabled !== undefined ? agentSettings.referralEnabled : true,
+      referralDiscountPercent: agentSettings.referralDiscountPercent !== undefined ? agentSettings.referralDiscountPercent : 5,
+      inviterCoins: agentSettings.inviterCoins !== undefined ? agentSettings.inviterCoins : 100,
+      scratchRewardsEnabled: agentSettings.scratchRewardsEnabled !== undefined ? agentSettings.scratchRewardsEnabled : true,
+      minRewardPercent: agentSettings.minRewardPercent !== undefined ? agentSettings.minRewardPercent : 5,
+      maxRewardPercent: agentSettings.maxRewardPercent !== undefined ? agentSettings.maxRewardPercent : 30,
+      tripSlotBonusEnabled: agentSettings.tripSlotBonusEnabled !== undefined ? agentSettings.tripSlotBonusEnabled : true,
+      slotPrice: agentSettings.slotPrice !== undefined ? agentSettings.slotPrice : 1000,
+      slotPurchaseEnabled: agentSettings.slotPurchaseEnabled !== undefined ? agentSettings.slotPurchaseEnabled : true,
     });
   } catch (error) {
     console.error("getReferralSettings error:", error);
@@ -1138,6 +1284,21 @@ export const updateReferralSettings = async (req, res) => {
     referral_prob_silver,
     referral_prob_gold,
     referral_prob_diamond,
+
+    // Agent settings
+    defaultTripSlots,
+    extraSlotsPerReferral,
+    maxSlots,
+    approvalTimeLimit,
+    referralEnabled,
+    referralDiscountPercent,
+    inviterCoins,
+    scratchRewardsEnabled,
+    minRewardPercent,
+    maxRewardPercent,
+    tripSlotBonusEnabled,
+    slotPrice,
+    slotPurchaseEnabled,
   } = req.body;
 
   try {
@@ -1226,6 +1387,30 @@ export const updateReferralSettings = async (req, res) => {
       );
     }
 
+    // Update AgentSettings
+    const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+    await AgentSettings.findOneAndUpdate(
+      { settingId: "global" },
+      {
+        $set: {
+          ...(defaultTripSlots !== undefined && { defaultTripSlots: Number(defaultTripSlots) }),
+          ...(extraSlotsPerReferral !== undefined && { extraSlotsPerReferral: Number(extraSlotsPerReferral) }),
+          ...(maxSlots !== undefined && { maxSlots: Number(maxSlots) }),
+          ...(approvalTimeLimit !== undefined && { approvalTimeLimit: Number(approvalTimeLimit) }),
+          ...(referralEnabled !== undefined && { referralEnabled: referralEnabled === true }),
+          ...(referralDiscountPercent !== undefined && { referralDiscountPercent: Number(referralDiscountPercent) }),
+          ...(inviterCoins !== undefined && { inviterCoins: Number(inviterCoins) }),
+          ...(scratchRewardsEnabled !== undefined && { scratchRewardsEnabled: scratchRewardsEnabled === true }),
+          ...(minRewardPercent !== undefined && { minRewardPercent: Number(minRewardPercent) }),
+          ...(maxRewardPercent !== undefined && { maxRewardPercent: Number(maxRewardPercent) }),
+          ...(tripSlotBonusEnabled !== undefined && { tripSlotBonusEnabled: tripSlotBonusEnabled === true }),
+          ...(slotPrice !== undefined && { slotPrice: Number(slotPrice) }),
+          ...(slotPurchaseEnabled !== undefined && { slotPurchaseEnabled: slotPurchaseEnabled === true }),
+        }
+      },
+      { upsert: true }
+    );
+
     res.status(200).json({
       success: true,
       message: "Referral settings updated successfully"
@@ -1233,5 +1418,67 @@ export const updateReferralSettings = async (req, res) => {
   } catch (error) {
     console.error("updateReferralSettings error:", error);
     res.status(500).json({ success: false, message: "Server Error updating referral settings" });
+  }
+};
+
+// GET REFERRAL STATISTICS FOR ADMIN DASHBOARD
+export const getReferralStats = async (req, res) => {
+  try {
+    const Agent = await import("../models/Agent.js").then(m => m.default);
+    const AgentReferral = await import("../models/AgentReferral.js").then(m => m.default);
+    const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+
+    const agentsReferred = await AgentReferral.countDocuments();
+    
+    // Sum bonusSlotsGranted
+    const bonusSlotsResult = await AgentReferral.aggregate([
+      { $group: { _id: null, total: { $sum: "$bonusSlotsAdded" } } }
+    ]);
+    const bonusSlotsGranted = bonusSlotsResult[0]?.total || 0;
+
+    // pendingApprovals count
+    const pendingApprovals = await AgentTrip.countDocuments({ approvalStatus: "pending", isDeleted: { $ne: true } });
+
+    // slotsConsumed & slotsAvailable
+    const agentsList = await Agent.find();
+    let slotsConsumed = 0;
+    let slotsAvailable = 0;
+    
+    const settings = await AgentSettings.findOne({ settingId: "global" });
+    const defaultSlots = settings ? settings.defaultTripSlots : 2;
+
+    agentsList.forEach(a => {
+      slotsConsumed += a.usedSlots || 0;
+      slotsAvailable += (a.tripSlots !== undefined ? a.tripSlots : defaultSlots) + (a.bonusSlots || 0);
+    });
+
+    // Trips created through referral
+    const referredAgentIds = await AgentReferral.distinct("newAgentId");
+    const tripsCreatedThroughReferral = await AgentTrip.countDocuments({
+      agentId: { $in: referredAgentIds },
+      isDeleted: { $ne: true }
+    });
+
+    // Top referring agents
+    const topReferringAgents = await Agent.find({ referralCount: { $gt: 0 } })
+      .sort({ referralCount: -1 })
+      .limit(5)
+      .select("companyName email referralCount");
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        agentsReferred,
+        bonusSlotsGranted,
+        tripsCreatedThroughReferral,
+        pendingApprovals,
+        slotsConsumed,
+        slotsAvailable,
+        topReferringAgents
+      }
+    });
+  } catch (error) {
+    console.error("getReferralStats error:", error);
+    res.status(500).json({ success: false, message: "Server Error fetching referral stats" });
   }
 };

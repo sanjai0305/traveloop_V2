@@ -38,7 +38,7 @@ import {
   Copy,
 } from "lucide-react";
 import { GlassCard, Button, Input, ImageUploadBox, Modal } from "../components/ui";
-import { getMyTrips, createTrip, updateTrip, deleteTrip, saveDraft, publishTrip, getMasterData, createMasterEntry } from "../services/tripService";
+import { getMyTrips, createTrip, updateTrip, deleteTrip, saveDraft, publishTrip, getMasterData, createMasterEntry, getAgentSlots } from "../services/tripService";
 import { formatCurrency, formatDate } from "../utils";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
@@ -270,6 +270,12 @@ export const Trips: React.FC = () => {
     queryFn: getMyTrips,
   });
 
+  const { data: slotData } = useQuery({
+    queryKey: ["agent-slots"],
+    queryFn: getAgentSlots,
+    enabled: isProfileCompleted,
+  });
+
   const trips = (data as any)?.trips || (Array.isArray(data) ? data : []);
 
   const {
@@ -392,6 +398,10 @@ export const Trips: React.FC = () => {
   const openCreateMode = () => {
     if (!isProfileCompleted) {
       alert("Please complete profile verification first");
+      return;
+    }
+    if (slotData && slotData.usedSlots >= slotData.tripSlots) {
+      alert("Trip slot limit reached. Please complete existing trips or refer partners to increase your slots.");
       return;
     }
     reset();
@@ -855,12 +865,24 @@ export const Trips: React.FC = () => {
           </p>
         </div>
         {!editorOpen && (
-          <Button onClick={openCreateMode} className="py-2.5">
+          <Button 
+            onClick={openCreateMode} 
+            className="py-2.5"
+            disabled={slotData ? (slotData.usedSlots >= slotData.tripSlots) : false}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Host New Trip
           </Button>
         )}
       </div>
+
+      {/* Slots limit warning banner */}
+      {slotData && (slotData.usedSlots >= slotData.tripSlots) && !editorOpen && (
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-955/20 border border-amber-200/50 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-3 animate-fade-in">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-500 animate-pulse" />
+          <span>⚠️ Trip slot limit reached ({slotData.usedSlots}/{slotData.tripSlots} slots consumed). Please complete active trips or refer partners to increase your limits.</span>
+        </div>
+      )}
 
       {editorOpen ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -2189,7 +2211,11 @@ export const Trips: React.FC = () => {
                 : "Complete your agent profile first, then create your first group tour."}
             </p>
             {isProfileCompleted ? (
-              <Button onClick={openCreateMode} className="mt-4">
+              <Button 
+                onClick={openCreateMode} 
+                className="mt-4"
+                disabled={slotData ? (slotData.usedSlots >= slotData.tripSlots) : false}
+              >
                 <Plus className="w-4 h-4 mr-2" /> Create Trip Now
               </Button>
             ) : (
@@ -2220,9 +2246,18 @@ export const Trips: React.FC = () => {
                         </span>
                       </div>
                     )}
-                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black text-slate-700 shadow flex items-center gap-1.5">
+                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/95 text-[10px] font-black text-slate-700 shadow flex items-center gap-1.5 z-10">
                       <Clock className="w-3.5 h-3.5 text-teal-500" />
                       {trip.duration}
+                    </div>
+                    <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow border flex items-center gap-1 bg-white/95 z-10">
+                      {trip.approvalStatus === "approved" ? (
+                        <span className="text-emerald-600">✓ Approved</span>
+                      ) : trip.approvalStatus === "rejected" ? (
+                        <span className="text-rose-600">✗ Rejected</span>
+                      ) : (
+                        <span className="text-orange-500 animate-pulse">⏰ Pending</span>
+                      )}
                     </div>
                   </div>
 
@@ -2296,6 +2331,12 @@ export const Trips: React.FC = () => {
                           <Trash2 size={14} />
                         </Button>
                       </div>
+                      {trip.approvalStatus === "rejected" && (
+                        <div className="p-3 mt-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 text-[10px] font-bold text-rose-700 dark:text-rose-350">
+                          <span className="font-extrabold uppercase tracking-wide block text-rose-805">Rejection Reason:</span>
+                          <span className="mt-1 block leading-normal">{trip.rejectionReason || "Does not comply with platform guidelines."}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </GlassCard>
