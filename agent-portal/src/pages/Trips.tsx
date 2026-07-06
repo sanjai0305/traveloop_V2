@@ -352,7 +352,7 @@ export const Trips: React.FC = () => {
     },
   });
 
-  const { fields: itineraryFields, append: appendDay, remove: removeDay } = useFieldArray({
+  const { fields: itineraryFields, replace: replaceItinerary } = useFieldArray({
     control,
     name: "itinerary",
   });
@@ -389,35 +389,56 @@ export const Trips: React.FC = () => {
     if (!watchStartDate || !watchEndDate) {
       return;
     }
-    const start = new Date(watchStartDate);
-    const end = new Date(watchEndDate);
+    const start = new Date(watchStartDate + "T00:00:00");
+    const end = new Date(watchEndDate + "T00:00:00");
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       return;
     }
 
     const diffTime = end.getTime() - start.getTime();
-    let diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-    let days = diffDays;
-    let nights = diffDays;
-    if (diffDays <= 0) {
-      days = 1;
-      nights = 0;
+    let totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    if (totalDays <= 0) {
+      totalDays = 1;
     }
 
+    const days = totalDays;
+    const nights = totalDays;
     const durationStr = `${days} Day${days !== 1 ? "s" : ""} / ${nights} Night${nights !== 1 ? "s" : ""}`;
-    setValue("duration", durationStr);
+    
+    if (watch("duration") !== durationStr) {
+      setValue("duration", durationStr);
+    }
 
     // Sync itinerary field array length
     const currentItinerary = watchItinerary || [];
-    let updated = false;
-    const nextItinerary = [...currentItinerary];
+    let hasChanged = false;
+    const nextItinerary = [];
 
-    // Adjust count of days
-    if (nextItinerary.length < days) {
-      for (let i = nextItinerary.length; i < days; i++) {
+    for (let i = 0; i < totalDays; i++) {
+      const dayDate = new Date(start);
+      dayDate.setDate(start.getDate() + i);
+      const yyyy = dayDate.getFullYear();
+      const mm = String(dayDate.getMonth() + 1).padStart(2, "0");
+      const dd = String(dayDate.getDate()).padStart(2, "0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      // Check if day already exists in currentItinerary
+      const existing = currentItinerary[i];
+      if (existing) {
+        if (existing.date !== dateStr || existing.day !== i + 1) {
+          nextItinerary.push({
+            ...existing,
+            day: i + 1,
+            date: dateStr,
+          });
+          hasChanged = true;
+        } else {
+          nextItinerary.push(existing);
+        }
+      } else {
         nextItinerary.push({
           day: i + 1,
-          date: "",
+          date: dateStr,
           startLocation: "",
           departureTime: "",
           destination: "",
@@ -429,32 +450,18 @@ export const Trips: React.FC = () => {
           nightStay: "",
           notes: "",
         });
-      }
-      updated = true;
-    } else if (nextItinerary.length > days) {
-      nextItinerary.splice(days);
-      updated = true;
-    }
-
-    // Set dates for each day sequentially starting from watchStartDate
-    for (let i = 0; i < nextItinerary.length; i++) {
-      const dayDate = new Date(start);
-      dayDate.setDate(start.getDate() + i);
-      const yyyy = dayDate.getFullYear();
-      const mm = String(dayDate.getMonth() + 1).padStart(2, "0");
-      const dd = String(dayDate.getDate()).padStart(2, "0");
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      if (nextItinerary[i].date !== dateStr || nextItinerary[i].day !== i + 1) {
-        nextItinerary[i].date = dateStr;
-        nextItinerary[i].day = i + 1;
-        updated = true;
+        hasChanged = true;
       }
     }
 
-    if (updated) {
-      setValue("itinerary", nextItinerary);
+    if (currentItinerary.length !== totalDays) {
+      hasChanged = true;
     }
-  }, [watchStartDate, watchEndDate, setValue]);
+
+    if (hasChanged) {
+      replaceItinerary(nextItinerary);
+    }
+  }, [watchStartDate, watchEndDate, setValue, replaceItinerary]);
 
   const openCreateMode = () => {
     if (!isProfileCompleted) {
@@ -757,8 +764,8 @@ export const Trips: React.FC = () => {
       hasEmptyActivities ||
       hasIncompleteDay
     ) {
-      alert("Complete all itinerary days before publishing.");
-      setSubmitError("Complete all itinerary days before publishing.");
+      alert("Please complete all itinerary days.");
+      setSubmitError("Please complete all itinerary days.");
       return;
     }
 
@@ -889,32 +896,34 @@ export const Trips: React.FC = () => {
       const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
       const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
       
-      const isValid = await trigger("itinerary");
-      if (!isValid) {
-        // Find first incomplete day
-        for (let i = 0; i < expectedDays; i++) {
-          const day = watchItinerary[i];
-          const incomplete = !day?.startLocation?.trim() ||
-                             !day?.destination?.trim() ||
-                             !day?.departureTime?.trim() ||
-                             !day?.arrivalTime?.trim() ||
-                             !day?.duration?.trim() ||
-                             !day?.nightStay?.trim() ||
-                             !day?.hotelName?.trim() ||
-                             !day?.notes?.trim() ||
-                             !day?.placesCovered || day.placesCovered.length === 0 ||
-                             !day?.activities || day.activities.length === 0;
-          if (incomplete) {
-            alert(`Please complete Day ${i + 1} itinerary.`);
-            return;
-          }
-        }
+      if (watchItinerary.length !== expectedDays) {
+        alert("Please complete all itinerary days.");
         return;
       }
       
-      if (watchItinerary.length !== expectedDays) {
-        alert(`Please complete Day ${expectedDays} itinerary.`);
+      const isValid = await trigger("itinerary");
+      if (!isValid) {
+        alert("Please complete all itinerary days.");
         return;
+      }
+      
+      // Ensure all fields are filled manually or trigger validates it
+      for (let i = 0; i < expectedDays; i++) {
+        const day = watchItinerary[i];
+        const incomplete = !day?.startLocation?.trim() ||
+                           !day?.destination?.trim() ||
+                           !day?.departureTime?.trim() ||
+                           !day?.arrivalTime?.trim() ||
+                           !day?.duration?.trim() ||
+                           !day?.nightStay?.trim() ||
+                           !day?.hotelName?.trim() ||
+                           !day?.notes?.trim() ||
+                           !day?.placesCovered || day.placesCovered.length === 0 ||
+                           !day?.activities || day.activities.length === 0;
+        if (incomplete) {
+          alert("Please complete all itinerary days.");
+          return;
+        }
       }
       
       setActiveTab(prev => Math.min(10, prev + 1));
