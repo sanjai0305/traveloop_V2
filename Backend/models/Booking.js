@@ -137,6 +137,26 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    referralApplied: {
+      type: Boolean,
+      default: false,
+    },
+    referralCode: {
+      type: String,
+      default: "",
+    },
+    referralDiscountPercent: {
+      type: Number,
+      default: 0,
+    },
+    referralDiscountAmount: {
+      type: Number,
+      default: 0,
+    },
+    originalPrice: {
+      type: Number,
+      default: 0,
+    },
     qrCode: {
       type: String,
       default: "",

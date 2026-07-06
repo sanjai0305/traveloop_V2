@@ -449,3 +449,127 @@ export const sendInvoiceEmail = async (to, invoiceData) => {
     html,
   });
 };
+
+/**
+ * Schedule Change OTP Email — sent to each booked passenger for consent.
+ * @param {string} to - Passenger email
+ * @param {string} name - Passenger name
+ * @param {object} data - { bookingId, newDate, newTime, otp }
+ */
+export const sendScheduleChangeOtpEmail = async (to, name, data) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Schedule OTP email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+  const { bookingId, newDate, newTime, otp } = data;
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">🗓️</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Schedule Change Verification</h2>
+    <p>Hi <strong>${name || "Traveler"}</strong>,</p>
+    <p>Your travel agent has requested to modify the departure schedule for your upcoming trip. Please verify this change using the OTP below.</p>
+
+    <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #e2e8f0;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr>
+          <td style="color: #64748b; padding: 8px 0; font-weight: 600;">Booking ID:</td>
+          <td style="color: #1e293b; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">${bookingId}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0; font-weight: 600;">New Departure Date:</td>
+          <td style="color: #1e293b; padding: 8px 0; font-weight: 700; text-align: right;">${newDate}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0; font-weight: 600;">New Departure Time:</td>
+          <td style="color: #1e293b; padding: 8px 0; font-weight: 700; text-align: right;">${newTime}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #f0fdfa; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0; border: 2px solid ${BRAND_COLOR};">
+      <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; display: block; margin-bottom: 8px;">Your Verification OTP</span>
+      <h3 style="margin: 0; color: ${BRAND_COLOR}; font-size: 40px; font-weight: 800; letter-spacing: 8px;">${otp}</h3>
+      <span style="color: #94a3b8; font-size: 12px; display: block; margin-top: 12px;">This code is valid for <strong>10 minutes</strong>.</span>
+    </div>
+
+    <p style="color: #64748b; font-size: 13px;">If you do not approve this change, simply ignore this email. Your agent will be unable to modify the schedule without your consent.</p>
+    <p>Safe travels,<br><strong>The Traveloop Team</strong></p>
+  `);
+
+  await sendMailWithRetry(transporter, {
+    from: `"Traveloop" <${senderEmail}>`,
+    to,
+    subject: `Schedule Change Verification – ${bookingId} 🗓️`,
+    html,
+  });
+};
+
+/**
+ * Schedule Update Notification Email — sent after all passengers approved & schedule applied.
+ * @param {string} to - Passenger email
+ * @param {string} name - Passenger name
+ * @param {object} data - { bookingId, oldDate, newDate, oldTime, newTime }
+ */
+export const sendScheduleUpdateNotification = async (to, name, data) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Schedule update notification blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+  const { bookingId, oldDate, newDate, oldTime, newTime } = data;
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">✅</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Trip Schedule Updated</h2>
+    <p>Hi <strong>${name || "Traveler"}</strong>,</p>
+    <p>Your trip schedule has been officially updated. Please note the new departure details below.</p>
+
+    <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #e2e8f0;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <th style="text-align: left; color: #94a3b8; padding: 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;" colspan="2">Previous Schedule</th>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0;">Departure Date:</td>
+          <td style="color: #ef4444; padding: 8px 0; font-weight: 600; text-align: right; text-decoration: line-through;">${oldDate}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="color: #64748b; padding: 8px 0;">Departure Time:</td>
+          <td style="color: #ef4444; padding: 8px 0; font-weight: 600; text-align: right; text-decoration: line-through;">${oldTime}</td>
+        </tr>
+        <tr style="border-top: 1px solid #e2e8f0;">
+          <th style="text-align: left; color: #94a3b8; padding: 8px 0 4px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;" colspan="2">Updated Schedule</th>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0;">New Departure Date:</td>
+          <td style="color: #10b981; padding: 8px 0; font-weight: 700; text-align: right;">${newDate}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0;">New Departure Time:</td>
+          <td style="color: #10b981; padding: 8px 0; font-weight: 700; text-align: right;">${newTime}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; padding: 8px 0;">Booking ID:</td>
+          <td style="color: #1e293b; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">${bookingId}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p>Please update your travel plans accordingly. If you have any questions, contact your travel agent or reach out to our support team.</p>
+    <p>Safe travels,<br><strong>The Traveloop Team</strong></p>
+  `);
+
+  await sendMailWithRetry(transporter, {
+    from: `"Traveloop" <${senderEmail}>`,
+    to,
+    subject: `Trip Schedule Updated – Booking ${bookingId} 🚌`,
+    html,
+  });
+};

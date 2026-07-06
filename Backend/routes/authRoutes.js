@@ -10,6 +10,7 @@ import {
   validateEmail,
   sendOtp,
   verifyOtp,
+  validateReferralCode,
 } from "../controllers/authController.js";
 import protect from "../middleware/authMiddleware.js";
 
@@ -38,11 +39,13 @@ router.post("/forgot-password", forgotPassword);
 // VALIDATE EMAIL
 router.post("/validate-email", validateEmail);
 
+// VALIDATE REFERRAL CODE
+router.get("/validate-referral/:code", validateReferralCode);
+
 // GET CURRENT USER
 router.get("/me", protect, getMe);
 
 // ACCEPT TERMS
 router.patch("/accept-terms", protect, acceptTerms);
-
 
 export default router;

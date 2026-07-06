@@ -10,6 +10,7 @@ import { Bookings } from "./pages/Bookings";
 import { Finance } from "./pages/Finance";
 import { Settings } from "./pages/Settings";
 import { Notifications } from "./pages/Notifications";
+import { Referrals } from "./pages/Referrals";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -94,6 +95,16 @@ export const App: React.FC = () => {
             <ProtectedRoute>
               <MainLayout>
                 <Notifications />
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/referrals"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Referrals />
               </MainLayout>
             </ProtectedRoute>
           }

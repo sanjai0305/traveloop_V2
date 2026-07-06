@@ -1,7 +1,11 @@
 import User from "../models/User.js";
+import Referral from "../models/Referral.js";
+import Booking from "../models/Booking.js";
+import ReferralService from "../services/ReferralService.js";
 import admin from "../config/firebaseAdmin.js";
 import Trip from "../models/Trip.js";
 import Payment from "../models/Payment.js";
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
@@ -364,6 +368,7 @@ export const registerUser = async (req, res) => {
       country,
       additionalInfo,
       firebaseUid,
+      referralCode,
     } = req.body;
 
     if (!firstName || !lastName || !email || !phone || !password) {
@@ -388,6 +393,18 @@ export const registerUser = async (req, res) => {
         success: false,
         message: "User already exists",
       });
+    }
+
+    // CHECK REFERRAL CODE
+    let inviterUser = null;
+    if (referralCode) {
+      inviterUser = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
+      if (!inviterUser) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid referral code.",
+        });
+      }
     }
 
     // Create Firebase Auth user if not present
@@ -457,7 +474,42 @@ export const registerUser = async (req, res) => {
         termsAcceptedAt: new Date().toISOString(),
         termsVersion: "2026-06",
         firebaseUid: uid,
+        referredBy: inviterUser ? inviterUser.referralCode : "",
       });
+
+    if (inviterUser) {
+      await Referral.create({
+        inviterId: inviterUser._id,
+        invitedId: newUser._id,
+        status: "registered",
+        referralCode: inviterUser.referralCode,
+        registered: true
+      });
+
+      inviterUser.referralCount = (inviterUser.referralCount || 0) + 1;
+
+      // Generate Scratch Card for Inviter
+      try {
+        const inviterCard = await ReferralService.generateScratchCard(inviterUser._id);
+        if (inviterCard) {
+          inviterUser.scratchCards.push(inviterCard);
+        }
+      } catch (cardErr) {
+        console.error("Failed to generate scratch card for inviter:", cardErr);
+      }
+      await inviterUser.save();
+
+      // Generate Scratch Card for Invitee
+      try {
+        const inviteeCard = await ReferralService.generateScratchCard(newUser._id);
+        if (inviteeCard) {
+          newUser.scratchCards.push(inviteeCard);
+          await newUser.save();
+        }
+      } catch (cardErr) {
+        console.error("Failed to generate scratch card for invitee:", cardErr);
+      }
+    }
 
     
     const user = { ...newUser, _id: newUser.id };
@@ -1001,5 +1053,44 @@ export const validateEmail = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// VALIDATE REFERRAL CODE
+export const validateReferralCode = async (req, res) => {
+  try {
+    const { code } = req.params;
+    if (!code) {
+      return res.status(400).json({ success: false, message: "Referral code is required" });
+    }
+    const inviter = await User.findOne({ referralCode: code.trim().toUpperCase() });
+    if (!inviter) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "❌ Invalid Referral Code. This invitation link is not valid. Try another code." 
+      });
+    }
+
+    // Count successful trips of the inviter
+    const successfulTrips = await Booking.countDocuments({ userId: inviter._id, paymentStatus: "Paid" });
+
+    // Determine Traveler Level
+    let levelName = "Bronze Explorer";
+    const lvl = inviter.level || 1;
+    if (lvl >= 8) levelName = "Diamond Explorer";
+    else if (lvl >= 5) levelName = "Gold Explorer";
+    else if (lvl >= 3) levelName = "Silver Explorer";
+
+    res.status(200).json({
+      success: true,
+      message: "Referral code is valid",
+      name: `${inviter.firstName} ${inviter.lastName}`,
+      level: levelName,
+      successfulTrips: `${successfulTrips} Trips`,
+      referralStatus: "Verified"
+    });
+  } catch (error) {
+    console.error("validateReferralCode error:", error);
+    res.status(500).json({ success: false, message: "Server Error validating referral code" });
   }
 };

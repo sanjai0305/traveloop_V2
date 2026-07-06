@@ -9,6 +9,7 @@ import { Profile } from "./pages/Profile";
 import { Settings } from "./pages/Settings";
 import { CompleteProfile } from "./pages/CompleteProfile";
 import { Wallet } from "./pages/Wallet";
+import { ScheduleVerification } from "./pages/ScheduleVerification";
 import { MainLayout } from "./components/layout";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
 import { useAuthStore } from "./store/authStore";
@@ -88,6 +89,16 @@ export const App: React.FC = () => {
               <ProtectedRoute>
                 <MainLayout>
                   <Bookings />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bookings/:tripId/schedule-verify"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <ScheduleVerification />
                 </MainLayout>
               </ProtectedRoute>
             }

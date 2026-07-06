@@ -81,7 +81,7 @@ export const verifyOtpCode = async (email, otp, registrationDetails) => {
  * Registers a user in Firebase Auth, then Backend, then Firestore.
  */
 export const registerWithEmailPassword = async (formData, otpToken) => {
-  const { email, password, firstName, lastName, phone, city, country, acceptedTerms, termsVersion } = formData;
+  const { email, password, firstName, lastName, phone, city, country, acceptedTerms, termsVersion, referralCode } = formData;
 
   // 1. Create User in Firebase Auth
   console.log(`[Email Auth] Starting Registration for ${email}`);
@@ -111,6 +111,7 @@ export const registerWithEmailPassword = async (formData, otpToken) => {
       termsVersion,
       firebaseUid: firebaseUser.uid,
       otpToken,
+      referralCode,
     });
     console.log(`[Email Auth] Backend registration successful. User ID: ${backendData.user._id}`);
   } catch (error) {

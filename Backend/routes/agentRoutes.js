@@ -2793,4 +2793,361 @@ router.get("/wallet/withdrawals", protectAgent, checkAgentKYC, async (req, res) 
   }
 });
 
+/* ============================================================
+   SCHEDULE CHANGE REQUEST — Date/Time only, OTP consent flow
+   ============================================================ */
+
+/**
+ * POST /agent/trips/:tripId/schedule-change/initiate
+ * Agent requests a departure date/time change.
+ * - If no active bookings: updates trip immediately.
+ * - If bookings exist: creates ScheduleChangeRequest, sends OTP to each booked passenger.
+ */
+router.post("/trips/:tripId/schedule-change/initiate", protectAgent, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { newStartDate, newDepartureTime } = req.body;
+
+    if (!newStartDate || !newDepartureTime) {
+      return res.status(400).json({ success: false, message: "newStartDate and newDepartureTime are required." });
+    }
+
+    const trip = await AgentTrip.findOne({ _id: tripId, agentId: req.agent._id });
+    if (!trip) return res.status(404).json({ success: false, message: "Trip not found or unauthorized." });
+
+    // Find active (non-cancelled) bookings
+    const activeBookings = await Booking.find({
+      tripId,
+      paymentStatus: { $nin: ["CANCELLED", "Cancelled", "cancelled"] },
+    }).lean();
+
+    const ScheduleChangeRequest = await import("../models/ScheduleChangeRequest.js").then(m => m.default);
+    const { sendScheduleChangeOtpEmail } = await import("../services/emailService.js");
+
+    const oldStartDate = trip.startDate;
+    const oldDepartureTime = trip.departureTime;
+
+    if (activeBookings.length === 0) {
+      // No bookings — direct update, no OTP needed
+      trip.startDate = newStartDate;
+      trip.departureTime = newDepartureTime;
+      await trip.save();
+      return res.status(200).json({
+        success: true,
+        requiresConsent: false,
+        message: "Schedule updated immediately (no active bookings).",
+        trip,
+      });
+    }
+
+    // Cancel any previous pending request for this trip
+    await ScheduleChangeRequest.updateMany(
+      { tripId, status: "pending" },
+      { $set: { status: "cancelled" } }
+    );
+
+    // Build passenger consent list
+    const User = await import("../models/User.js").then(m => m.default);
+    const passengers = [];
+    for (const booking of activeBookings) {
+      let email = booking.email || "";
+      // Try to fetch email from user record if not on booking
+      if (!email && booking.userId) {
+        const user = await User.findById(booking.userId).select("email").lean();
+        if (user?.email) email = user.email;
+      }
+      if (!email) {
+        console.warn(`[ScheduleChange] No email for booking ${booking.bookingId} — skipping OTP`);
+        continue;
+      }
+
+      const otp = ScheduleChangeRequest.generateOtp();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      passengers.push({
+        bookingId: booking.bookingId,
+        userId: booking.userId || null,
+        travelerName: booking.travelerName || "",
+        email,
+        otp,
+        otpHash: ScheduleChangeRequest.hashOtp(otp),
+        expiresAt,
+        status: "otp_sent",
+        otpSentAt: new Date(),
+      });
+    }
+
+    const changeRequest = await ScheduleChangeRequest.create({
+      tripId,
+      agentId: req.agent._id,
+      newStartDate,
+      newDepartureTime,
+      oldStartDate,
+      oldDepartureTime,
+      totalPassengers: passengers.length,
+      approvedCount: 0,
+      passengers,
+    });
+
+    // Send OTP emails (non-blocking — fire and forget with error logging)
+    const formattedDate = (() => {
+      try {
+        return new Date(newStartDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      } catch { return newStartDate; }
+    })();
+
+    for (const p of passengers) {
+      sendScheduleChangeOtpEmail(p.email, p.travelerName, {
+        bookingId: p.bookingId,
+        newDate: formattedDate,
+        newTime: newDepartureTime,
+        otp: p.otp,
+      }).catch(err => console.error(`[ScheduleChange] OTP email failed for ${p.email}:`, err.message));
+    }
+
+    res.status(200).json({
+      success: true,
+      requiresConsent: true,
+      message: `OTP sent to ${passengers.length} passenger(s). All must approve before schedule is updated.`,
+      changeRequestId: changeRequest._id,
+      totalPassengers: passengers.length,
+      approvedCount: 0,
+      passengers: passengers.map(p => ({
+        bookingId: p.bookingId,
+        travelerName: p.travelerName,
+        email: p.email,
+        status: p.status,
+      })),
+    });
+  } catch (error) {
+    console.error("[ScheduleChange] Initiate error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /agent/trips/:tripId/schedule-change/resend-otp
+ * Resend OTP to a specific passenger (identified by bookingId).
+ */
+router.post("/trips/:tripId/schedule-change/resend-otp", protectAgent, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { bookingId } = req.body;
+
+    const ScheduleChangeRequest = await import("../models/ScheduleChangeRequest.js").then(m => m.default);
+    const { sendScheduleChangeOtpEmail } = await import("../services/emailService.js");
+
+    const changeRequest = await ScheduleChangeRequest.findOne({
+      tripId,
+      agentId: req.agent._id,
+      status: "pending",
+    });
+    if (!changeRequest) return res.status(404).json({ success: false, message: "No active schedule change request found." });
+
+    const passenger = changeRequest.passengers.find(p => p.bookingId === bookingId);
+    if (!passenger) return res.status(404).json({ success: false, message: "Passenger not found in this request." });
+    if (passenger.verified) return res.status(400).json({ success: false, message: "Passenger already approved." });
+
+    const otp = ScheduleChangeRequest.generateOtp();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    passenger.otp = otp;
+    passenger.otpHash = ScheduleChangeRequest.hashOtp(otp);
+    passenger.expiresAt = expiresAt;
+    passenger.status = "otp_sent";
+    passenger.otpSentAt = new Date();
+
+    await changeRequest.save();
+
+    const formattedDate = (() => {
+      try { return new Date(changeRequest.newStartDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }); }
+      catch { return changeRequest.newStartDate; }
+    })();
+
+    sendScheduleChangeOtpEmail(passenger.email, passenger.travelerName, {
+      bookingId: passenger.bookingId,
+      newDate: formattedDate,
+      newTime: changeRequest.newDepartureTime,
+      otp,
+    }).catch(err => console.error(`[ScheduleChange] Resend OTP email failed:`, err.message));
+
+    res.status(200).json({ success: true, message: `OTP resent to ${passenger.email}` });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /agent/trips/:tripId/schedule-change/verify-otp
+ * Passenger verifies their OTP through the agent portal verification screen.
+ * Body: { bookingId, passengerName, email, otp }
+ */
+router.post("/trips/:tripId/schedule-change/verify-otp", protectAgent, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { bookingId, otp } = req.body;
+
+    if (!bookingId || !otp) {
+      return res.status(400).json({ success: false, message: "bookingId and otp are required." });
+    }
+
+    const ScheduleChangeRequest = await import("../models/ScheduleChangeRequest.js").then(m => m.default);
+
+    const changeRequest = await ScheduleChangeRequest.findOne({
+      tripId,
+      agentId: req.agent._id,
+      status: "pending",
+    });
+    if (!changeRequest) return res.status(404).json({ success: false, message: "No active schedule change request found." });
+
+    const passenger = changeRequest.passengers.find(p => p.bookingId === bookingId);
+    if (!passenger) return res.status(404).json({ success: false, message: "Passenger booking not found." });
+    if (passenger.verified) return res.status(400).json({ success: false, message: "Already approved." });
+
+    // Check expiry
+    if (passenger.expiresAt && new Date() > new Date(passenger.expiresAt)) {
+      passenger.status = "expired";
+      await changeRequest.save();
+      return res.status(400).json({ success: false, message: "OTP has expired. Please resend." });
+    }
+
+    // Verify OTP
+    const inputHash = ScheduleChangeRequest.hashOtp(otp);
+    if (inputHash !== passenger.otpHash) {
+      return res.status(400).json({ success: false, message: "Invalid OTP." });
+    }
+
+    passenger.verified = true;
+    passenger.verifiedAt = new Date();
+    passenger.status = "approved";
+    changeRequest.approvedCount = changeRequest.passengers.filter(p => p.verified).length;
+
+    // If all approved, mark request as approved
+    if (changeRequest.approvedCount >= changeRequest.totalPassengers) {
+      changeRequest.status = "approved";
+    }
+
+    await changeRequest.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Passenger approved.",
+      approvedCount: changeRequest.approvedCount,
+      totalPassengers: changeRequest.totalPassengers,
+      allApproved: changeRequest.status === "approved",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /agent/trips/:tripId/schedule-change/status
+ * Get current schedule change request status & approval progress.
+ */
+router.get("/trips/:tripId/schedule-change/status", protectAgent, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const ScheduleChangeRequest = await import("../models/ScheduleChangeRequest.js").then(m => m.default);
+
+    const changeRequest = await ScheduleChangeRequest.findOne({
+      tripId,
+      agentId: req.agent._id,
+      status: { $in: ["pending", "approved"] },
+    }).sort({ createdAt: -1 });
+
+    if (!changeRequest) {
+      return res.status(200).json({ success: true, exists: false });
+    }
+
+    res.status(200).json({
+      success: true,
+      exists: true,
+      changeRequestId: changeRequest._id,
+      status: changeRequest.status,
+      newStartDate: changeRequest.newStartDate,
+      newDepartureTime: changeRequest.newDepartureTime,
+      oldStartDate: changeRequest.oldStartDate,
+      oldDepartureTime: changeRequest.oldDepartureTime,
+      totalPassengers: changeRequest.totalPassengers,
+      approvedCount: changeRequest.approvedCount,
+      allApproved: changeRequest.status === "approved",
+      passengers: changeRequest.passengers.map(p => ({
+        bookingId: p.bookingId,
+        travelerName: p.travelerName,
+        email: p.email,
+        status: p.status,
+        verified: p.verified,
+        verifiedAt: p.verifiedAt,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /agent/trips/:tripId/schedule-change/apply
+ * Apply the approved schedule change: update trip dates, send notification emails.
+ */
+router.post("/trips/:tripId/schedule-change/apply", protectAgent, async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const ScheduleChangeRequest = await import("../models/ScheduleChangeRequest.js").then(m => m.default);
+    const { sendScheduleUpdateNotification } = await import("../services/emailService.js");
+
+    const changeRequest = await ScheduleChangeRequest.findOne({
+      tripId,
+      agentId: req.agent._id,
+      status: "approved",
+    });
+    if (!changeRequest) {
+      return res.status(400).json({ success: false, message: "No fully-approved schedule change request found. All passengers must approve first." });
+    }
+
+    // Apply the change to the trip
+    const trip = await AgentTrip.findOne({ _id: tripId, agentId: req.agent._id });
+    if (!trip) return res.status(404).json({ success: false, message: "Trip not found." });
+
+    trip.startDate = changeRequest.newStartDate;
+    trip.departureTime = changeRequest.newDepartureTime;
+    await trip.save();
+
+    // Mark request as applied
+    changeRequest.status = "applied";
+    changeRequest.appliedAt = new Date();
+    await changeRequest.save();
+
+    // Send notification emails (fire and forget)
+    const formattedOldDate = (() => {
+      try { return new Date(changeRequest.oldStartDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }); }
+      catch { return changeRequest.oldStartDate; }
+    })();
+    const formattedNewDate = (() => {
+      try { return new Date(changeRequest.newStartDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }); }
+      catch { return changeRequest.newStartDate; }
+    })();
+
+    for (const p of changeRequest.passengers) {
+      sendScheduleUpdateNotification(p.email, p.travelerName, {
+        bookingId: p.bookingId,
+        oldDate: formattedOldDate,
+        newDate: formattedNewDate,
+        oldTime: changeRequest.oldDepartureTime,
+        newTime: changeRequest.newDepartureTime,
+      }).catch(err => console.error(`[ScheduleChange] Notification email failed for ${p.email}:`, err.message));
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Schedule updated successfully. Notification emails sent to all passengers.",
+      trip,
+    });
+  } catch (error) {
+    console.error("[ScheduleChange] Apply error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
+

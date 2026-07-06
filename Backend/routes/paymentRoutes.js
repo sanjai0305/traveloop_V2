@@ -9,6 +9,7 @@ import Payment from "../models/Payment.js";
 import Agent from "../models/Agent.js";
 import AdminNotification from "../models/AdminNotification.js";
 import SystemSetting from "../models/SystemSetting.js";
+import User from "../models/User.js";
 import BookingService from "../services/BookingService.js";
 import Passenger from "../models/Passenger.js";
 import SeatBooking from "../models/SeatBooking.js";
@@ -34,7 +35,7 @@ const getRazorpayInstance = () => {
 // @desc    Create a Razorpay order for booking checkout
 // @access  Private (Traveler)
 router.post("/create-order", protect, async (req, res) => {
-  const { tripId, seats = 1 } = req.body;
+  const { tripId, seats = 1, couponCode } = req.body;
 
   if (!tripId) {
     return res.status(400).json({ success: false, message: "tripId is required" });
@@ -60,8 +61,51 @@ router.post("/create-order", protect, async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid payment amount" });
     }
 
+    // Check referral discount eligibility
+    const referralEnabledSetting = await SystemSetting.findOne({ key: "referral_enabled" });
+    const referralEnabled = referralEnabledSetting ? referralEnabledSetting.value === true : false;
+
+    const referralDiscountSetting = await SystemSetting.findOne({ key: "referral_discount_percentage" });
+    const referralDiscountPercent = referralDiscountSetting ? Number(referralDiscountSetting.value) : 5;
+
+    const userObj = await User.findById(req.user.id || req.user._id);
+    const paidBookingsCount = await Booking.countDocuments({ userId: userObj?._id, paymentStatus: "Paid" });
+
+    let discount = 0;
+    let isCouponApplied = false;
+
+    if (couponCode && couponCode.trim()) {
+      if (userObj) {
+        const couponCard = userObj.scratchCards.find(c => 
+          c.couponCode && 
+          c.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
+          c.claimed && 
+          !c.used &&
+          (!c.expiresAt || new Date(c.expiresAt) > new Date())
+        );
+
+        if (couponCard) {
+          isCouponApplied = true;
+          if (couponCard.rewardType === "percentage_discount") {
+            const pct = parseInt(couponCard.rewardValue);
+            discount = Math.round(amount * (pct / 100));
+          } else if (couponCard.rewardType === "flat_discount") {
+            const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
+            discount = Math.min(amount, flatAmt);
+          } else if (couponCard.rewardType === "free_upgrade") {
+            discount = 150;
+          }
+        }
+      }
+    }
+
+    if (!isCouponApplied && referralEnabled && userObj && userObj.referredBy && paidBookingsCount === 0) {
+      discount = Math.round(amount * (referralDiscountPercent / 100));
+    }
+    const finalAmount = amount - discount;
+
     const options = {
-      amount: Math.round(amount * 100), // Razorpay accepts in paise
+      amount: Math.round(finalAmount * 100), // Razorpay accepts in paise
       currency: "INR",
       receipt: `TRIP-${tripId.toString().slice(-8)}-${String(Date.now()).slice(-6)}`,
     };
@@ -86,7 +130,7 @@ router.post("/create-order", protect, async (req, res) => {
     res.status(200).json({
       success: true,
       orderId: order.id,
-      amount: amount,
+      amount: finalAmount,
       currency: "INR",
     });
   } catch (error) {

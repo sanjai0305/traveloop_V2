@@ -135,8 +135,8 @@ export const Trips: React.FC = () => {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-        <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs text-slate-400">Loading package catalogs...</p>
+        <div className="w-8 h-8 border-3 border-[#14B8A6] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs text-slate-400 font-medium">Loading packages...</p>
       </div>
     );
   }
@@ -146,260 +146,240 @@ export const Trips: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold font-poppins text-white flex items-center gap-2">
-            <Map className="w-6 h-6 text-teal-400" />
-            <span>Trip Moderation Center</span>
+          <h2 className="text-xl font-bold font-poppins text-slate-800 flex items-center gap-2">
+            <Map className="w-5 h-5 text-[#14B8A6]" />
+            <span>Trips</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Audit published itineraries, feature top tours, and reject packages.</p>
+          <p className="text-xs text-slate-400 mt-0.5">Approve, feature, hide or audit active marketplace itineraries.</p>
         </div>
 
         {/* Search */}
         <div className="relative w-full sm:w-72">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 text-slate-500" />
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 text-slate-400" />
           </div>
           <input
             type="text"
             placeholder="Search trips or destinations..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-900/60 border border-slate-800 rounded-xl focus:outline-none focus:border-teal-500 text-xs text-white"
+            className="w-full pl-9 pr-4 py-2 bg-white border border-slate-205 rounded-xl focus:outline-none focus:border-[#14B8A6] text-xs text-slate-700 shadow-xs"
           />
         </div>
       </div>
 
       {/* Tab Selectors */}
-      <div className="flex gap-2 border-b border-slate-800/80">
+      <div className="flex gap-2 border-b border-slate-200">
         <button
           onClick={() => setActiveTab("active")}
-          className={`px-5 py-2.5 text-xs font-semibold rounded-t-xl border-b-2 transition-all ${
+          className={`px-5 py-2.5 text-xs font-semibold border-b-2 transition-all ${
             activeTab === "active"
-              ? "border-teal-500 text-teal-400 font-bold bg-slate-900/40"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-[#14B8A6] text-[#14B8A6] font-bold"
+              : "border-transparent text-slate-400 hover:text-slate-650"
           }`}
         >
           Active Packages
         </button>
         <button
           onClick={() => setActiveTab("deleted")}
-          className={`px-5 py-2.5 text-xs font-semibold rounded-t-xl border-b-2 transition-all ${
+          className={`px-5 py-2.5 text-xs font-semibold border-b-2 transition-all ${
             activeTab === "deleted"
-              ? "border-teal-500 text-teal-400 font-bold bg-slate-900/40"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-[#14B8A6] text-[#14B8A6] font-bold"
+              : "border-transparent text-slate-400 hover:text-slate-650"
           }`}
         >
-          Deleted / Archived Trips
+          Deleted / Archived
         </button>
       </div>
 
-      {/* Trips Grid/Table */}
-      <div className="glass-panel rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider text-slate-400 bg-slate-900/40">
-                <th className="py-4 px-6">Package details</th>
-                <th className="py-4 px-6">Travel Agency</th>
-                <th className="py-4 px-6">Destinations</th>
-                <th className="py-4 px-6 text-center">Dates & Duration</th>
-                <th className="py-4 px-6 text-center">Occupancy</th>
-                <th className="py-4 px-6 text-right">Price</th>
-                <th className="py-4 px-6 text-center">Audit Status</th>
-                <th className="py-4 px-6 text-center">Toggles</th>
-                <th className="py-4 px-6 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 text-xs text-slate-200">
-              {filteredTrips.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center py-12 text-slate-500">
-                    No matching trip itineraries found.
-                  </td>
-                </tr>
-              ) : (
-                filteredTrips.map((trip) => (
-                  <tr key={trip._id} className="hover:bg-slate-900/30 transition-colors">
-                    
-                    {/* Cover & Title */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={trip.coverImage || "/placeholder.jpg"}
-                          alt={trip.title}
-                          className="w-10 h-10 rounded-lg object-cover border border-slate-800 shrink-0"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=200";
-                          }}
-                        />
-                        <div>
-                          <div className="font-semibold text-white truncate max-w-[200px]">{trip.title}</div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">{trip.duration}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Agency */}
-                    <td className="py-4 px-6">
-                      <div className="font-medium text-slate-200">{trip.agent?.companyName || "Independent"}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{trip.agent?.displayName}</div>
-                    </td>
-
-                    {/* Destinations */}
-                    <td className="py-4 px-6">
-                      <div className="flex flex-wrap gap-1 max-w-[150px]">
-                        {trip.destinations.map((d, i) => (
-                          <span
-                            key={i}
-                            className="px-1.5 py-0.5 rounded bg-slate-900 text-[10px] border border-slate-800 text-slate-400"
-                          >
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Dates */}
-                    <td className="py-4 px-6 text-center">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <div className="flex items-center gap-1 font-mono text-[10px] text-slate-300">
-                          <Calendar className="w-3 h-3 text-slate-500" />
-                          <span>{trip.startDate}</span>
-                        </div>
-                        <div className="text-[9px] text-slate-500">to {trip.endDate}</div>
-                      </div>
-                    </td>
-
-                    {/* Occupancy */}
-                    <td className="py-4 px-6 text-center font-mono">
-                      <div>
-                        <span className="text-teal-400 font-bold">{trip.bookedSeats || 0}</span>
-                        <span className="text-slate-500">/{trip.totalSeats}</span>
-                      </div>
-                      <div className="text-[9px] text-slate-500 mt-0.5">
-                        {trip.totalSeats - (trip.bookedSeats || 0)} available
-                      </div>
-                    </td>
-
-                    {/* Price */}
-                    <td className="py-4 px-6 text-right font-mono font-bold text-white">
-                      {fmtPrice(trip.pricePerPerson || 0)}
-                    </td>
-
-                    {/* Approval Status */}
-                    <td className="py-4 px-6 text-center">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                          trip.approvalStatus === "approved"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : trip.approvalStatus === "rejected"
-                            ? "bg-rose-500/10 text-rose-400"
-                            : "bg-amber-500/10 text-amber-400"
-                        }`}
-                      >
-                        {trip.approvalStatus}
+      {/* Trips Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredTrips.length === 0 ? (
+          <div className="col-span-full text-center py-16 glass-panel flex flex-col items-center justify-center bg-white border border-slate-200 rounded-[20px] shadow-xs">
+            <Map className="w-10 h-10 text-slate-300 mb-3" />
+            <p className="text-xs font-bold text-slate-400">No matching trip packages found.</p>
+          </div>
+        ) : (
+          filteredTrips.map((trip) => (
+            <div key={trip._id} className="glass-panel overflow-hidden flex flex-col justify-between hover:shadow-md transition-all duration-300 bg-white border border-slate-200 rounded-[20px]">
+              <div>
+                {/* Banner Image */}
+                <div className="relative h-44 w-full bg-slate-50">
+                  <img
+                    src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600"}
+                    alt={trip.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600";
+                    }}
+                  />
+                  {/* Status Badges Overlay */}
+                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                      trip.approvalStatus === "approved"
+                        ? "bg-emerald-500 text-white"
+                        : trip.approvalStatus === "rejected"
+                        ? "bg-rose-500 text-white"
+                        : "bg-amber-500 text-white"
+                    }`}>
+                      {trip.approvalStatus}
+                    </span>
+                    {trip.isHidden && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-slate-900 text-white">
+                        Hidden
                       </span>
-                    </td>
+                    )}
+                    {trip.isFeatured && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-400 text-slate-900">
+                        ★ Featured
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                    {/* Toggles */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center justify-center gap-2">
-                        {/* Feature */}
+                {/* Card Content */}
+                <div className="p-5 space-y-4">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800 font-poppins line-clamp-1">{trip.title}</h3>
+                    <p className="text-[9px] text-[#14B8A6] font-extrabold uppercase mt-1 tracking-wider">{trip.destinations.join(" → ")}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-xs border-y border-slate-100 py-3">
+                    <div>
+                      <span className="text-[9px] text-slate-400 font-bold uppercase block">Travel Agency</span>
+                      <span className="font-bold text-slate-700 truncate block mt-0.5">{trip.agent?.companyName || "Independent"}</span>
+                      <span className="text-[9px] text-slate-450 block mt-0.5">{trip.agent?.displayName}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 font-bold uppercase block">Seats Occupied</span>
+                      <span className="font-mono font-bold text-slate-700 block mt-0.5">
+                        {trip.bookedSeats || 0} / {trip.totalSeats}
+                      </span>
+                      <span className="text-[9px] text-[#14B8A6] font-bold block mt-0.5">
+                        {trip.totalSeats - (trip.bookedSeats || 0)} available
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 font-bold uppercase block">Trip Dates</span>
+                      <span className="font-semibold text-slate-600 block mt-0.5">{trip.startDate}</span>
+                      <span className="text-[9px] text-slate-400 block">to {trip.endDate}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[9px] text-slate-400 font-bold uppercase block">Price Per Person</span>
+                      <span className="text-xs font-black text-slate-805 font-mono block mt-0.5">{fmtPrice(trip.pricePerPerson || 0)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between gap-2 rounded-b-[20px]">
+                <button
+                  onClick={() => alert(`Itinerary detail for ${trip.title}:\n\n- Destinations: ${trip.destinations.join(", ")}\n- Duration: ${trip.duration}\n- Agent Email: ${trip.agent?.email || 'N/A'}`)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold text-[10px] hover:bg-slate-50 transition-colors flex items-center gap-1"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View</span>
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  {trip.isDeleted || trip.status === "deleted" ? (
+                    <>
+                      <button
+                        onClick={() => handleRestoreTrip(trip._id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[10px] transition-all flex items-center gap-1"
+                        title="Restore Trip"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Restore</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to PERMANENTLY delete this package from the database? This cannot be undone!")) {
+                            handlePurgeTrip(trip._id);
+                          }
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-[10px] transition-all flex items-center gap-1"
+                        title="Permanent Delete"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Purge</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Feature star */}
+                      <button
+                        onClick={() => handleUpdateTrip(trip._id, { isFeatured: !trip.isFeatured })}
+                        className={`p-1.5 rounded-lg border transition-all ${
+                          trip.isFeatured
+                            ? "bg-amber-500 border-amber-600 text-white shadow-xs"
+                            : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                        }`}
+                        title="Feature Trip"
+                      >
+                        <Star className={`w-3.5 h-3.5 ${trip.isFeatured ? 'fill-current' : ''}`} />
+                      </button>
+
+                      {/* Hide toggle */}
+                      <button
+                        onClick={() => handleUpdateTrip(trip._id, { isHidden: !trip.isHidden })}
+                        className={`p-1.5 rounded-lg border transition-all ${
+                          trip.isHidden
+                            ? "bg-slate-900 border-slate-900 text-white"
+                            : "bg-white border-slate-200 text-slate-450 hover:bg-slate-50"
+                        }`}
+                        title={trip.isHidden ? "Unhide Trip" : "Hide Trip"}
+                      >
+                        {trip.isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {/* Approve button */}
+                      {trip.approvalStatus !== "approved" && (
                         <button
-                          onClick={() => handleUpdateTrip(trip._id, { isFeatured: !trip.isFeatured })}
-                          className={`p-1.5 rounded-lg border transition-all ${
-                            trip.isFeatured
-                              ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                              : "bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300"
-                          }`}
-                          title="Feature Trip"
+                          onClick={() => handleUpdateTrip(trip._id, { approvalStatus: "approved" })}
+                          className="p-1.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white transition-all"
+                          title="Approve Package"
                         >
-                          <Star className="w-3.5 h-3.5 fill-current" />
+                          <Check className="w-3.5 h-3.5" />
                         </button>
+                      )}
 
-                        {/* Hide */}
+                      {/* Reject button */}
+                      {trip.approvalStatus !== "rejected" && (
                         <button
-                          onClick={() => handleUpdateTrip(trip._id, { isHidden: !trip.isHidden })}
-                          className={`p-1.5 rounded-lg border transition-all ${
-                            trip.isHidden
-                              ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
-                              : "bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300"
-                          }`}
-                          title={trip.isHidden ? "Unhide Trip" : "Hide Trip"}
+                          onClick={() => handleUpdateTrip(trip._id, { approvalStatus: "rejected" })}
+                          className="p-1.5 rounded bg-rose-500 hover:bg-rose-600 text-white transition-all"
+                          title="Reject Package"
                         >
-                          {trip.isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          <X className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                    </td>
+                      )}
 
-                    {/* Moderation approvals */}
-                    <td className="py-4 px-6">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {trip.isDeleted || trip.status === "deleted" ? (
-                          <>
-                            <button
-                              onClick={() => handleRestoreTrip(trip._id)}
-                              className="px-2.5 py-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 font-bold text-[10px] transition-all flex items-center gap-1"
-                              title="Restore Trip"
-                            >
-                              <Check className="w-3 h-3" />
-                              <span>Restore</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to PERMANENTLY delete this package from the database? This cannot be undone!")) {
-                                  handlePurgeTrip(trip._id);
-                                }
-                              }}
-                              className="px-2.5 py-1.5 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-slate-950 font-bold text-[10px] transition-all flex items-center gap-1"
-                              title="Permanent Delete"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Purge</span>
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {trip.approvalStatus !== "approved" && (
-                              <button
-                                onClick={() => handleUpdateTrip(trip._id, { approvalStatus: "approved" })}
-                                className="p-1.5 rounded bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 transition-all"
-                                title="Approve Package"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {trip.approvalStatus !== "rejected" && (
-                              <button
-                                onClick={() => handleUpdateTrip(trip._id, { approvalStatus: "rejected" })}
-                                className="p-1.5 rounded bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-slate-950 transition-all"
-                                title="Reject Package"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to delete this package? Associated bookings will be cancelled.")) {
-                                  handleUpdateTrip(trip._id, { action: "delete" });
-                                }
-                              }}
-                              className="p-1.5 rounded bg-slate-800 hover:bg-rose-600 hover:text-white text-slate-500 transition-all"
-                              title="Delete Package"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                      {/* Soft Delete */}
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to delete this package? Associated bookings will be cancelled.")) {
+                            handleUpdateTrip(trip._id, { action: "delete" });
+                          }
+                        }}
+                        className="p-1.5 rounded-lg bg-white border border-slate-200 hover:bg-rose-600 hover:text-white hover:border-rose-600 text-slate-400 transition-all"
+                        title="Delete Package"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
 };
+export default Trips;

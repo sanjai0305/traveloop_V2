@@ -10,6 +10,10 @@ import Itinerary from "../models/Itinerary.js";
 import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
 import Wallet from "../models/Wallet.js";
+import User from "../models/User.js";
+import Referral from "../models/Referral.js";
+import { triggerNotification } from "../controllers/notificationController.js";
+
 
 // ─── HELPERS FOR USER TRIP CLONING ────────────────────────────────────────────
 
@@ -171,6 +175,7 @@ export class BookingService {
       children = 0,
       pickupLocation = "",
       contactNumber = "",
+      couponCode = "",
     } = payload;
 
     if (!tripId) {
@@ -230,6 +235,70 @@ export class BookingService {
 
     const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
 
+    // Referral calculation check
+    const referralEnabledSetting = await SystemSetting.findOne({ key: "referral_enabled" });
+    const referralEnabled = referralEnabledSetting ? referralEnabledSetting.value === true : false;
+
+    const referralDiscountSetting = await SystemSetting.findOne({ key: "referral_discount_percentage" });
+    const referralDiscountPercent = referralDiscountSetting ? Number(referralDiscountSetting.value) : 5;
+
+    const userObj = await User.findById(userId);
+    const paidBookingsCount = await Booking.countDocuments({ userId, paymentStatus: "Paid" });
+
+    let isReferralApplied = false;
+    let discountAmount = 0;
+    let originalPrice = totalAmount;
+    let appliedReferralCode = "";
+
+    // Resolve Coupon if passed
+    if (couponCode && couponCode.trim()) {
+      if (userObj) {
+        // Find matching scratch card coupon
+        const couponCard = userObj.scratchCards.find(c => 
+          c.couponCode && 
+          c.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
+          c.claimed && 
+          !c.used &&
+          (!c.expiresAt || new Date(c.expiresAt) > new Date())
+        );
+
+        if (couponCard) {
+          isReferralApplied = true;
+          appliedReferralCode = couponCode.trim();
+          const subtotal = (trip.offerPrice || trip.pricePerPerson || 0) * totalTravellers;
+          
+          if (couponCard.rewardType === "percentage_discount") {
+            const pct = parseInt(couponCard.rewardValue);
+            discountAmount = Math.round(subtotal * (pct / 100));
+          } else if (couponCard.rewardType === "flat_discount") {
+            const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
+            discountAmount = Math.min(subtotal, flatAmt);
+          } else if (couponCard.rewardType === "free_upgrade") {
+            discountAmount = 150;
+          }
+          
+          originalPrice = totalAmount + discountAmount;
+          
+          // Mark the scratch card coupon as used!
+          couponCard.used = true;
+          
+          // If this is the active coupon in user fields, mark it used
+          if (userObj.couponCode && userObj.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase()) {
+            userObj.couponStatus = "Used";
+          }
+          await userObj.save();
+        }
+      }
+    }
+
+    if (!isReferralApplied && referralEnabled && userObj && userObj.referredBy && paidBookingsCount === 0) {
+      isReferralApplied = true;
+      appliedReferralCode = userObj.referredBy;
+      const subtotal = (trip.offerPrice || trip.pricePerPerson || 0) * totalTravellers;
+      discountAmount = Math.round(subtotal * (referralDiscountPercent / 100));
+      originalPrice = totalAmount + discountAmount;
+    }
+
     // 5. Create Booking record
     const booking = await Booking.create({
       bookingId,
@@ -263,7 +332,60 @@ export class BookingService {
       bookingAmount: totalAmount,
       pickupLocation,
       token: crypto.randomUUID(),
+      referralApplied: isReferralApplied,
+      referralCode: appliedReferralCode,
+      referralDiscountPercent: (couponCode && isReferralApplied) ? 0 : (isReferralApplied ? referralDiscountPercent : 0),
+      referralDiscountAmount: discountAmount,
+      originalPrice: originalPrice,
     });
+
+    if (isReferralApplied) {
+      // 1. Update referral status
+      const referral = await Referral.findOne({ invitedId: userId, status: "registered" });
+      if (referral) {
+        referral.status = "booked";
+        referral.booked = true;
+        referral.tripId = trip._id;
+        referral.discountApplied = discountAmount;
+        await referral.save();
+      }
+
+      // 2. Load coins configuration
+      const coinRewardSetting = await SystemSetting.findOne({ key: "referral_coin_reward" });
+      const rewardCoins = coinRewardSetting ? Number(coinRewardSetting.value) : 100;
+
+      // 3. Find inviter user and reward
+      const inviter = await User.findOne({ referralCode: userObj.referredBy.trim().toUpperCase() });
+      if (inviter) {
+        inviter.walletBalance = (inviter.walletBalance || 0) + rewardCoins;
+        inviter.referralCoins = (inviter.referralCoins || 0) + rewardCoins;
+        await inviter.save();
+
+        // 4. Trigger inviter notification
+        try {
+          await triggerNotification(
+            inviter._id,
+            "Referral Reward Earned! 🎉",
+            `Your friend booked a trip. You earned ${rewardCoins} Travel Coins.`,
+            "reward"
+          );
+        } catch (notifErr) {
+          console.error("Failed to send inviter notification:", notifErr);
+        }
+      }
+
+      // 5. Trigger invitee notification
+      try {
+        await triggerNotification(
+          userId,
+          "Referral Discount Applied! 🎁",
+          `Referral discount applied successfully. Saved ₹${discountAmount} on this booking.`,
+          "reward"
+        );
+      } catch (notifErr) {
+        console.error("Failed to send invitee notification:", notifErr);
+      }
+    }
 
     // 6. Update AgentTrip seat counters & occupancy recalculation
     trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;

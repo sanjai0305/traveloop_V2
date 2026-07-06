@@ -32,6 +32,8 @@ import {
   getNotifications,
   markNotificationRead,
   seedMockData,
+  getReferralSettings,
+  updateReferralSettings,
 } from "../controllers/adminController.js";
 
 const router = express.Router();
@@ -136,6 +138,10 @@ router.patch("/withdrawals/:id", verifyAdmin, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// Referral Settings
+router.get("/referral/settings", verifyAdmin, getReferralSettings);
+router.patch("/referral/settings", verifyAdmin, updateReferralSettings);
 
 // Dev only mock seeder
 router.post("/seed", seedMockData);

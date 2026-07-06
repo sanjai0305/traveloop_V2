@@ -6,6 +6,8 @@ import {
   updateProfile,
   deleteAccount,
   rewardXp,
+  getReferralDashboard,
+  claimScratchCard,
 } from "../controllers/profileController.js";
 import protect from "../middleware/authMiddleware.js";
 
@@ -25,6 +27,12 @@ router.put("/update", protect, updateProfile);
 
 // Reward XP endpoint
 router.post("/reward-xp", protect, rewardXp);
+
+// Get referral dashboard stats
+router.get("/referral-dashboard", protect, getReferralDashboard);
+
+// Claim scratch card reward
+router.post("/claim-scratch-card/:cardId", protect, claimScratchCard);
 
 // Delete account (cascading)
 router.delete("/delete-account", protect, deleteAccount);

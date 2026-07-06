@@ -105,14 +105,130 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    referredBy: {
+      type: String,
+      default: "",
+    },
+    referralCount: {
+      type: Number,
+      default: 0,
+    },
+    walletBalance: {
+      type: Number,
+      default: 0,
+    },
+    referralDiscount: {
+      type: Number,
+      default: 0,
+    },
+    referralCoins: {
+      type: Number,
+      default: 0,
+    },
+    couponCode: {
+      type: String,
+      default: "",
+    },
+    couponPercentage: {
+      type: Number,
+      default: 0,
+    },
+    couponStatus: {
+      type: String,
+      enum: ["Unused", "Used", "Expired"],
+      default: "Unused",
+    },
+    rewardClaimed: {
+      type: Boolean,
+      default: false,
+    },
+    rewardExpiry: {
+      type: Date,
+      default: null,
+    },
+    scratchCards: [
+      {
+        cardId: {
+          type: String,
+          default: () => `SC-${Math.floor(100000 + Math.random() * 900000)}`,
+        },
+        cardType: {
+          type: String,
+          enum: ["Bronze", "Silver", "Gold", "Diamond"],
+          default: "Bronze",
+        },
+        rewardType: {
+          type: String,
+          enum: ["percentage_discount", "flat_discount", "coins", "free_upgrade"],
+          default: "percentage_discount",
+        },
+        rewardValue: {
+          type: String,
+          default: "",
+        },
+        scratched: {
+          type: Boolean,
+          default: false,
+        },
+        claimed: {
+          type: Boolean,
+          default: false,
+        },
+        used: {
+          type: Boolean,
+          default: false,
+        },
+        couponCode: {
+          type: String,
+          default: "",
+        },
+        claimedAt: {
+          type: Date,
+          default: null,
+        },
+        expiresAt: {
+          type: Date,
+          default: null,
+        },
+      }
+    ],
   },
   {
     timestamps: true,
   }
 );
 
+// Pre-save hook to automatically generate unique referral code
+userSchema.pre("save", async function () {
+  if (!this.referralCode) {
+    const cleanName = (this.firstName || "USER").replace(/[^a-zA-Z]/g, "").toUpperCase();
+    let codeUnique = false;
+    let attempts = 0;
+    while (!codeUnique && attempts < 10) {
+      const randNum = Math.floor(1000 + Math.random() * 9000);
+      const testCode = `TLP-${cleanName}-${randNum}`;
+      const existing = await mongoose.models.User.findOne({ referralCode: testCode });
+      if (!existing) {
+        this.referralCode = testCode;
+        codeUnique = true;
+      }
+      attempts++;
+    }
+    // Fallback if name is empty or we hit conflicts
+    if (!this.referralCode) {
+      this.referralCode = `TLP-USER-${Math.floor(10000 + Math.random() * 90000)}`;
+    }
+  }
+});
+
 // Index for fast lookups
 userSchema.index({ firebaseUid: 1 }, { sparse: true });
+userSchema.index({ referralCode: 1 }, { sparse: true });
 
 const User = mongoose.model("User", userSchema);
 export default User;

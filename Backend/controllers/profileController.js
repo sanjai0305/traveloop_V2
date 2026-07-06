@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import Referral from "../models/Referral.js";
 import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
 import Checklist from "../models/Checklist.js";
@@ -10,6 +11,8 @@ import Budget from "../models/Budget.js";
 import Flight from "../models/Flight.js";
 import Journal from "../models/Journal.js";
 import ChatMessage from "../models/ChatMessage.js";
+import SystemSetting from "../models/SystemSetting.js";
+import ReferralService from "../services/ReferralService.js";
 import admin from "../config/firebaseAdmin.js";
 
 // Get saved destinations
@@ -282,5 +285,90 @@ export const rewardXp = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET REFERRAL DASHBOARD STATS
+export const getReferralDashboard = async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const totalInvites = await Referral.countDocuments({ inviterId: userId });
+    const successfulBookings = await Referral.countDocuments({ inviterId: userId, status: { $in: ["booked", "completed"] } });
+    
+    // Sum discountApplied from all referrals
+    const referrals = await Referral.find({ inviterId: userId });
+    const discountEarned = referrals.reduce((sum, r) => sum + (r.discountApplied || 0), 0);
+
+    // Get referral system settings
+    const enabledSetting = await SystemSetting.findOne({ key: "referral_enabled" });
+    const discountSetting = await SystemSetting.findOne({ key: "referral_discount_percentage" });
+    const referralEnabled = enabledSetting ? enabledSetting.value === true : false;
+    const referralDiscountPercent = discountSetting ? Number(discountSetting.value) : 5;
+
+    // Check invitee eligibility (referredBy is set, and has 0 Paid bookings)
+    const paidBookingsCount = await Booking.countDocuments({ userId, paymentStatus: "Paid" });
+    const isEligibleForDiscount = referralEnabled && !!user.referredBy && paidBookingsCount === 0;
+
+    // Scratch card stats
+    const scratchCards = user.scratchCards || [];
+    const scratchCardsEarned = scratchCards.length;
+    const rewardsClaimed = scratchCards.filter(c => c.claimed).length;
+
+    // Count unused, unexpired coupons from scratch cards
+    const now = new Date();
+    const couponsAvailable = scratchCards.filter(c => 
+      c.claimed && 
+      !c.used && 
+      c.rewardType !== "coins" && 
+      (!c.expiresAt || new Date(c.expiresAt) > now)
+    ).length;
+
+    res.status(200).json({
+      success: true,
+      referralCode: user.referralCode || "",
+      referredBy: user.referredBy || "",
+      totalInvites,
+      successfulBookings,
+      coinsEarned: user.referralCoins || 0,
+      discountEarned,
+      walletBalance: user.walletBalance || 0,
+      referralEnabled,
+      referralDiscountPercent,
+      isEligibleForDiscount,
+      scratchCards,
+      scratchCardsEarned,
+      rewardsClaimed,
+      couponsAvailable
+    });
+  } catch (error) {
+    console.error("getReferralDashboard error:", error);
+    res.status(500).json({ success: false, message: "Server Error loading referral dashboard" });
+  }
+};
+
+// CLAIM SCRATCH CARD REWARD
+export const claimScratchCard = async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const { cardId } = req.params;
+
+    if (!cardId) {
+      return res.status(400).json({ success: false, message: "Card ID is required" });
+    }
+
+    const result = await ReferralService.claimScratchCard(userId, cardId);
+    res.status(200).json({
+      success: true,
+      message: "Reward claimed successfully",
+      reward: result
+    });
+  } catch (error) {
+    console.error("claimScratchCard error:", error);
+    res.status(400).json({ success: false, message: error.message || "Failed to claim reward" });
   }
 };

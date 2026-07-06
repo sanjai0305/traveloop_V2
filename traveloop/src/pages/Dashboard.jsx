@@ -11,6 +11,8 @@ import WeatherChip from "../components/dashboard/WeatherChip";
 import { useAuth } from "../context/AuthContext";
 import TravelScoreCard from "../components/dashboard/TravelScoreCard";
 import AIAssistantCard from "../components/dashboard/AIAssistantCard";
+import ReferralCard from "../components/dashboard/ReferralCard";
+import ScratchCardModal from "../components/dashboard/ScratchCardModal";
 import AIAssistant from "../components/ai/AIAssistant";
 import {
   Search, ChevronRight, Star, MapPin, TrendingUp,
@@ -94,6 +96,35 @@ const Dashboard = () => {
 
   const { user } = useAuth();
   const [currentUser, setCurrentUser] = useState(user);
+  const [unscratchedCard, setUnscratchedCard] = useState(null);
+  const [showScratchModal, setShowScratchModal] = useState(false);
+
+  const fetchReferralStats = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const res = await fetch(getApiUrl("profile/referral-dashboard"), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.scratchCards) {
+        const cardToScratch = data.scratchCards.find(c => !c.scratched && !c.claimed);
+        if (cardToScratch) {
+          setUnscratchedCard(cardToScratch);
+          setShowScratchModal(true);
+        } else {
+          setUnscratchedCard(null);
+          setShowScratchModal(false);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch referral dashboard:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchReferralStats();
+  }, []);
 
   useEffect(() => {
     setCurrentUser(user);
@@ -255,6 +286,9 @@ const Dashboard = () => {
 
         {/* ── TRAVEL SCORE ──────────────────────────────────── */}
         <TravelScoreCard trips={trips} loading={loading} />
+
+        {/* ── REFERRAL & REWARDS CARD ────────────────────────── */}
+        <ReferralCard />
 
         {/* ── SEARCH BAR (Smart Explore) ─────────────────────── */}
         <motion.div
@@ -595,6 +629,16 @@ const Dashboard = () => {
 
       {/* ── AI ASSISTANT ──────────────────────────────────────── */}
       <AIAssistant isOpen={aiOpen} onClose={() => setAiOpen(false)} />
+
+      {/* Scratch Card Modal Overlay */}
+      <ScratchCardModal
+        isOpen={showScratchModal}
+        onClose={() => setShowScratchModal(false)}
+        card={unscratchedCard}
+        onClaimed={() => {
+          fetchReferralStats();
+        }}
+      />
     </MainLayout>
   );
 };

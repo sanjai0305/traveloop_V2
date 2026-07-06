@@ -39,9 +39,14 @@ import {
   Eye,
   Send,
   Ban,
+  CalendarClock,
+  RefreshCw,
+  MapPin,
+  CheckSquare,
+  Lock,
 } from "lucide-react";
 import { GlassCard, Button } from "../components/ui";
-import { getBookings, updateBookingStatus, updateBookingDetails, getTripManifest } from "../services/bookingService";
+import { getBookings, updateBookingStatus, updateBookingDetails, getTripManifest, initiateScheduleChange, verifyScheduleOtp, resendScheduleOtp, getScheduleChangeStatus, applyScheduleChange, ScheduleChangePassenger } from "../services/bookingService";
 import { getMyTrips, updateTrip } from "../services/tripService";
 import { Booking } from "../types";
 import { formatDate, formatCurrency } from "../utils";
@@ -77,6 +82,13 @@ export const Bookings: React.FC = () => {
   const [qrPreviewPassenger, setQrPreviewPassenger] = useState<string | null>(null);
   const [editingSeatBookingId, setEditingSeatBookingId] = useState<string | null>(null);
   const [editingSeatValue, setEditingSeatValue] = useState<string>("");
+
+  // ── Update Schedule modal states ────────────────────────────────────────
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedNewDate, setSchedNewDate] = useState("");
+  const [schedNewTime, setSchedNewTime] = useState("");
+  const [scheduleUpdating, setScheduleUpdating] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Fetch all bookings for the agent
   const { data: bookingsData, isLoading: bookingsLoading, error: bookingsErr } = useQuery({
@@ -480,6 +492,36 @@ export const Bookings: React.FC = () => {
       "All", "Paid", "Pending", "Cancelled", "Boarded", "Not Boarded", "Male", "Female", "Checked In", "QR Generated", "Seat Assigned", "Waiting Seat"
     ];
 
+    // ── Schedule change handler ──────────────────────────────────────────────
+    const handleInitiateScheduleChange = async () => {
+      if (!schedNewDate || !schedNewTime) {
+        setScheduleMsg({ type: "error", text: "Please enter both a new departure date and time." });
+        return;
+      }
+      setScheduleUpdating(true);
+      setScheduleMsg(null);
+      try {
+        const result = await initiateScheduleChange(tripId!, {
+          newStartDate: schedNewDate,
+          newDepartureTime: schedNewTime,
+        });
+        if (result.requiresConsent) {
+          // Redirect to OTP verification page
+          setShowScheduleModal(false);
+          navigate(`/bookings/${tripId}/schedule-verify`);
+        } else {
+          setScheduleMsg({ type: "success", text: "Schedule updated successfully! No passenger consent required." });
+          queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+          queryClient.invalidateQueries({ queryKey: ["manifest", tripId] });
+          setTimeout(() => setShowScheduleModal(false), 1800);
+        }
+      } catch (err: any) {
+        setScheduleMsg({ type: "error", text: err?.response?.data?.message || "Failed to update schedule. Please try again." });
+      } finally {
+        setScheduleUpdating(false);
+      }
+    };
+
     return (
       <div className="space-y-6 animate-fade-in pb-12">
         {/* Back control */}
@@ -514,6 +556,17 @@ export const Bookings: React.FC = () => {
               <FileSpreadsheet className="w-3.5 h-3.5" /> Download Excel
             </button>
             <button
+              onClick={() => {
+                setSchedNewDate(selectedTrip?.startDate || "");
+                setSchedNewTime(selectedTrip?.departureTime || "");
+                setScheduleMsg(null);
+                setShowScheduleModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <CalendarClock className="w-3.5 h-3.5" /> Update Schedule
+            </button>
+            <button
               onClick={handleAssignDriver}
               className="px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
             >
@@ -534,31 +587,35 @@ export const Bookings: React.FC = () => {
           </div>
         </div>
 
-        {/* ─── BOARDING ANALYTICS ROW ─── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Passengers</span>
+        {/* ─── BOOKING ANALYTICS ROW — enriched with gender + seat stats ─── */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Bookings</span>
             <span className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1">{passengers}</span>
           </GlassCard>
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Boarded</span>
-            <span className="text-xl font-black text-emerald-500 mt-1">{boardedCount}</span>
-          </GlassCard>
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending</span>
-            <span className="text-xl font-black text-amber-500 mt-1">{pendingBoardingCount}</span>
-          </GlassCard>
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cancelled</span>
-            <span className="text-xl font-black text-rose-500 mt-1">{cancelledCount}</span>
-          </GlassCard>
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Revenue</span>
-            <span className="text-xl font-black text-slate-800 dark:text-slate-100 mt-1">₹{totalRevenue.toLocaleString("en-IN")}</span>
+            <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1">₹{totalRevenue.toLocaleString("en-IN")}</span>
           </GlassCard>
-          <GlassCard className="p-4 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Occupancy</span>
-            <span className="text-xl font-black text-teal-500 mt-1">{occupancyPercent}%</span>
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Male</span>
+            <span className="text-xl font-black text-sky-500 mt-1">
+              {manifestData?.tripStats?.maleCount ?? activeBookings.filter(b => (b.gender || "").toLowerCase() === "male").length}
+            </span>
+          </GlassCard>
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Female</span>
+            <span className="text-xl font-black text-pink-500 mt-1">
+              {manifestData?.tripStats?.femaleCount ?? activeBookings.filter(b => (b.gender || "").toLowerCase() === "female").length}
+            </span>
+          </GlassCard>
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Available Seats</span>
+            <span className="text-xl font-black text-teal-500 mt-1">{Math.max(0, (selectedTrip?.totalSeats || 40) - totalBookedSeats)}</span>
+          </GlassCard>
+          <GlassCard className="p-3.5 flex flex-col justify-between border border-slate-100 dark:border-slate-850 shadow-xs">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Occupied Seats</span>
+            <span className="text-xl font-black text-indigo-500 mt-1">{totalBookedSeats}</span>
           </GlassCard>
         </div>
 
@@ -706,11 +763,128 @@ export const Bookings: React.FC = () => {
           </div>
         )}
 
-        {/* ─── GRID CONTENT SPLIT: MAIN PANEL (Left) & SIDEBAR (Right) ─── */}
+        {/* ─── GRID CONTENT SPLIT: LEFT SUMMARY | MAIN PANEL | SEAT MAP ─── */}
         <div className="flex flex-col lg:flex-row gap-6">
-          
-          {/* ─── LEFT COLUMN: Roster & Filters ─── */}
-          <div className="flex-1 w-full lg:w-3/4 flex flex-col gap-4">
+
+          {/* ─── LEFT COLUMN: Trip Summary Card ─── */}
+          {selectedTrip && (
+            <div className="w-full lg:w-64 shrink-0 flex flex-col gap-4">
+              <GlassCard className="p-4 border border-slate-150 dark:border-slate-800 shadow-sm flex flex-col gap-3 text-xs">
+                {/* Cover image */}
+                <div className="w-full h-28 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/50 shrink-0">
+                  {selectedTrip.coverImage ? (
+                    <img src={selectedTrip.coverImage} alt={selectedTrip.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-teal-400 to-indigo-500 flex items-center justify-center text-white text-3xl">
+                      🚌
+                    </div>
+                  )}
+                </div>
+
+                {/* Trip name & status */}
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 leading-snug">{selectedTrip.title}</h3>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                    selectedTrip.status === "published" || selectedTrip.status === "active"
+                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20"
+                      : selectedTrip.status === "completed"
+                      ? "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                      : "bg-amber-50 text-amber-600 dark:bg-amber-950/20"
+                  }`}>{selectedTrip.status || "Published"}</span>
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-850 pt-3 space-y-2.5">
+                  {/* Booking ID */}
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Trip ID</span>
+                    <span className="font-mono text-[10px] text-slate-600 dark:text-slate-400 block truncate">{selectedTrip._id}</span>
+                  </div>
+                  {/* Departure Date */}
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-3 h-3 text-indigo-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Departure Date</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-100">{selectedTrip.startDate ? new Date(selectedTrip.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</span>
+                    </div>
+                  </div>
+                  {/* Departure Time */}
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-3 h-3 text-indigo-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Departure Time</span>
+                      <span className="font-bold text-indigo-500">{selectedTrip.departureTime || "—"}</span>
+                    </div>
+                  </div>
+                  {/* Return Date */}
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-3 h-3 text-slate-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Return Date</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300">{selectedTrip.endDate ? new Date(selectedTrip.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</span>
+                    </div>
+                  </div>
+                  {/* Duration */}
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Duration</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedTrip.duration || "—"}</span>
+                  </div>
+                  {/* Pickup Point */}
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-3 h-3 text-emerald-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Pickup Point</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 leading-snug">{selectedTrip.pickupLocation || selectedTrip.pickupPoint || "—"}</span>
+                    </div>
+                  </div>
+                  {/* Drop Point */}
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-3 h-3 text-rose-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Drop Point</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 leading-snug">{selectedTrip.dropPoint || selectedTrip.destination || "—"}</span>
+                    </div>
+                  </div>
+                  {/* Seats grid */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-850 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 block">Seats Sold</span>
+                      <span className="font-black text-teal-600">{totalBookedSeats}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold text-slate-400 block">Seats Left</span>
+                      <span className="font-black text-slate-700 dark:text-slate-200">{Math.max(0, (selectedTrip.totalSeats || 40) - totalBookedSeats)}</span>
+                    </div>
+                  </div>
+                  {/* Bus Type */}
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Bus Type</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedTrip.busType || "—"}</span>
+                  </div>
+                  {/* Driver */}
+                  <div>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Driver</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-100">{selectedTrip.driverName || "Not Assigned"}</span>
+                  </div>
+                </div>
+
+                {/* Quick Update Schedule shortcut */}
+                <button
+                  onClick={() => {
+                    setSchedNewDate(selectedTrip?.startDate || "");
+                    setSchedNewTime(selectedTrip?.departureTime || "");
+                    setScheduleMsg(null);
+                    setShowScheduleModal(true);
+                  }}
+                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-wide border border-indigo-100 dark:border-indigo-900/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/30 transition-all"
+                >
+                  <CalendarClock className="w-3.5 h-3.5" /> Update Schedule
+                </button>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* ─── MIDDLE COLUMN: Roster & Filters ─── */}
+          <div className="flex-1 min-w-0 flex flex-col gap-4">
             
             {/* Sticky filter bar */}
             <div className="sticky top-0 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xs border border-slate-150 dark:border-slate-850 p-2.5 rounded-2xl flex flex-wrap items-center gap-1.5">
@@ -955,8 +1129,8 @@ export const Bookings: React.FC = () => {
             </GlassCard>
           </div>
 
-          {/* ─── RIGHT COLUMN: Driver Panel & Seat Map ─── */}
-          <div className="w-full lg:w-1/4 flex flex-col gap-6">
+          {/* ─── RIGHT COLUMN: Seat Map ─── */}
+          <div className="w-full lg:w-72 shrink-0 flex flex-col gap-6">
             
             {/* Driver & Bus sidebar card */}
             <GlassCard className="p-4 border border-slate-150 dark:border-slate-800 shadow-sm flex flex-col gap-4">
@@ -1140,6 +1314,116 @@ export const Bookings: React.FC = () => {
             
           </div>
         </div>
+
+        {/* ─── UPDATE SCHEDULE MODAL ─── */}
+        {showScheduleModal && (
+          <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in px-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md border border-slate-150 dark:border-slate-800 shadow-2xl p-6 relative">
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-950/30 flex items-center justify-center">
+                  <CalendarClock className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">Update Schedule</h3>
+                  <p className="text-[11px] text-slate-400 font-medium">Only departure date &amp; time can be modified</p>
+                </div>
+              </div>
+
+              {/* Locked fields notice */}
+              <div className="bg-slate-50 dark:bg-slate-850 rounded-xl p-3 mb-4 border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 mb-2">
+                  <Lock className="w-3 h-3" /> Read-Only Fields (Agent Cannot Edit)
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  {[
+                    { label: "Price", value: `₹${selectedTrip?.pricePerPerson?.toLocaleString("en-IN") || "—"}` },
+                    { label: "Route", value: selectedTrip?.pickupLocation || "—" },
+                    { label: "Seat Capacity", value: `${selectedTrip?.totalSeats || 40} seats` },
+                    { label: "Vehicle", value: selectedTrip?.busNumber || "—" },
+                  ].map(f => (
+                    <div key={f.label} className="bg-white dark:bg-slate-900 rounded-lg px-2.5 py-2 border border-slate-100 dark:border-slate-800">
+                      <span className="text-slate-400 block font-semibold">{f.label}</span>
+                      <span className="text-slate-600 dark:text-slate-400 font-bold truncate block">{f.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Editable fields */}
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">New Departure Date <span className="text-rose-500">*</span></label>
+                  <input
+                    type="date"
+                    value={schedNewDate}
+                    onChange={e => setSchedNewDate(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">New Departure Time <span className="text-rose-500">*</span></label>
+                  <input
+                    type="time"
+                    value={schedNewTime}
+                    onChange={e => setSchedNewTime(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Status message */}
+              {scheduleMsg && (
+                <div className={`mt-4 px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                  scheduleMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 border border-emerald-200/50"
+                    : "bg-rose-50 text-rose-600 dark:bg-rose-950/20 border border-rose-200/50"
+                }`}>
+                  {scheduleMsg.type === "success" ? <CheckSquare className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {scheduleMsg.text}
+                </div>
+              )}
+
+              {/* Consent warning if bookings exist */}
+              {tripBookings.filter((b: any) => (b.paymentStatus || "").toUpperCase() !== "CANCELLED").length > 0 && (
+                <div className="mt-4 px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 text-xs text-amber-700 dark:text-amber-400 font-semibold flex items-start gap-2">
+                  <Bell className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>{tripBookings.filter((b: any) => (b.paymentStatus || "").toUpperCase() !== "CANCELLED").length} passenger(s)</strong> have active bookings. All must approve via OTP before the schedule is updated.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-5">
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleInitiateScheduleChange}
+                  disabled={scheduleUpdating || !schedNewDate || !schedNewTime}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center gap-2"
+                >
+                  {scheduleUpdating ? (
+                    <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processing...</>
+                  ) : tripBookings.filter((b: any) => (b.paymentStatus || "").toUpperCase() !== "CANCELLED").length > 0 ? (
+                    <><Send className="w-3.5 h-3.5" /> Send OTP to Passengers</>
+                  ) : (
+                    <><Check className="w-3.5 h-3.5" /> Apply Schedule Change</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ─── FLOATING QR PREVIEW MODAL ─── */}
         {qrPreviewUrl && (

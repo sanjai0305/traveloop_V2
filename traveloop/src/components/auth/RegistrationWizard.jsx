@@ -11,6 +11,7 @@ import {
   ArrowRight,
   ArrowLeft,
   RefreshCw,
+  Gift,
 } from "lucide-react";
 import InputField from "../common/InputField";
 import Button from "../common/Button";
@@ -22,6 +23,7 @@ import {
   verifyOtpCode,
   registerWithEmailPassword,
 } from "../../services/authService";
+import { getApiUrl } from "../../utils/api";
 
 // Helper: Format timer
 const formatTime = (seconds) => {
@@ -84,11 +86,13 @@ const RegistrationWizard = ({ initialStep = 1 }) => {
       confirmPassword: "",
       otpToken: "",
       agreeTerms: false,
+      referralCode: "",
     };
   });
 
   const [otp, setOtp] = useState(new Array(6).fill(""));
   const [errors, setErrors] = useState({});
+  const [validatedReferrer, setValidatedReferrer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [termsModal, setTermsModal] = useState({ open: false, section: "terms" });
 
@@ -335,6 +339,32 @@ const RegistrationWizard = ({ initialStep = 1 }) => {
     [otp, formData.email, t]
   );
 
+  const handleValidateCode = useCallback(async () => {
+    if (!formData.referralCode || !formData.referralCode.trim()) return;
+    setLoading(true);
+    setErrors(prev => ({ ...prev, referralCode: "" }));
+    try {
+      const res = await fetch(getApiUrl(`auth/validate-referral/${encodeURIComponent(formData.referralCode.trim())}`));
+      const data = await res.json();
+      if (data.success) {
+        setValidatedReferrer({
+          name: data.name,
+          level: data.level,
+          successfulTrips: data.successfulTrips,
+          referralStatus: data.referralStatus
+        });
+      } else {
+        setErrors(prev => ({ ...prev, referralCode: data.message || "❌ Invalid Referral Code. This invitation link is not valid. Try another code." }));
+        setValidatedReferrer(null);
+      }
+    } catch (err) {
+      setErrors(prev => ({ ...prev, referralCode: "Server error validating code. Please try again." }));
+      setValidatedReferrer(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [formData.referralCode]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // STEP 3: PASSWORD VALIDATION
   // ─────────────────────────────────────────────────────────────────────────
@@ -378,6 +408,16 @@ const RegistrationWizard = ({ initialStep = 1 }) => {
       setErrors({});
 
       try {
+        if (formData.referralCode && formData.referralCode.trim()) {
+          const checkRes = await fetch(getApiUrl(`auth/validate-referral/${encodeURIComponent(formData.referralCode.trim())}`));
+          const checkData = await checkRes.json();
+          if (!checkData.success) {
+            setErrors({ referralCode: checkData.message || "Invalid referral code" });
+            setLoading(false);
+            return;
+          }
+        }
+
         const backendData = await registerWithEmailPassword(
           {
             firstName: formData.firstName,
@@ -387,6 +427,7 @@ const RegistrationWizard = ({ initialStep = 1 }) => {
             password: formData.password,
             acceptedTerms: formData.agreeTerms,
             termsVersion: "2026-06",
+            referralCode: formData.referralCode,
           },
           formData.otpToken
         );
@@ -692,6 +733,60 @@ const RegistrationWizard = ({ initialStep = 1 }) => {
           disabled={loading}
           required
         />
+
+        <div className="space-y-1">
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-350">
+            Referral Code (Optional)
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                name="referralCode"
+                placeholder="e.g. TLP-SANJAI-5821"
+                value={formData.referralCode}
+                onChange={handleFormChange}
+                disabled={loading}
+                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-850 dark:text-slate-200 focus:outline-none focus:border-teal-500"
+              />
+              <Gift className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+            </div>
+            <button
+              type="button"
+              onClick={handleValidateCode}
+              disabled={loading || !formData.referralCode.trim()}
+              className="px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition-colors active:scale-95 disabled:opacity-50"
+            >
+              Validate
+            </button>
+          </div>
+          {errors.referralCode && (
+            <p className="text-xs text-red-500 font-medium mt-1 select-text">{errors.referralCode}</p>
+          )}
+        </div>
+
+        {validatedReferrer && (
+          <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 rounded-2xl text-xs space-y-1.5 text-slate-600 dark:text-slate-300 font-medium animate-fade-in">
+            <div className="flex justify-between items-center pb-1.5 border-b border-emerald-100/50 dark:border-emerald-900/10">
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">Referral Status:</span>
+              <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-350 text-[10px] font-black uppercase">
+                {validatedReferrer.referralStatus}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Invited By:</span>
+              <span className="font-extrabold text-slate-800 dark:text-white">👤 {validatedReferrer.name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Traveler Level:</span>
+              <span className="font-extrabold text-slate-800 dark:text-white">{validatedReferrer.level}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Successful Trips:</span>
+              <span className="font-extrabold text-slate-800 dark:text-white">{validatedReferrer.successfulTrips}</span>
+            </div>
+          </div>
+        )}
 
         {/* TERMS CHECKBOX */}
         <div className="flex flex-col gap-1.5">

@@ -98,6 +98,16 @@ export const TripDetails = () => {
   // Additional travelers
   const [additionalTravellers, setAdditionalTravellers] = useState([]);
 
+  // Referral State
+  const [referralInfo, setReferralInfo] = useState({
+    referralCode: "",
+    referredBy: "",
+    referralDiscountPercent: 5,
+    isEligibleForDiscount: false
+  });
+
+  const [selectedCoupon, setSelectedCoupon] = useState("");
+
   // Derive total seats
   const totalBookingSeats = Number(adults) + Number(children);
 
@@ -165,6 +175,74 @@ export const TripDetails = () => {
       document.body.removeChild(script);
     };
   }, []);
+
+  useEffect(() => {
+    const fetchReferralInfo = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await fetch(getApiUrl("profile/referral-dashboard"), {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          setReferralInfo(data);
+        }
+      } catch (err) {
+        console.warn("Error fetching referral info:", err);
+    };
+    fetchReferralInfo();
+  }, []);
+
+  const recalculatePrice = (couponCode) => {
+    const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
+    const childPrice = Math.round(basePrice * 0.5);
+    const adultsSubtotal = adults * basePrice;
+    const childrenSubtotal = children * childPrice;
+    const subtotal = adultsSubtotal + childrenSubtotal;
+    const tax = Math.round(subtotal * 0.05);
+    const convenienceFee = 150;
+
+    let referralDiscountAmount = 0;
+    let referralApplied = false;
+    let referralCode = "";
+    let referralDiscountPercent = 0;
+
+    if (couponCode) {
+      const couponCard = referralInfo.scratchCards.find(c => c.couponCode === couponCode);
+      if (couponCard) {
+        referralApplied = true;
+        referralCode = couponCode;
+        if (couponCard.rewardType === "percentage_discount") {
+          referralDiscountPercent = parseInt(couponCard.rewardValue);
+          referralDiscountAmount = Math.round(subtotal * (referralDiscountPercent / 100));
+        } else if (couponCard.rewardType === "flat_discount") {
+          const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
+          referralDiscountAmount = Math.min(subtotal, flatAmt);
+          referralDiscountPercent = 0;
+        } else if (couponCard.rewardType === "free_upgrade") {
+          referralDiscountAmount = 150;
+          referralDiscountPercent = 0;
+        }
+      }
+    } else if (referralInfo.isEligibleForDiscount) {
+      referralApplied = true;
+      referralCode = referralInfo.referredBy;
+      referralDiscountPercent = referralInfo.referralDiscountPercent;
+      referralDiscountAmount = Math.round(subtotal * (referralDiscountPercent / 100));
+    }
+
+    const grandTotal = subtotal - referralDiscountAmount + tax + convenienceFee;
+
+    setBookingDetails(prev => ({
+      ...prev,
+      pricePaid: grandTotal,
+      referralApplied,
+      referralCode,
+      referralDiscountPercent,
+      referralDiscountAmount,
+    }));
+  };
 
   const handleOpenBooking = () => {
     if (!trip) {
@@ -401,7 +479,12 @@ export const TripDetails = () => {
     const subtotal = adultsSubtotal + childrenSubtotal;
     const tax = Math.round(subtotal * 0.05);
     const convenienceFee = 150;
-    const grandTotal = subtotal + tax + convenienceFee;
+    
+    let referralDiscountAmount = 0;
+    if (referralInfo.isEligibleForDiscount) {
+      referralDiscountAmount = Math.round(subtotal * (referralInfo.referralDiscountPercent / 100));
+    }
+    const grandTotal = subtotal - referralDiscountAmount + tax + convenienceFee;
 
     const maleCount = travellers.filter(t => t.gender === "Male").length;
     const femaleCount = travellers.filter(t => t.gender === "Female").length;
@@ -424,6 +507,10 @@ export const TripDetails = () => {
       tax,
       convenienceFee,
       pricePaid: grandTotal,
+      referralApplied: referralInfo.isEligibleForDiscount,
+      referralCode: referralInfo.referredBy,
+      referralDiscountPercent: referralInfo.referralDiscountPercent,
+      referralDiscountAmount: referralDiscountAmount,
     });
 
     setBookingStage("confirm");
@@ -445,6 +532,7 @@ export const TripDetails = () => {
         body: JSON.stringify({
           tripId: bookingDetails.tripId,
           seats: bookingDetails.travellers.length,
+          couponCode: selectedCoupon,
         }),
       });
 
@@ -489,6 +577,7 @@ export const TripDetails = () => {
                   pickupLocation: bookingDetails.pickupLocation,
                   totalAmount: bookingDetails.pricePaid,
                   seatNumbers: bookingDetails.selectedSeats,
+                  couponCode: selectedCoupon,
                 },
               }),
             });
@@ -1547,23 +1636,71 @@ export const TripDetails = () => {
                                   <span className="text-slate-400">Children Subtotal (50% Off):</span>
                                   <span className="font-extrabold text-slate-850 dark:text-white">
                                     {bookingDetails.children} Ã â¹{bookingDetails.childPrice.toLocaleString()} = â¹{bookingDetails.childrenSubtotal.toLocaleString()}
+                                    {bookingDetails.children} × ₹{bookingDetails.childPrice.toLocaleString()} = ₹{bookingDetails.childrenSubtotal.toLocaleString()}
                                   </span>
                                 </div>
                               )}
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Tax & GST (5%):</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">â¹{bookingDetails.tax.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.tax.toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Convenience fee:</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">â¹{bookingDetails.convenienceFee.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.convenienceFee.toLocaleString()}</span>
                               </div>
+                              {bookingDetails.referralApplied && (
+                                <>
+                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold border-t border-slate-100 dark:border-slate-800 pt-2">
+                                    <span>Referral Coupon:</span>
+                                    <span>{bookingDetails.referralCode}</span>
+                                  </div>
+                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <span>Referral Discount:</span>
+                                    <span>{bookingDetails.referralDiscountPercent}%</span>
+                                  </div>
+                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <span>Saved:</span>
+                                    <span>-₹{bookingDetails.referralDiscountAmount.toLocaleString()}</span>
+                                  </div>
+                                </>
+                              )}
                             </div>
+
+                            {/* Coupon Code Selector */}
+                            {referralInfo.scratchCards && referralInfo.scratchCards.some(c => c.claimed && !c.used && c.couponCode) && (
+                              <div className="space-y-1 pb-3 border-b border-slate-200 dark:border-slate-850">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase">Apply Coupon Reward</label>
+                                <select
+                                  value={selectedCoupon}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSelectedCoupon(val);
+                                    recalculatePrice(val);
+                                  }}
+                                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-905 text-xs font-bold text-slate-700 dark:text-white outline-none focus:border-teal-400"
+                                >
+                                  <option value="">-- Apply Coupon (Optional) --</option>
+                                  {referralInfo.scratchCards
+                                    .filter(c => c.claimed && !c.used && c.couponCode)
+                                    .map((c) => (
+                                      <option key={c.couponCode} value={c.couponCode}>
+                                        {c.couponCode} ({c.rewardValue} - {c.cardType})
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                            )}
 
                             <div className="flex justify-between items-center">
                               <span className="font-black text-slate-800 dark:text-slate-300">Grand Total Amount:</span>
-                              <span className="font-black text-base text-teal-600 dark:text-teal-400">â¹{bookingDetails.pricePaid.toLocaleString()}</span>
+                              <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{bookingDetails.pricePaid.toLocaleString()}</span>
                             </div>
+
+                            {bookingDetails.referralApplied && (
+                              <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 text-emerald-650 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-900/30 text-center text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse mt-2">
+                                <span>✔</span> Referral Benefit Applied
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

@@ -58,3 +58,81 @@ export const updateBookingDetails = async (
   return response.data;
 };
 
+// ─── Schedule Change API ─────────────────────────────────────────────────────
+
+export interface ScheduleChangePassenger {
+  bookingId: string;
+  travelerName: string;
+  email: string;
+  status: "pending" | "otp_sent" | "approved" | "rejected" | "expired";
+  verified?: boolean;
+  verifiedAt?: string;
+}
+
+export interface ScheduleChangeStatusResponse {
+  success: boolean;
+  exists: boolean;
+  changeRequestId?: string;
+  status?: string;
+  newStartDate?: string;
+  newDepartureTime?: string;
+  oldStartDate?: string;
+  oldDepartureTime?: string;
+  totalPassengers?: number;
+  approvedCount?: number;
+  allApproved?: boolean;
+  passengers?: ScheduleChangePassenger[];
+}
+
+export const initiateScheduleChange = async (
+  tripId: string,
+  payload: { newStartDate: string; newDepartureTime: string }
+): Promise<{
+  success: boolean;
+  requiresConsent: boolean;
+  message: string;
+  changeRequestId?: string;
+  totalPassengers?: number;
+  approvedCount?: number;
+  passengers?: ScheduleChangePassenger[];
+  trip?: any;
+}> => {
+  const response = await api.post(`/agent/trips/${tripId}/schedule-change/initiate`, payload);
+  return response.data;
+};
+
+export const verifyScheduleOtp = async (
+  tripId: string,
+  payload: { bookingId: string; otp: string }
+): Promise<{
+  success: boolean;
+  message: string;
+  approvedCount: number;
+  totalPassengers: number;
+  allApproved: boolean;
+}> => {
+  const response = await api.post(`/agent/trips/${tripId}/schedule-change/verify-otp`, payload);
+  return response.data;
+};
+
+export const resendScheduleOtp = async (
+  tripId: string,
+  bookingId: string
+): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post(`/agent/trips/${tripId}/schedule-change/resend-otp`, { bookingId });
+  return response.data;
+};
+
+export const getScheduleChangeStatus = async (
+  tripId: string
+): Promise<ScheduleChangeStatusResponse> => {
+  const response = await api.get(`/agent/trips/${tripId}/schedule-change/status`);
+  return response.data;
+};
+
+export const applyScheduleChange = async (
+  tripId: string
+): Promise<{ success: boolean; message: string; trip?: any }> => {
+  const response = await api.post(`/agent/trips/${tripId}/schedule-change/apply`);
+  return response.data;
+};

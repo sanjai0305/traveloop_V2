@@ -37,7 +37,6 @@ export const Dashboard: React.FC = () => {
     const loadDashboardData = async () => {
       try {
         setLoading(true);
-        // Call seed route first to make sure there is mock data for presentation if DB is empty
         try {
           await api.post("/admin/seed");
         } catch (seedErr) {
@@ -68,13 +67,12 @@ export const Dashboard: React.FC = () => {
   if (loading || !stats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-sm text-slate-400">Securing environment & aggregating metrics...</p>
+        <div className="w-8 h-8 border-3 border-[#14B8A6] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs text-slate-400 font-medium">Aggregating metrics...</p>
       </div>
     );
   }
 
-  // Format currency helper
   const fmt = (num: number) => {
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
@@ -89,67 +87,66 @@ export const Dashboard: React.FC = () => {
       value: fmt(stats.totalRevenue),
       desc: "Gross bookings processed",
       icon: DollarSign,
-      color: "from-emerald-500/20 to-teal-500/10 text-emerald-400"
+      color: "from-emerald-500/10 to-teal-500/5 text-emerald-600 bg-emerald-50"
     },
     {
       title: "Platform Revenue",
       value: fmt(stats.platformRevenue),
       desc: "Commission + Gateway Fees",
       icon: TrendingUp,
-      color: "from-teal-500/20 to-cyan-500/10 text-teal-400"
+      color: "from-teal-500/10 to-cyan-500/5 text-teal-600 bg-teal-50"
     },
     {
       title: "Commission Earned",
       value: fmt(stats.commissionEarned),
       desc: "Default and custom rates",
       icon: DollarSign,
-      color: "from-blue-500/20 to-indigo-500/10 text-blue-400"
+      color: "from-blue-500/10 to-indigo-500/5 text-blue-600 bg-blue-50"
     },
     {
       title: "Total Bookings",
       value: stats.totalBookings,
       desc: "Successful packages sold",
       icon: Briefcase,
-      color: "from-purple-500/20 to-pink-500/10 text-purple-400"
+      color: "from-purple-500/10 to-pink-500/5 text-purple-600 bg-purple-50"
     },
     {
       title: "Active Agents",
       value: stats.totalAgents,
       desc: "Verified travel operators",
       icon: Users,
-      color: "from-cyan-500/20 to-blue-500/10 text-cyan-400"
+      color: "from-cyan-500/10 to-blue-500/5 text-cyan-600 bg-cyan-50"
     },
     {
       title: "Total Drivers",
       value: stats.totalDrivers,
       desc: "Assigned vehicle pilots",
       icon: Car,
-      color: "from-amber-500/20 to-orange-500/10 text-amber-400"
+      color: "from-amber-500/10 to-orange-500/5 text-amber-600 bg-amber-50"
     },
     {
       title: "Active Trips",
       value: stats.activeTrips,
       desc: "Trips in progress or open",
       icon: Compass,
-      color: "from-teal-500/20 to-emerald-500/10 text-teal-400"
+      color: "from-teal-500/10 to-emerald-500/5 text-teal-600 bg-teal-50"
     },
     {
       title: "Cancelled Trips",
       value: stats.cancelledTrips,
       desc: "Discontinued agent packages",
       icon: AlertTriangle,
-      color: "from-rose-500/20 to-pink-500/10 text-rose-400"
+      color: "from-rose-500/10 to-pink-500/5 text-rose-600 bg-rose-50"
     },
     {
       title: "Pending Refunds",
       value: stats.pendingRefunds,
       desc: fmt(stats.pendingRefundsAmount) + " in process",
       icon: FolderSync,
-      color: "from-orange-500/20 to-rose-500/10 text-orange-400"
+      color: "from-orange-500/10 to-rose-500/5 text-orange-600 bg-orange-50"
     }
   ];
 
-  // Visual SVG chart coordinate computation
   const chartPoints = timeframe === "today" 
     ? [20, 45, 30, 80, 60, 95]
     : timeframe === "thisMonth"
@@ -165,7 +162,6 @@ export const Dashboard: React.FC = () => {
   
   const svgPoints = chartPoints.map((val, idx) => {
     const x = (idx / (chartPoints.length - 1)) * chartWidth;
-    // inverse y coordinate
     const y = chartHeight - 10 - ((val - chartMin) / (chartMax - chartMin || 1)) * (chartHeight - 30);
     return `${x},${y}`;
   }).join(" ");
@@ -173,24 +169,23 @@ export const Dashboard: React.FC = () => {
   const closedSvgPoints = `0,${chartHeight} ${svgPoints} ${chartWidth},${chartHeight}`;
 
   return (
-    <div className="space-y-8 animate-page">
-      
+    <div className="space-y-6 animate-page">
       {/* Welcome banner */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold font-poppins text-white tracking-tight">Marketplace Command Centre</h2>
-          <p className="text-slate-400 text-xs mt-1">Hello, {admin?.displayName}. Real-time Traveloop logistics monitoring.</p>
+          <h2 className="text-xl font-bold font-poppins text-slate-800 tracking-tight">SaaS Marketplace Command Centre</h2>
+          <p className="text-slate-400 text-xs mt-0.5">Welcome back, {admin?.displayName}. Real-time business logistics monitoring.</p>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Commission Analytics Filter:</span>
-          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Timeframe:</span>
+          <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-0.5 shadow-xs">
             {(["today", "thisMonth", "last30Days", "lastYear"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTimeframe(t)}
-                className={`text-[10px] uppercase font-bold tracking-wider px-3 py-1.5 rounded-md transition-all ${
-                  timeframe === t ? "bg-teal-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                className={`text-[10px] uppercase font-extrabold tracking-wider px-3.5 py-1.5 rounded-lg transition-all ${
+                  timeframe === t ? "bg-white text-[#14B8A6] shadow-sm border border-slate-200/50" : "text-slate-500 hover:text-slate-800"
                 }`}
               >
                 {t.replace("this", "This ").replace("last", "Last ")}
@@ -205,19 +200,17 @@ export const Dashboard: React.FC = () => {
         {cards.map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.title} className="glass-panel glass-panel-hover p-6 rounded-2xl transition-all duration-300 relative overflow-hidden group">
-              <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${c.color} rounded-bl-full opacity-10 group-hover:scale-110 transition-transform duration-300`}></div>
-              
+            <div key={c.title} className="glass-panel glass-panel-hover p-5 rounded-[20px] transition-all duration-300 relative overflow-hidden group">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{c.title}</span>
-                <div className={`p-2.5 rounded-xl bg-gradient-to-br ${c.color} bg-opacity-20`}>
-                  <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{c.title}</span>
+                <div className={`p-2.5 rounded-xl ${c.color.replace("text-", "bg-opacity-10 text-")}`}>
+                  <Icon className="w-4 h-4" />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-2xl font-extrabold text-white font-mono tracking-tight">{c.value}</span>
-                <p className="text-[10px] text-slate-400">{c.desc}</p>
+              <div className="space-y-0.5">
+                <span className="text-xl font-black text-slate-805 tracking-tight">{c.value}</span>
+                <p className="text-[10px] text-slate-400 font-semibold">{c.desc}</p>
               </div>
             </div>
           );
@@ -227,37 +220,37 @@ export const Dashboard: React.FC = () => {
       {/* Analytics Graph & Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* SVG Sparkline Graph */}
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-6">
+        <div className="lg:col-span-2 glass-panel p-6 rounded-[20px] flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-md font-bold text-white font-poppins">Commission Trend</h3>
-              <p className="text-[10px] text-slate-400">Platform earnings vector based on active bookings</p>
+              <h3 className="text-sm font-bold text-slate-800 font-poppins">Commission Yield Trend</h3>
+              <p className="text-[10px] text-slate-400 font-semibold">Earnings graph derived from active package bookings</p>
             </div>
             <div className="text-right">
-              <span className="text-xs text-slate-400 block uppercase tracking-wider">Estimated Yield</span>
-              <span className="text-lg font-bold text-teal-400 font-mono">
+              <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-bold">Estimated Yield</span>
+              <span className="text-base font-black text-[#14B8A6] font-mono">
                 {analytics ? fmt(analytics[timeframe]) : "---"}
               </span>
             </div>
           </div>
 
-          <div className="relative h-44 w-full mt-4 flex items-end">
+          <div className="relative h-40 w-full mt-4 flex items-end">
             <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-full overflow-visible">
               <defs>
                 <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#14B8B5" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#14B8B5" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="#14B8A6" stopOpacity="0.15" />
+                  <stop offset="100%" stopColor="#14B8A6" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
               {/* Grid Lines */}
-              <line x1="0" y1="40" x2={chartWidth} y2="40" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
-              <line x1="0" y1="90" x2={chartWidth} y2="90" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
-              <line x1="0" y1="140" x2={chartWidth} y2="140" stroke="#1e293b" strokeDasharray="4 4" strokeWidth="1" />
+              <line x1="0" y1="40" x2={chartWidth} y2="40" stroke="#F1F5F9" strokeDasharray="4 4" strokeWidth="1.5" />
+              <line x1="0" y1="90" x2={chartWidth} y2="90" stroke="#F1F5F9" strokeDasharray="4 4" strokeWidth="1.5" />
+              <line x1="0" y1="140" x2={chartWidth} y2="140" stroke="#F1F5F9" strokeDasharray="4 4" strokeWidth="1.5" />
 
               {/* Area */}
               <polygon points={closedSvgPoints} fill="url(#chartGradient)" />
               {/* Line */}
-              <polyline points={svgPoints} fill="none" stroke="#14B8B5" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points={svgPoints} fill="none" stroke="#14B8A6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
               
               {/* Highlight Nodes */}
               {chartPoints.map((val, idx) => {
@@ -268,10 +261,10 @@ export const Dashboard: React.FC = () => {
                     key={idx}
                     cx={x}
                     cy={y}
-                    r="4"
-                    fill="#0F172A"
-                    stroke="#14B8B5"
-                    strokeWidth="2.5"
+                    r="3.5"
+                    fill="#FFFFFF"
+                    stroke="#14B8A6"
+                    strokeWidth="2"
                     className="hover:scale-150 transition-transform cursor-pointer"
                   />
                 );
@@ -280,41 +273,41 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Panel / Simulation Info */}
-        <div className="glass-panel p-6 rounded-2xl flex flex-col justify-between">
+        {/* Action Panel */}
+        <div className="glass-panel p-6 rounded-[20px] flex flex-col justify-between">
           <div className="space-y-4">
-            <h3 className="text-md font-bold text-white font-poppins flex items-center gap-2">
-              <BellRing className="w-5 h-5 text-teal-400" />
+            <h3 className="text-sm font-bold text-slate-800 font-poppins flex items-center gap-2">
+              <BellRing className="w-4 h-4 text-[#14B8A6]" />
               <span>Logistics Summary</span>
             </h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Traveloop marketplace commission model ensures a default charge of <span className="text-teal-400 font-bold">10%</span> on all traveler bookings. Standard agent commission rates can be overridden individually in the Agent Management page.
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Traveloop marketplace commission model automatically applies a default charge of <span className="text-[#14B8A6] font-extrabold">10%</span> on bookings. Standard rates can be customized in Settings.
             </p>
 
-            <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2 text-xs">
-              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold block">Commission Example</span>
-              <div className="flex justify-between">
+            <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2 text-xs">
+              <span className="text-[9px] text-slate-400 uppercase tracking-widest font-extrabold block">Commission Calculation Example</span>
+              <div className="flex justify-between font-medium">
                 <span className="text-slate-400">Trip Base Price:</span>
-                <span className="font-mono text-slate-200">₹4,500</span>
+                <span className="font-mono text-slate-700">₹4,500</span>
               </div>
-              <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+              <div className="flex justify-between border-b border-slate-200 pb-2 font-medium">
                 <span className="text-slate-400">Commission Deducted (10%):</span>
-                <span className="font-mono text-teal-400">-₹450</span>
+                <span className="font-mono text-[#14B8A6]">-₹450</span>
               </div>
-              <div className="flex justify-between pt-0.5">
-                <span className="text-slate-300 font-medium">Agent Settlement:</span>
-                <span className="font-mono text-emerald-400 font-bold">₹4,050</span>
+              <div className="flex justify-between pt-1">
+                <span className="text-slate-650 font-bold">Agent Settlement:</span>
+                <span className="font-mono text-emerald-600 font-black">₹4,050</span>
               </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500">Security Node: 2FA ACTIVE</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+          <div className="pt-4 border-t border-slate-100 mt-4 flex items-center justify-between">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Security: 2FA Active</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
           </div>
         </div>
       </div>
-
     </div>
   );
 };
+export default Dashboard;

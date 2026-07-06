@@ -1083,3 +1083,155 @@ export const seedMockData = async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error seeding admin data" });
   }
 };
+
+// GET REFERRAL SETTINGS
+export const getReferralSettings = async (req, res) => {
+  try {
+    const enabledSetting = await SystemSetting.findOne({ key: "referral_enabled" });
+    const discountSetting = await SystemSetting.findOne({ key: "referral_discount_percentage" });
+    const coinRewardSetting = await SystemSetting.findOne({ key: "referral_coin_reward" });
+
+    const scratchEnabledSetting = await SystemSetting.findOne({ key: "referral_scratch_rewards_enabled" });
+    const travelCoinsEnabledSetting = await SystemSetting.findOne({ key: "referral_travel_coins_enabled" });
+    const couponExpiryEnabledSetting = await SystemSetting.findOne({ key: "referral_coupon_expiry_enabled" });
+    const minRewardSetting = await SystemSetting.findOne({ key: "referral_min_reward" });
+    const maxRewardSetting = await SystemSetting.findOne({ key: "referral_max_reward" });
+    const probBronzeSetting = await SystemSetting.findOne({ key: "referral_prob_bronze" });
+    const probSilverSetting = await SystemSetting.findOne({ key: "referral_prob_silver" });
+    const probGoldSetting = await SystemSetting.findOne({ key: "referral_prob_gold" });
+    const probDiamondSetting = await SystemSetting.findOne({ key: "referral_prob_diamond" });
+
+    res.status(200).json({
+      success: true,
+      enabled: enabledSetting ? enabledSetting.value === true : false,
+      discountPercentage: discountSetting ? Number(discountSetting.value) : 5,
+      coinReward: coinRewardSetting ? Number(coinRewardSetting.value) : 100,
+
+      referral_scratch_rewards_enabled: scratchEnabledSetting ? scratchEnabledSetting.value === true : true,
+      referral_travel_coins_enabled: travelCoinsEnabledSetting ? travelCoinsEnabledSetting.value === true : true,
+      referral_coupon_expiry_enabled: couponExpiryEnabledSetting ? couponExpiryEnabledSetting.value === true : true,
+      referral_min_reward: minRewardSetting ? Number(minRewardSetting.value) : 5,
+      referral_max_reward: maxRewardSetting ? Number(maxRewardSetting.value) : 30,
+      referral_prob_bronze: probBronzeSetting ? Number(probBronzeSetting.value) : 50,
+      referral_prob_silver: probSilverSetting ? Number(probSilverSetting.value) : 25,
+      referral_prob_gold: probGoldSetting ? Number(probGoldSetting.value) : 15,
+      referral_prob_diamond: probDiamondSetting ? Number(probDiamondSetting.value) : 10,
+    });
+  } catch (error) {
+    console.error("getReferralSettings error:", error);
+    res.status(500).json({ success: false, message: "Server Error retrieving referral settings" });
+  }
+};
+
+// UPDATE REFERRAL SETTINGS
+export const updateReferralSettings = async (req, res) => {
+  const {
+    enabled,
+    discountPercentage,
+    coinReward,
+    referral_scratch_rewards_enabled,
+    referral_travel_coins_enabled,
+    referral_coupon_expiry_enabled,
+    referral_min_reward,
+    referral_max_reward,
+    referral_prob_bronze,
+    referral_prob_silver,
+    referral_prob_gold,
+    referral_prob_diamond,
+  } = req.body;
+
+  try {
+    if (enabled !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_enabled" },
+        { value: enabled === true },
+        { upsert: true }
+      );
+    }
+    if (discountPercentage !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_discount_percentage" },
+        { value: discountPercentage },
+        { upsert: true }
+      );
+    }
+    if (coinReward !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_coin_reward" },
+        { value: coinReward },
+        { upsert: true }
+      );
+    }
+    if (referral_scratch_rewards_enabled !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_scratch_rewards_enabled" },
+        { value: referral_scratch_rewards_enabled === true },
+        { upsert: true }
+      );
+    }
+    if (referral_travel_coins_enabled !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_travel_coins_enabled" },
+        { value: referral_travel_coins_enabled === true },
+        { upsert: true }
+      );
+    }
+    if (referral_coupon_expiry_enabled !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_coupon_expiry_enabled" },
+        { value: referral_coupon_expiry_enabled === true },
+        { upsert: true }
+      );
+    }
+    if (referral_min_reward !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_min_reward" },
+        { value: Number(referral_min_reward) },
+        { upsert: true }
+      );
+    }
+    if (referral_max_reward !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_max_reward" },
+        { value: Number(referral_max_reward) },
+        { upsert: true }
+      );
+    }
+    if (referral_prob_bronze !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_prob_bronze" },
+        { value: Number(referral_prob_bronze) },
+        { upsert: true }
+      );
+    }
+    if (referral_prob_silver !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_prob_silver" },
+        { value: Number(referral_prob_silver) },
+        { upsert: true }
+      );
+    }
+    if (referral_prob_gold !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_prob_gold" },
+        { value: Number(referral_prob_gold) },
+        { upsert: true }
+      );
+    }
+    if (referral_prob_diamond !== undefined) {
+      await SystemSetting.findOneAndUpdate(
+        { key: "referral_prob_diamond" },
+        { value: Number(referral_prob_diamond) },
+        { upsert: true }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Referral settings updated successfully"
+    });
+  } catch (error) {
+    console.error("updateReferralSettings error:", error);
+    res.status(500).json({ success: false, message: "Server Error updating referral settings" });
+  }
+};

@@ -12,7 +12,8 @@ import {
   User, Mail, Phone, MapPin, Globe, CalendarDays, ShieldCheck,
   ChevronRight, Bell, Lock, Eye, Palette, HelpCircle, LogOut,
   Camera, Map, Plane, Clock, Moon, Sun, Award, Flame, Star,
-  Languages, ChevronDown, Heart, AlertTriangle, Trash2, FileText, Info
+  Languages, ChevronDown, Heart, AlertTriangle, Trash2, FileText, Info,
+  Gift, Share2, Copy
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import BottomSheet from "../components/mobile/BottomSheet";
@@ -124,6 +125,38 @@ const Profile = () => {
       }
     };
     fetchTrips();
+  }, []);
+
+  const [referralStats, setReferralStats] = useState({
+    referralCode: "",
+    totalInvites: 0,
+    successfulBookings: 0,
+    coinsEarned: 0,
+    discountEarned: 0,
+    walletBalance: 0,
+    scratchCards: [],
+    scratchCardsEarned: 0,
+    rewardsClaimed: 0,
+    couponsAvailable: 0
+  });
+
+  useEffect(() => {
+    const fetchReferralStats = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const res = await fetch(getApiUrl("profile/referral-dashboard"), {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          setReferralStats(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch referral stats:", err);
+      }
+    };
+    fetchReferralStats();
   }, []);
 
   const stats = useMemo(() => {
@@ -567,6 +600,156 @@ const Profile = () => {
               <p className="text-[9px] text-slate-400 text-center leading-tight">{badge.description || badge.desc}</p>
             </motion.div>
           ))}
+        </div>
+      </div>
+
+      {/* ── REFERRAL DASHBOARD ── */}
+      <div className="mx-4 mb-5 select-none">
+        <div className="flex items-center gap-2 mb-3">
+          <Gift size={16} className="text-teal-500" />
+          <h3 className="text-[17px] font-bold text-slate-805 dark:text-white font-poppins">Referral Dashboard</h3>
+        </div>
+        
+        <div className="premium-card p-4 space-y-4 bg-white dark:bg-slate-900/60">
+          {/* Referral Code Info */}
+          <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-955/30 border border-slate-100 dark:border-slate-850 rounded-2xl">
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Your Invite Code</span>
+              <span className="text-sm font-black text-teal-600 dark:text-teal-400 tracking-wide font-mono mt-0.5 select-text">
+                {referralStats.referralCode || profileUser?.referralCode || "TLP-SANJAI-5821"}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(referralStats.referralCode || profileUser?.referralCode || "");
+                  toast.success("Referral code copied!");
+                }}
+                className="h-8 px-3.5 bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1 border border-slate-200/10"
+              >
+                <Copy size={12} />
+                <span>Copy</span>
+              </button>
+              <button
+                onClick={() => {
+                  const shareText = `Explore amazing group trips with TravelLoop 🌍\n\nUse my referral code: ${referralStats.referralCode || profileUser?.referralCode || "TLP-SANJAI-5821"}\n\nGet exclusive discounts on your first booking.\n\nWebsite: https://traveloop.app\nDownload: https://traveloop.app/download\n\nJoin TravelLoop today and travel smarter.`;
+                  if (navigator.share) {
+                    navigator.share({ title: "TravelLoop", text: shareText });
+                  } else {
+                    navigator.clipboard.writeText(shareText);
+                    toast.success("Share link copied!");
+                  }
+                }}
+                className="h-8 px-3.5 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-black rounded-xl transition-all active:scale-95 flex items-center gap-1 shadow-md shadow-teal-500/10"
+              >
+                <Share2 size={12} />
+                <span>Share Link</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Total Invites */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Invites</span>
+              <span className="text-xl font-black text-slate-800 dark:text-white mt-1">{referralStats.totalInvites}</span>
+            </div>
+
+            {/* Successful Bookings */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Bookings</span>
+              <span className="text-xl font-black text-slate-800 dark:text-white mt-1">{referralStats.successfulBookings}</span>
+            </div>
+
+            {/* Coins Earned */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Coins Earned</span>
+              <span className="text-xl font-black text-teal-605 dark:text-teal-400 mt-1">{referralStats.coinsEarned} 🪙</span>
+            </div>
+
+            {/* Discount Earned */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Discount Earned</span>
+              <span className="text-xl font-black text-teal-605 dark:text-teal-400 mt-1">₹{referralStats.discountEarned}</span>
+            </div>
+
+            {/* Scratch Cards Earned */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Scratch Cards</span>
+              <span className="text-xl font-black text-slate-800 dark:text-white mt-1">{referralStats.scratchCardsEarned || 0}</span>
+            </div>
+
+            {/* Rewards Claimed */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Rewards Claimed</span>
+              <span className="text-xl font-black text-slate-800 dark:text-white mt-1">{referralStats.rewardsClaimed || 0}</span>
+            </div>
+
+            {/* Coupons Available */}
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col col-span-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Coupons Available</span>
+              <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">{referralStats.couponsAvailable || 0}</span>
+            </div>
+          </div>
+
+          {/* Scratch Cards List */}
+          {referralStats.scratchCards && referralStats.scratchCards.length > 0 && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-855">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2">My Scratch Cards</h4>
+              <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+                {referralStats.scratchCards.map((c) => (
+                  <div
+                    key={c.cardId}
+                    className={`flex-shrink-0 w-24 p-2 rounded-xl text-center border relative overflow-hidden ${
+                      c.claimed
+                        ? "bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400"
+                        : "bg-teal-50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-900 text-teal-800 dark:text-teal-400"
+                    }`}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-wider block">{c.cardType}</span>
+                    <span className="text-[9px] block mt-1 opacity-90">{c.rewardValue || c.rewardType}</span>
+                    <span className="text-[8px] font-bold block mt-1.5 uppercase px-1 py-0.5 rounded bg-white/40 dark:bg-black/20">
+                      {c.claimed ? "Claimed" : "Unscratched"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Claimed Coupons List */}
+          {referralStats.scratchCards && referralStats.scratchCards.some(c => c.claimed && !c.used && c.couponCode) && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-855">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2 font-poppins">Claimed Coupons</h4>
+              <div className="space-y-2">
+                {referralStats.scratchCards
+                  .filter(c => c.claimed && !c.used && c.couponCode)
+                  .map((c) => (
+                    <div
+                      key={c.cardId}
+                      className="p-2.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-105 dark:border-slate-850 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-slate-800 dark:text-white font-mono select-text">{c.couponCode}</span>
+                        <span className="text-[9px] text-slate-400 mt-0.5">Value: {c.rewardValue} • Tier: {c.cardType}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(c.couponCode);
+                          toast.success("Coupon code copied!");
+                        }}
+                        className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-800 dark:text-slate-250 text-[10px] font-extrabold rounded-lg transition-colors active:scale-95 flex items-center gap-1"
+                      >
+                        <Copy size={10} />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
