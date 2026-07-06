@@ -302,6 +302,8 @@ export const Trips: React.FC = () => {
       pickupMapsLink: "",
       dropPoint: "",
       dropMapsLink: "",
+      destinations: [],
+      originCity: "",
       startDate: "",
       departureTime: "",
       endDate: "",
@@ -378,22 +380,80 @@ export const Trips: React.FC = () => {
   );
 
   const watchItinerary = watch("itinerary") || [];
+  const watchDestinations = watch("destinations") || [];
+  const watchOriginCity = watch("originCity") || "";
 
-  // Auto-calculate Duration & sync Dates based on Itinerary Days
+  // Auto-calculate Duration & sync Itinerary Days based on Start and End Dates
   useEffect(() => {
-    const N = watchItinerary.length;
-    if (N > 0) {
-      const nights = Math.max(0, N - 1);
-      setValue("duration", `${N} Day${N !== 1 ? "s" : ""} / ${nights} Night${nights !== 1 ? "s" : ""}`);
-      
-      const firstDate = watchItinerary[0]?.date;
-      const lastDate = watchItinerary[N - 1]?.date;
-      if (firstDate) setValue("startDate", firstDate);
-      if (lastDate) setValue("endDate", lastDate);
-    } else {
-      setValue("duration", "");
+    if (!watchStartDate || !watchEndDate) {
+      return;
     }
-  }, [watchItinerary, setValue]);
+    const start = new Date(watchStartDate);
+    const end = new Date(watchEndDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return;
+    }
+
+    const diffTime = end.getTime() - start.getTime();
+    let diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    let days = diffDays;
+    let nights = diffDays;
+    if (diffDays <= 0) {
+      days = 1;
+      nights = 0;
+    }
+
+    const durationStr = `${days} Day${days !== 1 ? "s" : ""} / ${nights} Night${nights !== 1 ? "s" : ""}`;
+    setValue("duration", durationStr);
+
+    // Sync itinerary field array length
+    const currentItinerary = watchItinerary || [];
+    let updated = false;
+    const nextItinerary = [...currentItinerary];
+
+    // Adjust count of days
+    if (nextItinerary.length < days) {
+      for (let i = nextItinerary.length; i < days; i++) {
+        nextItinerary.push({
+          day: i + 1,
+          date: "",
+          startLocation: "",
+          departureTime: "",
+          destination: "",
+          arrivalTime: "",
+          placesCovered: [],
+          activities: [],
+          duration: "",
+          hotelName: "",
+          nightStay: "",
+          notes: "",
+        });
+      }
+      updated = true;
+    } else if (nextItinerary.length > days) {
+      nextItinerary.splice(days);
+      updated = true;
+    }
+
+    // Set dates for each day sequentially starting from watchStartDate
+    for (let i = 0; i < nextItinerary.length; i++) {
+      const dayDate = new Date(start);
+      dayDate.setDate(start.getDate() + i);
+      const yyyy = dayDate.getFullYear();
+      const mm = String(dayDate.getMonth() + 1).padStart(2, "0");
+      const dd = String(dayDate.getDate()).padStart(2, "0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      if (nextItinerary[i].date !== dateStr || nextItinerary[i].day !== i + 1) {
+        nextItinerary[i].date = dateStr;
+        nextItinerary[i].day = i + 1;
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      setValue("itinerary", nextItinerary);
+    }
+  }, [watchStartDate, watchEndDate, setValue]);
 
   const openCreateMode = () => {
     if (!isProfileCompleted) {
@@ -416,6 +476,8 @@ export const Trips: React.FC = () => {
       coverImages: trip.coverImages || (trip.coverImage ? [trip.coverImage] : []),
       amenities: trip.amenities || trip.busAmenities || [],
       destinationCity: trip.destinations?.[0] || "",
+      destinations: trip.destinations || [],
+      originCity: trip.originCity || "",
       gstPercentage: trip.gstPercentage || 5,
     });
     setEditingTripId(trip._id);
@@ -432,8 +494,10 @@ export const Trips: React.FC = () => {
 
   // Helper to compile payload satisfying backend expectations
   const getPayload = (formData: TripFormData, isDraft: boolean) => {
-    const dests = (formData.itinerary || []).map(day => day.destination).filter(Boolean);
-    const startLoc = formData.itinerary?.[0]?.startLocation || "Salem";
+    const dests = formData.destinations && formData.destinations.length > 0
+      ? formData.destinations
+      : (formData.itinerary || []).map(day => day.destination).filter(Boolean);
+    const startLoc = formData.originCity || formData.itinerary?.[0]?.startLocation || "Salem";
     const payload: any = {
       ...formData,
       originCity: startLoc,
@@ -660,6 +724,43 @@ export const Trips: React.FC = () => {
     setSubmitError(null);
     setMissingFieldsAlert([]);
 
+    // ── Publish Validations ──
+    const duration = formData.duration || "";
+    const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
+    const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
+    
+    const hasDurationMismatch = formData.itinerary.length !== expectedDays;
+    const hasMissingItineraryDay = formData.itinerary.length === 0;
+    const hasMissingHotel = !formData.hotels || formData.hotels.length === 0;
+    const hasMissingDestination = !formData.destinations || formData.destinations.length === 0;
+    const hasEmptyPlaces = formData.itinerary.some(day => !day.placesCovered || day.placesCovered.length === 0);
+    const hasEmptyActivities = formData.itinerary.some(day => !day.activities || day.activities.length === 0);
+    
+    const hasIncompleteDay = formData.itinerary.some(day => 
+      !day.startLocation?.trim() ||
+      !day.destination?.trim() ||
+      !day.departureTime?.trim() ||
+      !day.arrivalTime?.trim() ||
+      !day.duration?.trim() ||
+      !day.nightStay?.trim() ||
+      !day.hotelName?.trim() ||
+      !day.notes?.trim()
+    );
+
+    if (
+      hasDurationMismatch ||
+      hasMissingItineraryDay ||
+      hasMissingHotel ||
+      hasMissingDestination ||
+      hasEmptyPlaces ||
+      hasEmptyActivities ||
+      hasIncompleteDay
+    ) {
+      alert("Complete all itinerary days before publishing.");
+      setSubmitError("Complete all itinerary days before publishing.");
+      return;
+    }
+
     // ── Hard Validations ──
     const missing: string[] = [];
     if (!formData.coverImages || formData.coverImages.length === 0) missing.push("Main Destination Banner is required");
@@ -683,27 +784,40 @@ export const Trips: React.FC = () => {
 
     if (missing.length > 0) {
       setMissingFieldsAlert(missing);
-      // Find the first tab containing a missing field
       // Map fields to tabs
       const fieldToTab: Record<string, number> = {
         coverImages: 1,
-        pickupLocation: 2,
-        pickupMapsLink: 2,
-        dropPoint: 2,
-        dropMapsLink: 2,
-        startDate: 3,
-        deadlineDate: 3,
+        startDate: 2,
+        deadlineDate: 2,
+        originCity: 3,
+        pickupLocation: 3,
+        pickupMapsLink: 3,
+        dropPoint: 3,
+        dropMapsLink: 3,
+        itinerary: 4,
         driverName: 6,
         driverPhone: 6,
         driverLicenseNumber: 6,
         busNumber: 6,
-        originalPrice: 9,
-        offerPrice: 9,
-        totalSeats: 9,
+        originalPrice: 8,
+        offerPrice: 8,
+        totalSeats: 8,
       };
 
       for (const field of Object.keys(fieldToTab)) {
         if (field === "coverImages" && (!formData.coverImages || formData.coverImages.length === 0)) {
+          setActiveTab(fieldToTab[field]);
+          break;
+        }
+        if (field === "startDate" && start > end) {
+          setActiveTab(fieldToTab[field]);
+          break;
+        }
+        if (field === "deadlineDate" && formData.deadlineEnabled && !formData.deadlineDate) {
+          setActiveTab(fieldToTab[field]);
+          break;
+        }
+        if (field === "originCity" && !formData.originCity) {
           setActiveTab(fieldToTab[field]);
           break;
         }
@@ -723,14 +837,6 @@ export const Trips: React.FC = () => {
           setActiveTab(fieldToTab[field]);
           break;
         }
-        if (field === "startDate" && start > end) {
-          setActiveTab(fieldToTab[field]);
-          break;
-        }
-        if (field === "deadlineDate" && formData.deadlineEnabled && !formData.deadlineDate) {
-          setActiveTab(fieldToTab[field]);
-          break;
-        }
       }
       return;
     }
@@ -746,10 +852,77 @@ export const Trips: React.FC = () => {
   // Stepper buttons handler
   const handleNextStep = async () => {
     let fieldsToValidate: any[] = [];
-    if (activeTab === 1) fieldsToValidate = ["title", "tripType", "coverImages"];
-    if (activeTab === 2) fieldsToValidate = ["pickupLocation", "pickupMapsLink", "dropPoint", "dropMapsLink", "itinerary"];
-    if (activeTab === 6) fieldsToValidate = ["driverName", "driverPhone", "driverLicenseNumber", "busNumber"];
-    if (activeTab === 9) fieldsToValidate = ["originalPrice", "offerPrice", "totalSeats"];
+    if (activeTab === 1) {
+      fieldsToValidate = ["title", "tripType", "coverImages"];
+    } else if (activeTab === 2) {
+      fieldsToValidate = ["startDate", "departureTime", "endDate", "returnTime"];
+      const isValid = await trigger(fieldsToValidate as any);
+      if (!isValid) return;
+      
+      const start = new Date(watch("startDate"));
+      const end = new Date(watch("endDate"));
+      if (start > end) {
+        alert("Departure date cannot be after Return date");
+        return;
+      }
+      
+      if (watchDeadlineEnabled) {
+        const deadlineValid = await trigger(["deadlineDate", "deadlineTime"] as any);
+        if (!deadlineValid) return;
+      }
+      setActiveTab(prev => Math.min(10, prev + 1));
+      return;
+    } else if (activeTab === 3) {
+      fieldsToValidate = ["originCity", "pickupLocation", "pickupMapsLink", "dropPoint", "dropMapsLink"];
+      const isValid = await trigger(fieldsToValidate as any);
+      if (!isValid) return;
+      
+      if (!watchDestinations || watchDestinations.length === 0) {
+        alert("Please add at least one Destination City.");
+        return;
+      }
+      setActiveTab(prev => Math.min(10, prev + 1));
+      return;
+    } else if (activeTab === 4) {
+      const duration = watch("duration");
+      const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
+      const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
+      
+      const isValid = await trigger("itinerary");
+      if (!isValid) {
+        // Find first incomplete day
+        for (let i = 0; i < expectedDays; i++) {
+          const day = watchItinerary[i];
+          const incomplete = !day?.startLocation?.trim() ||
+                             !day?.destination?.trim() ||
+                             !day?.departureTime?.trim() ||
+                             !day?.arrivalTime?.trim() ||
+                             !day?.duration?.trim() ||
+                             !day?.nightStay?.trim() ||
+                             !day?.hotelName?.trim() ||
+                             !day?.notes?.trim() ||
+                             !day?.placesCovered || day.placesCovered.length === 0 ||
+                             !day?.activities || day.activities.length === 0;
+          if (incomplete) {
+            alert(`Please complete Day ${i + 1} itinerary.`);
+            return;
+          }
+        }
+        return;
+      }
+      
+      if (watchItinerary.length !== expectedDays) {
+        alert(`Please complete Day ${expectedDays} itinerary.`);
+        return;
+      }
+      
+      setActiveTab(prev => Math.min(10, prev + 1));
+      return;
+    } else if (activeTab === 6) {
+      fieldsToValidate = ["driverName", "driverPhone", "driverLicenseNumber", "busNumber"];
+    } else if (activeTab === 8) {
+      fieldsToValidate = ["originalPrice", "offerPrice", "totalSeats"];
+    }
 
     if (fieldsToValidate.length > 0) {
       const isValid = await trigger(fieldsToValidate as any);
@@ -840,16 +1013,16 @@ export const Trips: React.FC = () => {
   };
 
   const tabItems = [
-    { step: 1, label: "Basic Info", icon: Info },
-    { step: 2, label: "Travel Route", icon: MapPin },
-    { step: 3, label: "Date & Deadline", icon: Calendar },
-    { step: 4, label: "Itinerary", icon: Compass },
+    { step: 1, label: "Basic Information", icon: Info },
+    { step: 2, label: "Date & Deadline", icon: Calendar },
+    { step: 3, label: "Travel Route", icon: MapPin },
+    { step: 4, label: "Journey Builder", icon: Compass },
     { step: 5, label: "Hotels & Food", icon: Hotel },
     { step: 6, label: "Transport", icon: Bus },
     { step: 7, label: "Activities", icon: BarChart3 },
-    { step: 8, label: "Checklist", icon: ShoppingBag },
-    { step: 9, label: "Pricing", icon: IndianRupee },
-    { step: 10, label: "Preview", icon: Eye },
+    { step: 8, label: "Pricing", icon: IndianRupee },
+    { step: 9, label: "Packing", icon: ShoppingBag },
+    { step: 10, label: "Review & Publish", icon: Eye },
   ];
 
   return (
@@ -974,363 +1147,8 @@ export const Trips: React.FC = () => {
                   </div>
                 )}
 
-                {/* STEP 2: Travel Route / Multi-Day Journey Planner */}
+                {/* STEP 2: Date & Deadline */}
                 {activeTab === 2 && (
-                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start animate-page">
-                    {/* Left side: Inputs (8 Cols) */}
-                    <div className="xl:col-span-8 space-y-6">
-                      
-                      {/* SECTION 1: Pickup Information */}
-                      <GlassCard strong className="p-5 space-y-4">
-                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">1</span>
-                          Pickup Information
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <Input
-                            label="Pickup Point *"
-                            placeholder="e.g. Salem Bus Stand"
-                            disabled={hasBookings}
-                            {...register("pickupLocation", { required: "Pickup Point is required" })}
-                            error={errors.pickupLocation?.message}
-                          />
-                          <Input
-                            label="Pickup Google Maps URL *"
-                            placeholder="https://maps.google.com/..."
-                            disabled={hasBookings}
-                            {...register("pickupMapsLink", {
-                              required: "Pickup Maps URL is required",
-                              validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
-                            })}
-                            error={errors.pickupMapsLink?.message}
-                          />
-                        </div>
-                      </GlassCard>
-
-                      {/* SECTION 2: Drop Information */}
-                      <GlassCard strong className="p-5 space-y-4">
-                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">2</span>
-                          Drop Information
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <Input
-                            label="Drop Point *"
-                            placeholder="e.g. Theni Bus Stand"
-                            disabled={hasBookings}
-                            {...register("dropPoint", { required: "Drop Point is required" })}
-                            error={errors.dropPoint?.message}
-                          />
-                          <Input
-                            label="Drop Google Maps URL *"
-                            placeholder="https://maps.google.com/..."
-                            disabled={hasBookings}
-                            {...register("dropMapsLink", {
-                              required: "Drop Maps URL is required",
-                              validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
-                            })}
-                            error={errors.dropMapsLink?.message}
-                          />
-                        </div>
-                      </GlassCard>
-
-                      {/* SECTION 3: Journey Builder */}
-                      <GlassCard strong className="p-5 space-y-4">
-                        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
-                          <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">3</span>
-                            Journey Builder
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() => appendDay({
-                              day: itineraryFields.length + 1,
-                              date: "",
-                              startLocation: "",
-                              departureTime: "",
-                              destination: "",
-                              arrivalTime: "",
-                              placesCovered: [],
-                              activities: [],
-                              duration: "",
-                              hotelName: "",
-                              nightStay: "",
-                              notes: "",
-                            })}
-                            className="px-3 py-1.5 rounded-xl bg-teal-500 text-white font-bold text-xs hover:bg-teal-600 transition-colors flex items-center gap-1 shadow-xs active:scale-98"
-                          >
-                            <Plus size={14} /> Add Day
-                          </button>
-                        </div>
-
-                        {itineraryFields.length === 0 ? (
-                          <div className="text-center py-6 text-slate-450 italic text-xs">
-                            No journey days added yet. Click "Add Day" above to start building your route.
-                          </div>
-                        ) : (
-                          <div className="space-y-6 pt-2">
-                            {itineraryFields.map((field, index) => (
-                              <div key={field.id} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/20 space-y-4 relative animate-scale-in">
-                                {/* Day Header */}
-                                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                                  <h4 className="text-xs font-black text-teal-655 dark:text-teal-400 uppercase tracking-widest">
-                                    Day {index + 1} Journey details
-                                  </h4>
-                                  
-                                  {/* Day Control Buttons */}
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      disabled={index === 0}
-                                      onClick={() => moveDay(index, index - 1)}
-                                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                                      title="Move Up"
-                                    >
-                                      <ChevronUp size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={index === itineraryFields.length - 1}
-                                      onClick={() => moveDay(index, index + 1)}
-                                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                                      title="Move Down"
-                                    >
-                                      <ChevronDown size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => duplicateDay(index)}
-                                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg text-slate-500"
-                                      title="Duplicate Day"
-                                    >
-                                      <Copy size={13} />
-                                    </button>
-                                    {index > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => removeDay(index)}
-                                        className="p-1.5 text-rose-500 hover:bg-rose-955/20 rounded-lg"
-                                        title="Delete Day"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* Inputs grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                                  <Input
-                                    label="Date *"
-                                    type="date"
-                                    {...register(`itinerary.${index}.date` as any, { required: "Date is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.date?.message}
-                                  />
-                                  <Input
-                                    label="Start From *"
-                                    placeholder="e.g. Salem"
-                                    {...register(`itinerary.${index}.startLocation` as any, { required: "Start From is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.startLocation?.message}
-                                  />
-                                  <Input
-                                    label="Reach (Destination) *"
-                                    placeholder="e.g. Madurai"
-                                    {...register(`itinerary.${index}.destination` as any, { required: "Reach Destination is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.destination?.message}
-                                  />
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                                  <Input
-                                    label="Departure Time *"
-                                    type="time"
-                                    {...register(`itinerary.${index}.departureTime` as any, { required: "Departure time is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.departureTime?.message}
-                                  />
-                                  <Input
-                                    label="Arrival Time *"
-                                    type="time"
-                                    {...register(`itinerary.${index}.arrivalTime` as any, { required: "Arrival time is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.arrivalTime?.message}
-                                  />
-                                  <Input
-                                    label="Duration"
-                                    placeholder="e.g. 4 Hours"
-                                    {...register(`itinerary.${index}.duration` as any)}
-                                  />
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                                  <Input
-                                    label="Night Stay *"
-                                    placeholder="e.g. Madurai"
-                                    {...register(`itinerary.${index}.nightStay` as any, { required: "Night Stay is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.nightStay?.message}
-                                  />
-                                  <Input
-                                    label="Hotel Name *"
-                                    placeholder="e.g. Grand Palace Hotel"
-                                    {...register(`itinerary.${index}.hotelName` as any, { required: "Hotel Name is required" })}
-                                    error={(errors.itinerary?.[index] as any)?.hotelName?.message}
-                                  />
-                                  <Input
-                                    label="Notes"
-                                    placeholder="e.g. Dinner on own arrangements"
-                                    {...register(`itinerary.${index}.notes` as any)}
-                                  />
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                  {/* Places Covered tag inputs */}
-                                  <div>
-                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Places Covered *</label>
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {(watch(`itinerary.${index}.placesCovered` as any) || []).map((place: string) => (
-                                        <span key={place} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/20 text-teal-650 dark:text-teal-400 text-[10px] font-bold border border-teal-200/50">
-                                          {place}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const current = watch(`itinerary.${index}.placesCovered` as any) || [];
-                                              setValue(`itinerary.${index}.placesCovered` as any, current.filter((x: string) => x !== place));
-                                            }}
-                                            className="text-rose-500 hover:text-rose-700 font-extrabold ml-0.5"
-                                          >
-                                            ×
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <input
-                                      type="text"
-                                      placeholder="Type place & press Enter"
-                                      className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-full outline-none focus:border-teal-500"
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          const val = e.currentTarget.value.trim();
-                                          if (val) {
-                                            const current = watch(`itinerary.${index}.placesCovered` as any) || [];
-                                            if (!current.includes(val)) {
-                                              setValue(`itinerary.${index}.placesCovered` as any, [...current, val]);
-                                            }
-                                            e.currentTarget.value = "";
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </div>
-
-                                  {/* Activities tag inputs */}
-                                  <div>
-                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Activities *</label>
-                                    <div className="flex flex-wrap gap-1.5 mb-2">
-                                      {(watch(`itinerary.${index}.activities` as any) || []).map((act: string) => (
-                                        <span key={act} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/20 text-indigo-650 dark:text-indigo-400 text-[10px] font-bold border border-indigo-200/50">
-                                          {act}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const current = watch(`itinerary.${index}.activities` as any) || [];
-                                              setValue(`itinerary.${index}.activities` as any, current.filter((x: string) => x !== act));
-                                            }}
-                                            className="text-rose-500 hover:text-rose-700 font-extrabold ml-0.5"
-                                          >
-                                            ×
-                                          </button>
-                                        </span>
-                                      ))}
-                                    </div>
-                                    <input
-                                      type="text"
-                                      placeholder="Type activity & press Enter"
-                                      className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-full outline-none focus:border-teal-500"
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          const val = e.currentTarget.value.trim();
-                                          if (val) {
-                                            const current = watch(`itinerary.${index}.activities` as any) || [];
-                                            if (!current.includes(val)) {
-                                              setValue(`itinerary.${index}.activities` as any, [...current, val]);
-                                            }
-                                            e.currentTarget.value = "";
-                                          }
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </GlassCard>
-                    </div>
-
-                    {/* Right side: Sticky Route Preview Card (4 Cols) */}
-                    <div className="xl:col-span-4 sticky top-6 space-y-4">
-                      <div className="p-5 rounded-3xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm">
-                        <div className="border-b border-slate-250 dark:border-slate-700 pb-2.5">
-                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                            Route Preview Timeline
-                          </h4>
-                          <span className="text-[10px] text-slate-400 font-semibold mt-0.5 block">
-                            Calculated Duration: <span className="text-teal-500 font-bold">{watch("duration")}</span>
-                          </span>
-                        </div>
-
-                        <div className="flex flex-col items-center space-y-2 text-xs font-bold text-slate-650 dark:text-slate-350">
-                          {/* Pickup point */}
-                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
-                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Pickup Point</span>
-                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
-                              {watch("pickupLocation") || "Not specified"}
-                            </span>
-                          </div>
-
-                          {/* Day Wise timeline */}
-                          {watchItinerary.map((day: any, idx: number) => (
-                            <React.Fragment key={idx}>
-                              <div className="text-teal-500 text-base font-extrabold">↓</div>
-                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full space-y-2 shadow-xs">
-                                <div className="flex justify-between items-center text-[10px] text-teal-600 dark:text-teal-400 font-black uppercase">
-                                  <span>Day {day.day || idx + 1}</span>
-                                  {day.date && <span>{day.date}</span>}
-                                </div>
-                                <div className="flex items-center justify-between text-slate-850 dark:text-slate-250 font-black">
-                                  <span>{day.startLocation || "Start"}</span>
-                                  <span className="text-slate-350 font-bold px-1.5">↓</span>
-                                  <span>{day.destination || "Reach"}</span>
-                                </div>
-                                {day.nightStay && (
-                                  <div className="text-[10px] text-slate-500 border-t border-slate-50 dark:border-slate-850/80 pt-1.5 flex justify-between items-center">
-                                    <span>Night Stay:</span>
-                                    <span className="text-slate-750 dark:text-slate-200 font-extrabold">
-                                      {day.nightStay}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </React.Fragment>
-                          ))}
-
-                          {/* Drop point */}
-                          <div className="text-teal-500 text-base font-extrabold">↓</div>
-                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
-                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Return & Drop Point</span>
-                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
-                              {watch("dropPoint") || "Not specified"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 3: Dates & Deadline */}
-                {activeTab === 3 && (
                   <div className="space-y-4 animate-page">
                     <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Date & Time Configuration</h3>
                     <div className="grid grid-cols-2 gap-4">
@@ -1405,110 +1223,463 @@ export const Trips: React.FC = () => {
                   </div>
                 )}
 
-                {/* STEP 4: Journey Timeline Preview */}
-                {activeTab === 4 && (
-                  <div className="space-y-6 animate-page">
-                    <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex justify-between items-center">
-                      <div>
-                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Journey Timeline Preview</h3>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-0.5">
-                          Read-only summary of the journey days built in Step 2.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab(2)}
-                        className="px-3.5 py-2 rounded-xl bg-teal-50 dark:bg-teal-950/20 text-teal-655 dark:text-teal-400 text-xs font-bold border border-teal-200/50 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-all flex items-center gap-1.5 active:scale-98"
-                      >
-                        <MapPin size={13} /> Edit Route
-                      </button>
+                {/* STEP 3: Travel Route */}
+                {activeTab === 3 && (
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start animate-page">
+                    {/* Left side: Inputs (8 Cols) */}
+                    <div className="xl:col-span-8 space-y-6">
+                      
+                      {/* SECTION 0: Route Cities */}
+                      <GlassCard strong className="p-5 space-y-4">
+                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">1</span>
+                          Route Cities
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Input
+                            label="Origin City *"
+                            placeholder="e.g. Salem"
+                            disabled={hasBookings}
+                            {...register("originCity", { required: "Origin City is required" })}
+                            error={errors.originCity?.message}
+                          />
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                              Destination Cities (Add one or more) *
+                            </label>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {watchDestinations.map((city: string) => (
+                                <span key={city} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/20 text-teal-650 dark:text-teal-400 text-[10px] font-bold border border-teal-200/50">
+                                  {city}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setValue("destinations", watchDestinations.filter((x: string) => x !== city));
+                                    }}
+                                    className="text-rose-500 hover:text-rose-700 font-extrabold ml-0.5"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="Type destination city & press Enter"
+                              className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-full outline-none focus:border-teal-500"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  const val = e.currentTarget.value.trim();
+                                  if (val) {
+                                    if (!watchDestinations.includes(val)) {
+                                      setValue("destinations", [...watchDestinations, val]);
+                                    }
+                                    e.currentTarget.value = "";
+                                  }
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Main Route Preview */}
+                        {watchOriginCity && watchDestinations.length > 0 && (
+                          <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800/85 bg-white/50">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                              Main Route
+                            </span>
+                            <div className="text-sm font-black text-teal-600 dark:text-teal-400 flex flex-wrap items-center gap-1.5">
+                              <span>{watchOriginCity}</span>
+                              {watchDestinations.map((dest, i) => (
+                                <React.Fragment key={i}>
+                                  <span>→</span>
+                                  <span>{dest}</span>
+                                </React.Fragment>
+                              ))}
+                              <span>→</span>
+                              <span>{watch("dropPoint") || watchOriginCity}</span>
+                            </div>
+                          </div>
+                        )}
+                      </GlassCard>
+
+                      {/* SECTION 1: Pickup Information */}
+                      <GlassCard strong className="p-5 space-y-4">
+                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">2</span>
+                          Pickup Information
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Input
+                            label="Pickup Point *"
+                            placeholder="e.g. Salem Bus Stand"
+                            disabled={hasBookings}
+                            {...register("pickupLocation", { required: "Pickup Point is required" })}
+                            error={errors.pickupLocation?.message}
+                          />
+                          <Input
+                            label="Pickup Google Maps URL *"
+                            placeholder="https://maps.google.com/..."
+                            disabled={hasBookings}
+                            {...register("pickupMapsLink", {
+                              required: "Pickup Maps URL is required",
+                              validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
+                            })}
+                            error={errors.pickupMapsLink?.message}
+                          />
+                        </div>
+                      </GlassCard>
+
+                      {/* SECTION 2: Drop Information */}
+                      <GlassCard strong className="p-5 space-y-4">
+                        <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">3</span>
+                          Drop Information
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Input
+                            label="Drop Point *"
+                            placeholder="e.g. Theni Bus Stand"
+                            disabled={hasBookings}
+                            {...register("dropPoint", { required: "Drop Point is required" })}
+                            error={errors.dropPoint?.message}
+                          />
+                          <Input
+                            label="Drop Google Maps URL *"
+                            placeholder="https://maps.google.com/..."
+                            disabled={hasBookings}
+                            {...register("dropMapsLink", {
+                              required: "Drop Maps URL is required",
+                              validate: (v) => validateGoogleMapsUrl(v) || "Valid Google Maps URL required"
+                            })}
+                            error={errors.dropMapsLink?.message}
+                          />
+                        </div>
+                      </GlassCard>
+
                     </div>
 
-                    {itineraryFields.length === 0 ? (
-                      <div className="text-center py-12 text-slate-450 italic text-xs">
-                        No journey days created. Go back to Step 2 ("Travel Route") to add days.
-                      </div>
-                    ) : (
-                      <div className="relative border-l-2 border-teal-200 dark:border-teal-900 ml-4 pl-8 space-y-8 py-2">
-                        {itineraryFields.map((field, index) => {
-                          const day = watch(`itinerary.${index}`);
-                          return (
-                            <div key={field.id} className="relative">
-                              {/* Timeline indicator node */}
-                              <span className="absolute -left-[41px] top-0.5 flex items-center justify-center w-6 h-6 rounded-full bg-teal-500 text-white font-black text-xs shadow-sm">
-                                {index + 1}
-                              </span>
+                    {/* Right side: Sticky Route Preview Card (4 Cols) */}
+                    <div className="xl:col-span-4 sticky top-6 space-y-4">
+                      <div className="p-5 rounded-3xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm">
+                        <div className="border-b border-slate-250 dark:border-slate-700 pb-2.5">
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                            Route Preview Timeline
+                          </h4>
+                          <span className="text-[10px] text-slate-400 font-semibold mt-0.5 block">
+                            Calculated Duration: <span className="text-teal-500 font-bold">{watch("duration")}</span>
+                          </span>
+                        </div>
 
-                              <div className="space-y-3 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40 shadow-xs">
-                                <div className="flex justify-between items-center flex-wrap gap-2">
-                                  <span className="text-sm font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
-                                    {day.startLocation || "Start"}
-                                    <span className="text-slate-400">→</span>
-                                    {day.destination || "Destination"}
-                                  </span>
-                                  {day.date && (
-                                    <span className="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-500 font-extrabold">
-                                      {day.date}
+                        <div className="flex flex-col items-center space-y-2 text-xs font-bold text-slate-650 dark:text-slate-355">
+                          {/* Pickup point */}
+                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Pickup Point</span>
+                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
+                              {watch("pickupLocation") || "Not specified"}
+                            </span>
+                          </div>
+
+                          {/* Day Wise timeline */}
+                          {watchItinerary.map((day: any, idx: number) => (
+                            <React.Fragment key={idx}>
+                              <div className="text-teal-500 text-base font-extrabold">↓</div>
+                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full space-y-2 shadow-xs">
+                                <div className="flex justify-between items-center text-[10px] text-teal-600 dark:text-teal-400 font-black uppercase">
+                                  <span>Day {day.day || idx + 1}</span>
+                                  {day.date && <span>{day.date}</span>}
+                                </div>
+                                <div className="flex items-center justify-between text-slate-850 dark:text-slate-250 font-black">
+                                  <span>{day.startLocation || "Start"}</span>
+                                  <span className="text-slate-350 font-bold px-1.5">↓</span>
+                                  <span>{day.destination || "Reach"}</span>
+                                </div>
+                                {day.nightStay && (
+                                  <div className="text-[10px] text-slate-500 border-t border-slate-50 dark:border-slate-850/80 pt-1.5 flex justify-between items-center">
+                                    <span>Night Stay:</span>
+                                    <span className="text-slate-750 dark:text-slate-200 font-extrabold">
+                                      {day.nightStay}
                                     </span>
-                                  )}
-                                </div>
-
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold text-slate-500">
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Departs</span>
-                                    <span className="text-slate-700 dark:text-slate-300 font-bold block mt-0.5">{day.departureTime || "—"}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-[10px] text-slate-400 block uppercase font-bold">Arrives</span>
-                                    <span className="text-slate-700 dark:text-slate-300 font-bold block mt-0.5">{day.arrivalTime || "—"}</span>
-                                  </div>
-                                  {day.duration && (
-                                    <div>
-                                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Duration</span>
-                                      <span className="text-slate-700 dark:text-slate-300 font-bold block mt-0.5">{day.duration}</span>
-                                    </div>
-                                  )}
-                                  {day.nightStay && (
-                                    <div>
-                                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Night Stay</span>
-                                      <span className="text-slate-700 dark:text-slate-300 font-bold block mt-0.5">{day.nightStay}</span>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {day.hotelName && (
-                                  <div className="text-xs text-slate-650 dark:text-slate-355 bg-teal-50/20 dark:bg-teal-950/10 px-3 py-1.5 rounded-xl border border-teal-100/20 dark:border-teal-900/10 w-max max-w-full">
-                                    Stay Accommodation: <span className="font-extrabold text-slate-850 dark:text-slate-200">{day.hotelName}</span>
-                                  </div>
-                                )}
-
-                                {day.placesCovered && day.placesCovered.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 items-center pt-1.5 border-t border-slate-50 dark:border-slate-850">
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Visits:</span>
-                                    {day.placesCovered.map((p: string, i: number) => (
-                                      <span key={i} className="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold border border-slate-100 dark:border-slate-750">{p}</span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {day.activities && day.activities.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 items-center">
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Activities:</span>
-                                    {day.activities.map((a: string, i: number) => (
-                                      <span key={i} className="px-2.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/20 text-indigo-650 dark:text-indigo-400 text-[10px] font-bold border border-indigo-100/30 dark:border-indigo-900/30">{a}</span>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {day.notes && (
-                                  <p className="text-[11px] text-amber-600 italic bg-amber-50/20 dark:bg-amber-950/10 p-2.5 rounded-xl border border-amber-100/20 dark:border-amber-900/10">
-                                    Note: {day.notes}
-                                  </p>
                                 )}
                               </div>
-                            </div>
-                          );
-                        })}
+                            </React.Fragment>
+                          ))}
+
+                          {/* Drop point */}
+                          <div className="text-teal-500 text-base font-extrabold">↓</div>
+                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Return & Drop Point</span>
+                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
+                              {watch("dropPoint") || "Not specified"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 4: Journey Builder */}
+                {activeTab === 4 && (
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start animate-page">
+                    {/* Left side: Inputs (8 Cols) */}
+                    <div className="xl:col-span-8 space-y-6">
+                      <GlassCard strong className="p-5 space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+                          <h3 className="font-extrabold text-slate-800 dark:text-white text-base flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-teal-500 text-white flex items-center justify-center text-xs">4</span>
+                            Journey Builder
+                          </h3>
+                        </div>
+
+                        {itineraryFields.length === 0 ? (
+                          <div className="text-center py-6 text-slate-450 italic text-xs">
+                            No journey days added yet. Please specify trip dates in Step 2 to generate itinerary days.
+                          </div>
+                        ) : (
+                          <div className="space-y-6 pt-2">
+                            {itineraryFields.map((field, index) => (
+                              <div key={field.id} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/20 space-y-4 relative animate-scale-in">
+                                {/* Day Header */}
+                                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                                  <h4 className="text-xs font-black text-teal-655 dark:text-teal-400 uppercase tracking-widest">
+                                    Day {index + 1} Journey details
+                                  </h4>
+                                </div>
+
+                                {/* Inputs grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                                  <Input
+                                    label="Date *"
+                                    type="date"
+                                    readOnly
+                                    {...register(`itinerary.${index}.date` as any, { required: "Date is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.date?.message}
+                                  />
+                                  <Input
+                                    label="Start From *"
+                                    placeholder="e.g. Salem"
+                                    {...register(`itinerary.${index}.startLocation` as any, { required: "Start From is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.startLocation?.message}
+                                  />
+                                  <Input
+                                    label="Reach (Destination) *"
+                                    placeholder="e.g. Madurai"
+                                    {...register(`itinerary.${index}.destination` as any, { required: "Reach Destination is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.destination?.message}
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                                  <Input
+                                    label="Departure Time *"
+                                    type="time"
+                                    {...register(`itinerary.${index}.departureTime` as any, { required: "Departure time is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.departureTime?.message}
+                                  />
+                                  <Input
+                                    label="Arrival Time *"
+                                    type="time"
+                                    {...register(`itinerary.${index}.arrivalTime` as any, { required: "Arrival time is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.arrivalTime?.message}
+                                  />
+                                  <Input
+                                    label="Duration *"
+                                    placeholder="e.g. 4 Hours"
+                                    {...register(`itinerary.${index}.duration` as any, { required: "Duration is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.duration?.message}
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                                  <Input
+                                    label="Night Stay *"
+                                    placeholder="e.g. Madurai"
+                                    {...register(`itinerary.${index}.nightStay` as any, { required: "Night Stay is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.nightStay?.message}
+                                  />
+                                  <Input
+                                    label="Hotel Name *"
+                                    placeholder="e.g. Grand Palace Hotel"
+                                    {...register(`itinerary.${index}.hotelName` as any, { required: "Hotel Name is required" })}
+                                    error={(errors.itinerary?.[index] as any)?.hotelName?.message}
+                                  />
+                                  <Input
+                                    label="Notes *"
+                                    placeholder="e.g. Dinner on own arrangements"
+                                    {...register(`itinerary.${index}.notes` as any, { required: "Notes are required" })}
+                                    error={(errors.itinerary?.[index] as any)?.notes?.message}
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                                  {/* Places Covered tag inputs */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Places Covered *</label>
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                      {(watch(`itinerary.${index}.placesCovered` as any) || []).map((place: string) => (
+                                        <span key={place} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-50 dark:bg-teal-950/20 text-teal-650 dark:text-teal-400 text-[10px] font-bold border border-teal-200/50">
+                                          {place}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const current = watch(`itinerary.${index}.placesCovered` as any) || [];
+                                              setValue(`itinerary.${index}.placesCovered` as any, current.filter((x: string) => x !== place));
+                                            }}
+                                            className="text-rose-500 hover:text-rose-700 font-extrabold ml-0.5"
+                                          >
+                                            ×
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      placeholder="Type place & press Enter"
+                                      className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-full outline-none focus:border-teal-500"
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          const val = e.currentTarget.value.trim();
+                                          if (val) {
+                                            const current = watch(`itinerary.${index}.placesCovered` as any) || [];
+                                            if (!current.includes(val)) {
+                                              setValue(`itinerary.${index}.placesCovered` as any, [...current, val]);
+                                            }
+                                            e.currentTarget.value = "";
+                                          }
+                                        }
+                                      }}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      {...register(`itinerary.${index}.placesCovered` as any, {
+                                        validate: (v: string[]) => (v && v.length > 0) || "Places Covered is required"
+                                      })}
+                                    />
+                                    {(errors.itinerary?.[index] as any)?.placesCovered && (
+                                      <span className="text-[10px] text-rose-500 font-semibold block mt-1">Places Covered is required</span>
+                                    )}
+                                  </div>
+
+                                  {/* Activities tag inputs */}
+                                  <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Activities *</label>
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                      {(watch(`itinerary.${index}.activities` as any) || []).map((act: string) => (
+                                        <span key={act} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/20 text-indigo-650 dark:text-indigo-400 text-[10px] font-bold border border-indigo-200/50">
+                                          {act}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const current = watch(`itinerary.${index}.activities` as any) || [];
+                                              setValue(`itinerary.${index}.activities` as any, current.filter((x: string) => x !== act));
+                                            }}
+                                            className="text-rose-500 hover:text-rose-700 font-extrabold ml-0.5"
+                                          >
+                                            ×
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <input
+                                      type="text"
+                                      placeholder="Type activity & press Enter"
+                                      className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-full outline-none focus:border-teal-500"
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          const val = e.currentTarget.value.trim();
+                                          if (val) {
+                                            const current = watch(`itinerary.${index}.activities` as any) || [];
+                                            if (!current.includes(val)) {
+                                              setValue(`itinerary.${index}.activities` as any, [...current, val]);
+                                            }
+                                            e.currentTarget.value = "";
+                                          }
+                                        }
+                                      }}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      {...register(`itinerary.${index}.activities` as any, {
+                                        validate: (v: string[]) => (v && v.length > 0) || "Activities is required"
+                                      })}
+                                    />
+                                    {(errors.itinerary?.[index] as any)?.activities && (
+                                      <span className="text-[10px] text-rose-500 font-semibold block mt-1">Activities is required</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </GlassCard>
+                    </div>
+
+                    {/* Right side: Sticky Route Preview Card (4 Cols) */}
+                    <div className="xl:col-span-4 sticky top-6 space-y-4">
+                      <div className="p-5 rounded-3xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-4 shadow-sm">
+                        <div className="border-b border-slate-250 dark:border-slate-700 pb-2.5">
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                            Route Preview Timeline
+                          </h4>
+                          <span className="text-[10px] text-slate-400 font-semibold mt-0.5 block">
+                            Calculated Duration: <span className="text-teal-500 font-bold">{watch("duration")}</span>
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col items-center space-y-2 text-xs font-bold text-slate-650 dark:text-slate-355">
+                          {/* Pickup point */}
+                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Pickup Point</span>
+                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
+                              {watch("pickupLocation") || "Not specified"}
+                            </span>
+                          </div>
+
+                          {/* Day Wise timeline */}
+                          {watchItinerary.map((day: any, idx: number) => (
+                            <React.Fragment key={idx}>
+                              <div className="text-teal-500 text-base font-extrabold">↓</div>
+                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full space-y-2 shadow-xs">
+                                <div className="flex justify-between items-center text-[10px] text-teal-650 dark:text-teal-400 font-black uppercase">
+                                  <span>Day {day.day || idx + 1}</span>
+                                  {day.date && <span>{day.date}</span>}
+                                </div>
+                                <div className="flex items-center justify-between text-slate-850 dark:text-slate-250 font-black">
+                                  <span>{day.startLocation || "Start"}</span>
+                                  <span className="text-slate-350 font-bold px-1.5">↓</span>
+                                  <span>{day.destination || "Reach"}</span>
+                                </div>
+                                {day.nightStay && (
+                                  <div className="text-[10px] text-slate-505 border-t border-slate-50 dark:border-slate-850/80 pt-1.5 flex justify-between items-center">
+                                    <span>Night Stay:</span>
+                                    <span className="text-slate-750 dark:text-slate-200 font-extrabold">
+                                      {day.nightStay}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </React.Fragment>
+                          ))}
+
+                          {/* Drop point */}
+                          <div className="text-teal-500 text-base font-extrabold">↓</div>
+                          <div className="text-center p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 w-full shadow-xs">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Return & Drop Point</span>
+                            <span className="text-slate-850 dark:text-slate-200 font-extrabold">
+                              {watch("dropPoint") || "Not specified"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}                       })}
                       </div>
                     )}
                   </div>
@@ -1759,37 +1930,8 @@ export const Trips: React.FC = () => {
                   </div>
                 )}
 
-                {/* STEP 8: Packing Checklist */}
+                {/* STEP 8: Pricing */}
                 {activeTab === 8 && (
-                  <div className="space-y-4 animate-page">
-                    <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Packing Checklist</h3>
-                    <div className="flex gap-2 max-w-md">
-                      <Input
-                        label="Add Checklist Item"
-                        placeholder="e.g. Sunscreen"
-                        value={newPackingItem}
-                        onChange={(e) => setNewPackingItem(e.target.value)}
-                      />
-                      <Button type="button" onClick={addPackingItem} className="self-end mb-4">
-                        Add
-                      </Button>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {watchPackingChecklist.map((item) => (
-                        <div key={item} className="flex justify-between items-center p-3 border rounded-xl bg-slate-50/20">
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item}</span>
-                          <button type="button" onClick={() => removePackingItem(item)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* STEP 9: Pricing */}
-                {activeTab === 9 && (
                   <div className="space-y-4 animate-page">
                     <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Pricing & Seat Capacities</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1823,6 +1965,35 @@ export const Trips: React.FC = () => {
                           {...register("customCancellationPolicy")}
                         />
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 9: Packing */}
+                {activeTab === 9 && (
+                  <div className="space-y-4 animate-page">
+                    <h3 className="font-extrabold text-slate-800 dark:text-white text-base">Packing Checklist</h3>
+                    <div className="flex gap-2 max-w-md">
+                      <Input
+                        label="Add Checklist Item"
+                        placeholder="e.g. Sunscreen"
+                        value={newPackingItem}
+                        onChange={(e) => setNewPackingItem(e.target.value)}
+                      />
+                      <Button type="button" onClick={addPackingItem} className="self-end mb-4">
+                        Add
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {watchPackingChecklist.map((item) => (
+                        <div key={item} className="flex justify-between items-center p-3 border rounded-xl bg-slate-50/20">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item}</span>
+                          <button type="button" onClick={() => removePackingItem(item)} className="text-rose-500 hover:text-rose-700 text-xs font-bold">
+                            Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -2156,8 +2327,8 @@ export const Trips: React.FC = () => {
 
               <div className="p-5 space-y-3.5">
                 <div>
-                  <span className="text-[10px] font-extrabold text-teal-600 uppercase tracking-widest block">
-                    📍 {watch("destinationCity") || "Ooty"}
+                  <span className="text-[10px] font-bold text-teal-600 uppercase tracking-widest block">
+                    📍 {watchDestinations.length > 0 ? watchDestinations.join(", ") : (watch("destinationCity") || "No destinations")}
                   </span>
                   <h4 className="text-sm font-bold text-slate-850 dark:text-white truncate mt-0.5">
                     {watch("title") || "Untitled Escapade"}
@@ -2165,12 +2336,41 @@ export const Trips: React.FC = () => {
                   {watch("tagline") && (
                     <p className="text-[10px] font-semibold text-slate-400 truncate mt-0.5">{watch("tagline")}</p>
                   )}
+                  {watchItinerary.length > 0 && (
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 mt-1.5">
+                      <span>Itinerary Days:</span>
+                      <span className="text-teal-650 font-black">{watchItinerary.length} Day(s)</span>
+                    </div>
+                  )}
                 </div>
+
+                {(() => {
+                  const startCity = watch("originCity") || watch("pickupLocation") || "";
+                  const stops = watchItinerary.map((d: any) => d.destination).filter(Boolean);
+                  const dropCity = watch("dropPoint") || startCity;
+                  const pathElements = [startCity, ...stops];
+                  if (dropCity && dropCity !== startCity) {
+                    pathElements.push(dropCity);
+                  }
+                  const journeySummary = pathElements.filter(Boolean).join(" → ");
+                  return journeySummary ? (
+                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                      <span className="text-[9px] font-bold text-slate-400 block uppercase">Journey Route</span>
+                      <p className="text-[10px] font-black text-teal-600 dark:text-teal-400 truncate mt-0.5" title={journeySummary}>
+                        {journeySummary}
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
 
                 <div className="flex justify-between items-center text-[10px] font-semibold text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-3">
                   <span className="flex items-center gap-1">
                     <Calendar size={13} />
-                    {watch("startDate") || "Departure Date"}
+                    {watch("startDate") ? (
+                      `${formatDate(watch("startDate"))} - ${watch("endDate") ? formatDate(watch("endDate")) : ""}`
+                    ) : (
+                      "Trip Dates"
+                    )}
                   </span>
                   <span className="flex items-center gap-1">
                     <Bus size={13} />
