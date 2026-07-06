@@ -61,6 +61,7 @@ interface TripFormData {
   pickupLocation: string;
   pickupMapsLink: string;
   originCity?: string;
+  destinations?: string[];
   intermediateStops?: string[];
   dropPoint?: string;
   dropMapsLink?: string;
