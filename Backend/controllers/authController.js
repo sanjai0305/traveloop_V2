@@ -481,8 +481,8 @@ export const registerUser = async (req, res) => {
       await Referral.create({
         inviterId: inviterUser._id,
         invitedId: newUser._id,
-        status: "registered",
         referralCode: inviterUser.referralCode,
+        status: "registered",
         registered: true
       });
 
@@ -499,16 +499,26 @@ export const registerUser = async (req, res) => {
       }
       await inviterUser.save();
 
-      // Generate Scratch Card for Invitee
+      // Generate Scratch Card for Invitee and mark referral flags
+      let inviteeCard = null;
       try {
-        const inviteeCard = await ReferralService.generateScratchCard(newUser._id);
+        inviteeCard = await ReferralService.generateScratchCard(newUser._id);
         if (inviteeCard) {
           newUser.scratchCards.push(inviteeCard);
-          await newUser.save();
         }
       } catch (cardErr) {
         console.error("Failed to generate scratch card for invitee:", cardErr);
       }
+
+      // Mark referral as verified for the new user
+      newUser.referralVerified  = true;
+      newUser.rewardUnlocked    = true;
+      newUser.referralCodeUsed  = inviterUser.referralCode;
+      await newUser.save();
+
+      // Store for response
+      newUser._inviteeCard  = inviteeCard;
+      newUser._inviterName  = `${inviterUser.firstName} ${inviterUser.lastName}`;
     }
 
     
@@ -535,9 +545,21 @@ export const registerUser = async (req, res) => {
         acceptedTerms: true,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: "2026-06",
+        referralCode: newUser.referralCode || "",
+        referralVerified: newUser.referralVerified || false,
+        rewardUnlocked: newUser.rewardUnlocked || false,
       },
       token: generateToken(user.id),
+      // Referral reward info (populated when a referral code was used)
+      referral: inviterUser ? {
+        used: true,
+        referralOwner: newUser._inviterName || "",
+        rewardType: newUser._inviteeCard?.rewardType || "percentage_discount",
+        rewardValue: newUser._inviteeCard?.rewardValue || "",
+        cardId: newUser._inviteeCard?.cardId || "",
+      } : { used: false },
     });
+
 
   } catch (error) {
     res.status(500).json({

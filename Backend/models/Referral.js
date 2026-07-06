@@ -12,6 +12,11 @@ const referralSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    referralCode: {
+      type: String,
+      default: "",
+    },
+
     tripId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "AgentTrip",

@@ -18,6 +18,8 @@ import {
 import { getApiUrl } from "../utils/api";
 import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
+import { verifyReferralCode } from "../services/authService";
+
 
 // STATS is now calculated dynamically inside the Profile component
 
@@ -137,27 +139,58 @@ const Profile = () => {
     scratchCards: [],
     scratchCardsEarned: 0,
     rewardsClaimed: 0,
-    couponsAvailable: 0
+    couponsAvailable: 0,
+    referralVerified: false,
+    referredBy: "",
   });
 
-  useEffect(() => {
-    const fetchReferralStats = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
-        const res = await fetch(getApiUrl("profile/referral-dashboard"), {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (data.success) {
-          setReferralStats(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch referral stats:", err);
+  // Referral code entry state
+  const [enteredCode, setEnteredCode]     = useState("");
+  const [verifyState, setVerifyState]     = useState("idle"); // idle | loading | success | error
+  const [verifyError, setVerifyError]     = useState("");
+  const [verifyResult, setVerifyResult]   = useState(null);
+
+
+  const fetchReferralStats = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const res = await fetch(getApiUrl("profile/referral-dashboard"), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReferralStats(data);
       }
-    };
+    } catch (err) {
+      console.error("Failed to fetch referral stats:", err);
+    }
+  };
+
+  useEffect(() => {
     fetchReferralStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleVerifyReferral = async () => {
+    if (!enteredCode.trim()) return;
+    setVerifyState("loading");
+    setVerifyError("");
+    setVerifyResult(null);
+    try {
+      const token = localStorage.getItem("token");
+      const data = await verifyReferralCode(enteredCode.trim(), token);
+      setVerifyResult(data);
+      setVerifyState("success");
+      // Refresh stats to show new scratch cards
+      await fetchReferralStats();
+      toast.success(`✅ Referral verified! Invited by ${data.referralOwner}`);
+    } catch (err) {
+      setVerifyError(err.message || "Verification failed. Please try again.");
+      setVerifyState("error");
+    }
+  };
+
 
   const stats = useMemo(() => {
     const tripsCount = trips.length;
@@ -648,6 +681,54 @@ const Profile = () => {
               </button>
             </div>
           </div>
+
+          {/* ── ENTER REFERRAL CODE (only shown if not yet verified) ── */}
+          {!referralStats.referralVerified && !referralStats.referredBy && verifyState !== "success" && (
+            <div className="p-3 bg-slate-50/80 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 rounded-2xl">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Have a referral code?</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={enteredCode}
+                  onChange={(e) => {
+                    setEnteredCode(e.target.value.toUpperCase());
+                    if (verifyState === "error") { setVerifyState("idle"); setVerifyError(""); }
+                  }}
+                  placeholder="e.g. TLP-RAHUL-4821"
+                  maxLength={20}
+                  className="flex-1 h-9 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-700 dark:text-slate-200 placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none focus:border-teal-400 transition-colors"
+                />
+                <button
+                  id="verify-referral-btn"
+                  onClick={handleVerifyReferral}
+                  disabled={verifyState === "loading" || !enteredCode.trim()}
+                  className="h-9 px-4 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 text-xs font-black rounded-xl transition-all active:scale-95 flex-shrink-0"
+                >
+                  {verifyState === "loading" ? "Verifying…" : "Verify"}
+                </button>
+              </div>
+              {verifyState === "error" && verifyError && (
+                <p className="text-[10px] text-red-500 font-semibold mt-1.5">{verifyError}</p>
+              )}
+            </div>
+          )}
+
+          {/* ── VERIFY SUCCESS BANNER ── */}
+          {(verifyState === "success" || referralStats.referralVerified) && referralStats.referredBy && (
+            <div className="p-3 bg-teal-50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/50 rounded-2xl flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-teal-500/15 flex items-center justify-center flex-shrink-0">
+                <Gift size={15} className="text-teal-600 dark:text-teal-400" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-teal-700 dark:text-teal-300">✅ Referral Verified</p>
+                <p className="text-[10px] text-teal-600/70 dark:text-teal-400/70 mt-0.5 font-medium truncate">
+                  Invited by <span className="font-black">{referralStats.referredBy}</span>
+                  {verifyResult?.rewardValue ? ` · Reward: ${verifyResult.rewardValue}` : " · Scratch card unlocked"}
+                </p>
+              </div>
+            </div>
+          )}
+
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-3">

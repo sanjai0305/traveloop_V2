@@ -240,3 +240,24 @@ export const signOutUser = async () => {
     console.error("Firebase Auth sign out failed:", error);
   }
 };
+
+/**
+ * Verifies a referral code for an already-logged-in user.
+ * POST /api/referrals/verify
+ */
+export const verifyReferralCode = async (referralCode, token) => {
+  const response = await fetch(getApiUrl("referrals/verify"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ referralCode }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "Failed to verify referral code");
+  }
+  return data;
+};
+

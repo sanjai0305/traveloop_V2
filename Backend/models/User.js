@@ -114,6 +114,18 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    referralCodeUsed: {
+      type: String,
+      default: "",
+    },
+    referralVerified: {
+      type: Boolean,
+      default: false,
+    },
+    rewardUnlocked: {
+      type: Boolean,
+      default: false,
+    },
     referralCount: {
       type: Number,
       default: 0,

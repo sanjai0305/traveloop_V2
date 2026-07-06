@@ -45,6 +45,7 @@ import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
 import seatRoutes from "./routes/seatRoutes.js";
+import referralRoutes from "./routes/referralRoutes.js";
 
 // Multi-Model Database Additions
 import healthRoutes from "./routes/healthRoutes.js";
@@ -308,6 +309,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/driver-updates", driverUpdatesRoutes);
 app.use("/api/trip-members", tripMembersRoutes);
 app.use("/api/seats", seatRoutes);
+app.use("/api/referrals", referralRoutes);
 
 // Direct QR status route
 app.get("/api/qr/:bookingId", async (req, res) => {
