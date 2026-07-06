@@ -37,37 +37,24 @@ class ReferralService {
         else cardType = "Diamond";
       }
 
-      // Pick a random reward type
-      const rewardTypes = ["percentage_discount", "flat_discount", "coins", "free_upgrade"];
-      const rewardType = rewardTypes[Math.floor(Math.random() * rewardTypes.length)];
+      // Traveloop referral rewards must only be percentage discounts (5%, 10%, 15%, 20%, 25%, 30%)
+      const rewardType = "percentage_discount";
 
-      let rewardValue = "";
-      if (rewardType === "percentage_discount") {
-        let pct = 5;
-        if (cardType === "Bronze") pct = 5;
-        else if (cardType === "Silver") pct = 10;
-        else if (cardType === "Gold") pct = 15;
-        else if (cardType === "Diamond") pct = 20;
+      let pct = 10;
+      if (cardType === "Bronze") pct = 5;
+      else if (cardType === "Silver") pct = 10;
+      else if (cardType === "Gold") pct = 15;
+      else if (cardType === "Diamond") pct = 20;
 
-        pct = Math.max(minReward, Math.min(maxReward, pct));
-        rewardValue = `${pct}% OFF`;
-      } else if (rewardType === "flat_discount") {
-        let amt = 200;
-        if (cardType === "Bronze") amt = 100;
-        else if (cardType === "Silver") amt = 300;
-        else if (cardType === "Gold") amt = 500;
-        else if (cardType === "Diamond") amt = 1000;
-        rewardValue = `₹${amt} OFF`;
-      } else if (rewardType === "coins") {
-        let coins = 100;
-        if (cardType === "Bronze") coins = 50;
-        else if (cardType === "Silver") coins = 100;
-        else if (cardType === "Gold") coins = 200;
-        else if (cardType === "Diamond") coins = 500;
-        rewardValue = `${coins} Coins`;
-      } else {
-        rewardValue = "Free Seat Upgrade";
-      }
+      // Respect admin configurations for min/max
+      pct = Math.max(minReward, Math.min(maxReward, pct));
+      
+      // Ensure the percentage is one of the allowed values: 5, 10, 15, 20, 25, 30.
+      // If it doesn't align exactly, round to nearest 5 within bounds.
+      pct = Math.round(pct / 5) * 5;
+      pct = Math.max(5, Math.min(30, pct));
+
+      const rewardValue = `${pct}% OFF`;
 
       const cardId = `SC-${Math.floor(100000 + Math.random() * 900000)}`;
       const expiresAt = new Date(Date.now() + 86400000 * 30); // 30 days expiry
@@ -108,68 +95,33 @@ class ReferralService {
 
     let claimResult = { type: scratchCard.rewardType, value: scratchCard.rewardValue };
 
-    if (scratchCard.rewardType === "percentage_discount" || scratchCard.rewardType === "flat_discount" || scratchCard.rewardType === "free_upgrade") {
-      // Generate coupon code, e.g. TLP10-SANJAI or TLP500-SANJAI
-      let codePrefix = "TLP";
-      let discountPct = 10;
+    // Format coupon code: e.g., TLP15-SANJAI-9821
+    const pct = parseInt(scratchCard.rewardValue);
+    const formattedPct = String(pct).padStart(2, "0"); // TLP05, TLP10, TLP15 etc.
+    const codePrefix = `TLP${formattedPct}`;
 
-      if (scratchCard.rewardType === "percentage_discount") {
-        const pct = parseInt(scratchCard.rewardValue);
-        codePrefix = `TLP${pct}`;
-        discountPct = pct;
-      } else if (scratchCard.rewardType === "flat_discount") {
-        const amt = parseInt(scratchCard.rewardValue.replace(/[^0-9]/g, ""));
-        codePrefix = `TLP${amt}`;
-        discountPct = 0; // Flat discount
-      } else {
-        codePrefix = "TLPUPGRADE";
-        discountPct = 0;
-      }
+    const couponCode = `${codePrefix}-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+    scratchCard.couponCode = couponCode;
 
-      const couponCode = `${codePrefix}-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
-      scratchCard.couponCode = couponCode;
+    // Update main user coupon fields
+    user.couponCode = couponCode;
+    user.couponPercentage = pct;
+    user.couponStatus = "Unused";
+    user.rewardClaimed = true;
+    user.rewardExpiry = scratchCard.expiresAt;
 
-      // Update main user coupon fields
-      user.couponCode = couponCode;
-      user.couponPercentage = discountPct;
-      user.couponStatus = "Unused";
-      user.rewardClaimed = true;
-      user.rewardExpiry = scratchCard.expiresAt;
+    claimResult.couponCode = couponCode;
 
-      claimResult.couponCode = couponCode;
-
-      // Send Invitee Notification
-      try {
-        await triggerNotification(
-          userId,
-          "🎁 Referral Reward Claimed!",
-          `Congratulations! You claimed ${scratchCard.rewardValue}. Use coupon ${couponCode} on your next trip.`,
-          "reward"
-        );
-      } catch (e) {
-        console.warn("Failed to notify user:", e.message);
-      }
-    } else if (scratchCard.rewardType === "coins") {
-      const coinsSetting = await SystemSetting.findOne({ key: "referral_travel_coins_enabled" });
-      const coinsEnabled = coinsSetting ? coinsSetting.value === true : true;
-
-      if (coinsEnabled) {
-        const coins = parseInt(scratchCard.rewardValue);
-        user.walletBalance = (user.walletBalance || 0) + coins;
-        user.referralCoins = (user.referralCoins || 0) + coins;
-
-        // Send Invitee Notification
-        try {
-          await triggerNotification(
-            userId,
-            "🪙 Travel Coins Awarded!",
-            `Referral reward claimed: ${coins} Travel Coins credited to your wallet.`,
-            "reward"
-          );
-        } catch (e) {
-          console.warn("Failed to notify user:", e.message);
-        }
-      }
+    // Send Invitee Notification
+    try {
+      await triggerNotification(
+        userId,
+        "🎁 Referral Reward Claimed!",
+        `Congratulations! You claimed ${scratchCard.rewardValue}. Use coupon ${couponCode} on your next trip.`,
+        "reward"
+      );
+    } catch (e) {
+      console.warn("Failed to notify user:", e.message);
     }
 
     await user.save();

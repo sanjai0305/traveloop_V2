@@ -833,34 +833,69 @@ const Profile = () => {
           )}
 
 
-          {/* Claimed Coupons List */}
-          {referralStats.scratchCards && referralStats.scratchCards.some(c => c.claimed && !c.used && c.couponCode) && (
+          {/* ── MY REWARDS SECTION ── */}
+          {referralStats.scratchCards && referralStats.scratchCards.some(c => c.scratched) && (
             <div className="pt-3 border-t border-slate-100 dark:border-slate-855">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2 font-poppins">Claimed Coupons</h4>
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2 font-poppins">My Rewards</h4>
               <div className="space-y-2">
-                {referralStats.scratchCards
-                  .filter(c => c.claimed && !c.used && c.couponCode)
-                  .map((c) => (
-                    <div
-                      key={c.cardId}
-                      className="p-2.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-105 dark:border-slate-850 rounded-xl flex items-center justify-between"
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-slate-800 dark:text-white font-mono select-text">{c.couponCode}</span>
-                        <span className="text-[9px] text-slate-400 mt-0.5">Value: {c.rewardValue} • Tier: {c.cardType}</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(c.couponCode);
-                          toast.success("Coupon code copied!");
-                        }}
-                        className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-800 dark:text-slate-250 text-[10px] font-extrabold rounded-lg transition-colors active:scale-95 flex items-center gap-1"
-                      >
-                        <Copy size={10} />
-                        <span>Copy</span>
-                      </button>
-                    </div>
-                  ))}
+                {(() => {
+                  const now = new Date();
+                  return referralStats.scratchCards
+                    .filter(c => c.scratched)
+                    .map((c) => {
+                      const isExpired = c.expiresAt && new Date(c.expiresAt) < now;
+                      let status = "Available";
+                      let statusBg = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400";
+                      
+                      if (c.used) {
+                        status = "Used";
+                        statusBg = "bg-slate-100 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400";
+                      } else if (isExpired) {
+                        status = "Expired";
+                        statusBg = "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400";
+                      }
+
+                      return (
+                        <div
+                          key={c.cardId}
+                          className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col gap-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-slate-800 dark:text-white font-mono select-text">
+                              {c.couponCode || "PENDING CLAIM"}
+                            </span>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg}`}>
+                              {status}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+                            <span>Discount: <span className="text-teal-600 dark:text-teal-400 font-extrabold">{c.rewardValue}</span></span>
+                            <span>Expiry: {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "30 days"}</span>
+                          </div>
+
+                          {c.used && c.usedBookingId && (
+                            <div className="text-[9px] text-slate-400 font-bold mt-0.5 border-t border-slate-100 dark:border-slate-800 pt-1">
+                              Applied Booking: <span className="font-mono text-slate-600 dark:text-slate-300 select-text">{c.usedBookingId}</span>
+                            </div>
+                          )}
+
+                          {status === "Available" && c.couponCode && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(c.couponCode);
+                                toast.success("Coupon code copied!");
+                              }}
+                              className="w-full mt-1.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-800 dark:text-slate-250 text-[10px] font-extrabold rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                            >
+                              <Copy size={10} />
+                              <span>Copy Coupon Code</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    });
+                })()}
               </div>
             </div>
           )}

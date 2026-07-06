@@ -203,6 +203,14 @@ const userSchema = new mongoose.Schema(
           type: Date,
           default: null,
         },
+        usedBookingId: {
+          type: String,
+          default: "",
+        },
+        couponUsed: {
+          type: Boolean,
+          default: false,
+        },
         expiresAt: {
           type: Date,
           default: null,

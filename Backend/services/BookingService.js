@@ -281,6 +281,8 @@ export class BookingService {
           
           // Mark the scratch card coupon as used!
           couponCard.used = true;
+          couponCard.couponUsed = true;
+          couponCard.usedBookingId = bookingId;
           
           // If this is the active coupon in user fields, mark it used
           if (userObj.couponCode && userObj.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase()) {
