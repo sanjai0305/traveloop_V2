@@ -604,14 +604,45 @@ const scanBoardingHandler = async (req, res) => {
       });
     }
 
-    // Check boardingWindow / lock
+    // ─── LOGGING SCAN PAYLOAD FOR DEBUGGING ───
+    console.log("QR RAW:", qrToken);
+    console.log("Decoded Payload:", decoded);
+    console.log("Booking:", booking);
+    console.log("Trip:", trip);
+    console.log("Signature Valid:", valid);
+    console.log("Current Time:", new Date().toISOString());
+    console.log("Valid Until:", decoded.expiresAt ? new Date(decoded.expiresAt).toISOString() : "N/A");
+
+    // Check boarding window timeframe validation (boardingStart = departureTime - 2h, boardingEnd = departureTime + 30m)
+    if (trip && trip.departureTime) {
+      const depTime = new Date(trip.departureTime);
+      if (!isNaN(depTime.getTime())) {
+        const boardingStart = new Date(depTime.getTime() - 2 * 60 * 60 * 1000);
+        const boardingEnd = new Date(depTime.getTime() + 30 * 60 * 1000);
+        const nowTime = new Date();
+        
+        if (nowTime < boardingStart || nowTime > boardingEnd) {
+          console.log("Scan Result: BOARDING_WINDOW_CLOSED");
+          return res.status(400).json({
+            success: false,
+            code: "BOARDING_WINDOW_CLOSED",
+            message: "Boarding Window Closed"
+          });
+        }
+      }
+    }
+
+    // Check boardingWindow lock status
     if (!booking.qrUnlocked) {
+      console.log("Scan Result: BOARDING_LOCKED");
       return res.status(400).json({
         success: false,
         code: "BOARDING_LOCKED",
         message: "Boarding Locked"
       });
     }
+
+    console.log("Scan Result: SUCCESS");
 
     res.json({
       success: true,
