@@ -19,6 +19,8 @@ import { getApiUrl } from "../utils/api";
 import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
 import { verifyReferralCode } from "../services/authService";
+import ScratchCardModal from "../components/dashboard/ScratchCardModal";
+
 
 
 // STATS is now calculated dynamically inside the Profile component
@@ -150,6 +152,11 @@ const Profile = () => {
   const [verifyError, setVerifyError]     = useState("");
   const [verifyResult, setVerifyResult]   = useState(null);
 
+  // Scratch card modal state
+  const [selectedCard, setSelectedCard]       = useState(null);
+  const [showScratchModal, setShowScratchModal] = useState(false);
+
+
 
   const fetchReferralStats = async () => {
     try {
@@ -185,11 +192,30 @@ const Profile = () => {
       // Refresh stats to show new scratch cards
       await fetchReferralStats();
       toast.success(`✅ Referral verified! Invited by ${data.referralOwner}`);
+
+      // Check if we received cardId in response or fetch it from refreshed stats
+      const tokenRefetched = localStorage.getItem("token");
+      const refetchedRes = await fetch(getApiUrl("profile/referral-dashboard"), {
+        headers: { Authorization: `Bearer ${tokenRefetched}` }
+      });
+      const refetchedData = await refetchedRes.json();
+      
+      let cardToScratch = null;
+      if (refetchedData.success && refetchedData.scratchCards) {
+        // Find the unscratched card
+        cardToScratch = refetchedData.scratchCards.find(c => !c.scratched && !c.claimed);
+      }
+      
+      if (cardToScratch) {
+        setSelectedCard(cardToScratch);
+        setShowScratchModal(true);
+      }
     } catch (err) {
       setVerifyError(err.message || "Verification failed. Please try again.");
       setVerifyState("error");
     }
   };
+
 
 
   const stats = useMemo(() => {
@@ -783,7 +809,13 @@ const Profile = () => {
                 {referralStats.scratchCards.map((c) => (
                   <div
                     key={c.cardId}
-                    className={`flex-shrink-0 w-24 p-2 rounded-xl text-center border relative overflow-hidden ${
+                    onClick={() => {
+                      if (!c.claimed) {
+                        setSelectedCard(c);
+                        setShowScratchModal(true);
+                      }
+                    }}
+                    className={`flex-shrink-0 w-24 p-2 rounded-xl text-center border relative overflow-hidden cursor-pointer active:scale-95 transition-transform ${
                       c.claimed
                         ? "bg-slate-100 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-400"
                         : "bg-teal-50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-900 text-teal-800 dark:text-teal-400"
@@ -792,13 +824,14 @@ const Profile = () => {
                     <span className="text-[10px] font-black uppercase tracking-wider block">{c.cardType}</span>
                     <span className="text-[9px] block mt-1 opacity-90">{c.rewardValue || c.rewardType}</span>
                     <span className="text-[8px] font-bold block mt-1.5 uppercase px-1 py-0.5 rounded bg-white/40 dark:bg-black/20">
-                      {c.claimed ? "Claimed" : "Unscratched"}
+                      {c.claimed ? "Claimed" : "Scratch"}
                     </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
 
           {/* Claimed Coupons List */}
           {referralStats.scratchCards && referralStats.scratchCards.some(c => c.claimed && !c.used && c.couponCode) && (
@@ -1293,8 +1326,17 @@ const Profile = () => {
           </>
         )}
       </AnimatePresence>
+      {/* Scratch Card Modal Overlay */}
+      <ScratchCardModal
+        isOpen={showScratchModal}
+        onClose={() => setShowScratchModal(false)}
+        card={selectedCard}
+        onClaimed={() => {
+          fetchReferralStats();
+        }}
+      />
     </MainLayout>
   );
 };
 
-export default Profile;
+export default Profile;
