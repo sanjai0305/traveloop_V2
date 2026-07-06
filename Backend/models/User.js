@@ -176,7 +176,7 @@ const userSchema = new mongoose.Schema(
         },
         rewardType: {
           type: String,
-          enum: ["percentage_discount", "flat_discount", "coins", "free_upgrade"],
+          enum: ["percentage_discount"],
           default: "percentage_discount",
         },
         rewardValue: {
@@ -223,8 +223,32 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Pre-save hook to automatically generate unique referral code
+// Pre-save hook to automatically generate unique referral code and migrate old scratch cards
 userSchema.pre("save", async function () {
+  // Migrate old scratch card rewards
+  if (this.scratchCards && this.scratchCards.length > 0) {
+    const cleanName = (this.firstName || "USER").toUpperCase().replace(/[^a-zA-Z]/g, "");
+    this.scratchCards.forEach(card => {
+      const valUpper = String(card.rewardValue || "").toUpperCase();
+      const isInvalid = 
+        card.rewardType !== "percentage_discount" || 
+        valUpper.includes("SEAT") || 
+        valUpper.includes("UPGRADE") || 
+        valUpper.includes("COINS") || 
+        valUpper.includes("CASHBACK") || 
+        valUpper.includes("FLAT") ||
+        valUpper.includes("₹");
+
+      if (isInvalid) {
+        card.rewardType = "percentage_discount";
+        card.rewardValue = "15% OFF";
+        if (card.couponCode) {
+          card.couponCode = `TLP15-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+      }
+    });
+  }
+
   if (!this.referralCode) {
     const cleanName = (this.firstName || "USER").replace(/[^a-zA-Z]/g, "").toUpperCase();
     let codeUnique = false;
@@ -248,7 +272,6 @@ userSchema.pre("save", async function () {
 
 // Index for fast lookups
 userSchema.index({ firebaseUid: 1 }, { sparse: true });
-userSchema.index({ referralCode: 1 }, { sparse: true });
 
 const User = mongoose.model("User", userSchema);
 export default User;

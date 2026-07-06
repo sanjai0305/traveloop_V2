@@ -217,13 +217,6 @@ export const TripDetails = () => {
         if (couponCard.rewardType === "percentage_discount") {
           referralDiscountPercent = parseInt(couponCard.rewardValue);
           referralDiscountAmount = Math.round(subtotal * (referralDiscountPercent / 100));
-        } else if (couponCard.rewardType === "flat_discount") {
-          const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
-          referralDiscountAmount = Math.min(subtotal, flatAmt);
-          referralDiscountPercent = 0;
-        } else if (couponCard.rewardType === "free_upgrade") {
-          referralDiscountAmount = 150;
-          referralDiscountPercent = 0;
         }
       }
     } else if (referralInfo.isEligibleForDiscount) {

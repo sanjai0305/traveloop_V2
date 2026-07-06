@@ -9,6 +9,7 @@ import AdminNotification from "../models/AdminNotification.js";
 import SystemSetting from "../models/SystemSetting.js";
 import Settlement from "../models/Settlement.js";
 import Commission from "../models/Commission.js";
+import Payment from "../models/Payment.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 // Supabase client removed

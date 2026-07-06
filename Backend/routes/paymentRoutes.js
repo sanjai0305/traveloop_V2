@@ -91,11 +91,6 @@ router.post("/create-order", protect, async (req, res) => {
           if (couponCard.rewardType === "percentage_discount") {
             const pct = parseInt(couponCard.rewardValue);
             discount = Math.round(amount * (pct / 100));
-          } else if (couponCard.rewardType === "flat_discount") {
-            const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
-            discount = Math.min(amount, flatAmt);
-          } else if (couponCard.rewardType === "free_upgrade") {
-            discount = 150;
           }
         }
       }
@@ -182,7 +177,7 @@ const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) =>
           timestamp: new Date().toISOString(),
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     createdPassengers.push(passenger);

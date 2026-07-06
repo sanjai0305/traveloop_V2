@@ -140,7 +140,7 @@ export class PaymentService {
             timestamp: new Date().toISOString(),
           },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
       );
 
       // 2. Mark SeatBooking as booked

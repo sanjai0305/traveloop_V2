@@ -583,7 +583,7 @@ router.post("/confirm", protect, async (req, res) => {
             timestamp: new Date().toISOString(),
           },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
       );
 
       createdPassengers.push(passenger);

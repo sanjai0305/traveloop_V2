@@ -433,7 +433,7 @@ router.post("/confirm", protect, async (req, res) => {
         paymentStatus: "completed",
         qrPayload: buildQRPayload(booking, { ...passengerData, seatNumber }),
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     // Mark seat as booked
