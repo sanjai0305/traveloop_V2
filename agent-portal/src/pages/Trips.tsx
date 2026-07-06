@@ -1679,10 +1679,6 @@ export const Trips: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                )}                       })}
-                      </div>
-                    )}
-                  </div>
                 )}
 
                 {/* STEP 5: Hotels & Food */}
