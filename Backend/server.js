@@ -166,9 +166,27 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  skip: (req) => req.originalUrl.startsWith("/api/admin"),
   message: {
     success: false,
     message: "Too many requests, please try again later.",
+  },
+});
+
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  skip: (req) => {
+    // Bypass rate limiting entirely for authenticated admin requests
+    const authHeader = req.headers.authorization;
+    return authHeader && authHeader.startsWith("Bearer ");
+  },
+  message: {
+    success: false,
+    message: "Too many admin requests, please try again later.",
   },
 });
 
@@ -209,6 +227,8 @@ const corsOptions = {
     return callback(null, false);
   },
   credentials: true,
+  methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Authorization", "Content-Type"]
 };
 
 app.use(cors(corsOptions));
@@ -283,7 +303,7 @@ app.use("/api/master", masterRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/driver", driverRoutes);
 app.use("/api/boarding", boardingRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/admin", adminLimiter, adminRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/driver-updates", driverUpdatesRoutes);
 app.use("/api/trip-members", tripMembersRoutes);

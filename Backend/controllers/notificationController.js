@@ -1,7 +1,7 @@
 import Notification from "../models/Notification.js";
 
 // Socket.IO instance injected at server startup via setIo()
-let _io = null;
+export let _io = null;
 export const setIo = (io) => { _io = io; };
 
 /** Emit a notification to the user's personal socket room */

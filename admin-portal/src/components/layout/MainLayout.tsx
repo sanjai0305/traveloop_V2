@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
 import { useAuthStore } from "../../store/authStore";
 import api from "../../services/api";
 import {
@@ -42,8 +43,39 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       }
     };
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 10000); // refresh every 10s
-    return () => clearInterval(interval);
+
+    // 1. Slow polling fallback (30 seconds)
+    const interval = setInterval(fetchNotifications, 30000);
+
+    // 2. Real-time Socket.io listener
+    let socket: any = null;
+    try {
+      const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_SOCKET_URL;
+      const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "https://traveloopv2.duckdns.org";
+      
+      socket = io(socketUrl, {
+        transports: ["websocket"],
+        autoConnect: true
+      });
+
+      socket.on("connect", () => {
+        console.log("[Socket.io] Admin MainLayout connected:", socket.id);
+      });
+
+      socket.on("adminNotification", () => {
+        console.log("[Socket.io] Realtime notification received. Refreshing count...");
+        fetchNotifications();
+      });
+    } catch (socketErr) {
+      console.warn("[Socket.io] Error initializing socket in MainLayout:", socketErr);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (socket) {
+        socket.disconnect();
+      }
+    };
   }, []);
 
   const handleLogout = () => {

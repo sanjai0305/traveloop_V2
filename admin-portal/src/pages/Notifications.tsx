@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import api from "../services/api";
 import { Bell, Check, Clock, Radio, RefreshCw } from "lucide-react";
 
@@ -31,6 +32,41 @@ export const Notifications: React.FC = () => {
 
   useEffect(() => {
     loadNotifications();
+
+    let socket: any = null;
+    try {
+      const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_SOCKET_URL;
+      const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "https://traveloopv2.duckdns.org";
+      
+      socket = io(socketUrl, {
+        transports: ["websocket"],
+        autoConnect: true
+      });
+
+      socket.on("adminNotification", () => {
+        console.log("[Socket.io] Realtime notification received on Alerts page. Reloading...");
+        // Fetch new notifications without setting global loading spinner to avoid jarring layout shifts
+        const refreshAlerts = async () => {
+          try {
+            const res = await api.get("/admin/notifications");
+            if (res.data.success) {
+              setNotifications(res.data.notifications);
+            }
+          } catch (err) {
+            console.error("Failed to refresh alerts:", err);
+          }
+        };
+        refreshAlerts();
+      });
+    } catch (socketErr) {
+      console.warn("[Socket.io] Socket initialization error in Alerts page:", socketErr);
+    }
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
   }, []);
 
   const handleMarkAsRead = async (id: string) => {

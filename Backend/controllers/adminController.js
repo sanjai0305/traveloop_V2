@@ -1302,112 +1302,132 @@ export const updateReferralSettings = async (req, res) => {
   } = req.body;
 
   try {
-    if (enabled !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_enabled" },
-        { value: enabled === true },
-        { upsert: true }
-      );
+    // 1. Resolve and normalize keys
+    const enabledVal = enabled !== undefined ? enabled : req.body.referralEnabled;
+    const discountVal = discountPercentage !== undefined ? discountPercentage : req.body.referralDiscountPercent;
+    const coinVal = coinReward !== undefined ? coinReward : req.body.inviterCoins;
+    
+    const scratchEnabledVal = referral_scratch_rewards_enabled !== undefined ? referral_scratch_rewards_enabled : req.body.scratchRewardsEnabled;
+    const travelCoinsEnabledVal = referral_travel_coins_enabled !== undefined ? referral_travel_coins_enabled : req.body.travelCoinsEnabled;
+    
+    let couponExpiryEnabledVal = referral_coupon_expiry_enabled;
+    if (couponExpiryEnabledVal === undefined) {
+      couponExpiryEnabledVal = req.body.couponExpiryEnabled !== undefined ? req.body.couponExpiryEnabled : req.body.couponExpiry;
     }
-    if (discountPercentage !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_discount_percentage" },
-        { value: discountPercentage },
-        { upsert: true }
-      );
+    
+    let minRewardVal = referral_min_reward;
+    if (minRewardVal === undefined) {
+      minRewardVal = req.body.minimumReward !== undefined ? req.body.minimumReward : req.body.minRewardPercent;
     }
-    if (coinReward !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_coin_reward" },
-        { value: coinReward },
-        { upsert: true }
-      );
+    
+    let maxRewardVal = referral_max_reward;
+    if (maxRewardVal === undefined) {
+      maxRewardVal = req.body.maximumReward !== undefined ? req.body.maximumReward : req.body.maxRewardPercent;
     }
-    if (referral_scratch_rewards_enabled !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_scratch_rewards_enabled" },
-        { value: referral_scratch_rewards_enabled === true },
-        { upsert: true }
-      );
+    
+    const bronzeWeightVal = referral_prob_bronze !== undefined ? referral_prob_bronze : (req.body.bronzeWeight !== undefined ? req.body.bronzeWeight : req.body.bronze);
+    const silverWeightVal = referral_prob_silver !== undefined ? referral_prob_silver : (req.body.silverWeight !== undefined ? req.body.silverWeight : req.body.silver);
+    const goldWeightVal = referral_prob_gold !== undefined ? referral_prob_gold : (req.body.goldWeight !== undefined ? req.body.goldWeight : req.body.gold);
+    const diamondWeightVal = referral_prob_diamond !== undefined ? referral_prob_diamond : (req.body.diamondWeight !== undefined ? req.body.diamondWeight : req.body.diamond);
+    
+    const defaultSlotsVal = defaultTripSlots !== undefined ? defaultTripSlots : (req.body.defaultSlots !== undefined ? req.body.defaultSlots : req.body.defaultTripSlots);
+    const extraSlotsVal = extraSlotsPerReferral !== undefined ? extraSlotsPerReferral : req.body.extraSlotsPerReferral;
+    const maxSlotsVal = maxSlots !== undefined ? maxSlots : (req.body.bonusCap !== undefined ? req.body.bonusCap : req.body.maxSlots);
+    const approvalHoursVal = approvalTimeLimit !== undefined ? approvalTimeLimit : (req.body.approvalHours !== undefined ? req.body.approvalHours : req.body.approvalTimeLimit);
+    
+    const tripSlotBonusEnabledVal = tripSlotBonusEnabled !== undefined ? tripSlotBonusEnabled : (req.body.tripSlotBonus !== undefined ? req.body.tripSlotBonus : req.body.slotBonusEnabled);
+    const slotPriceVal = slotPrice !== undefined ? slotPrice : req.body.slotPrice;
+    const slotPurchaseEnabledVal = slotPurchaseEnabled !== undefined ? slotPurchaseEnabled : req.body.slotPurchaseEnabled;
+
+    // 2. Prepare SystemSetting dictionary
+    const settingsToSave = {};
+    if (enabledVal !== undefined) settingsToSave.referral_enabled = enabledVal === true;
+    if (discountVal !== undefined) settingsToSave.referral_discount_percentage = Number(discountVal);
+    if (coinVal !== undefined) settingsToSave.referral_coin_reward = Number(coinVal);
+    if (scratchEnabledVal !== undefined) settingsToSave.referral_scratch_rewards_enabled = scratchEnabledVal === true;
+    if (travelCoinsEnabledVal !== undefined) settingsToSave.referral_travel_coins_enabled = travelCoinsEnabledVal === true;
+    
+    if (couponExpiryEnabledVal !== undefined) {
+      settingsToSave.referral_coupon_expiry_enabled = couponExpiryEnabledVal === true || couponExpiryEnabledVal === "true" || typeof couponExpiryEnabledVal === "number";
+      settingsToSave.couponExpiry = typeof couponExpiryEnabledVal === "number" ? couponExpiryEnabledVal : 30;
     }
-    if (referral_travel_coins_enabled !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_travel_coins_enabled" },
-        { value: referral_travel_coins_enabled === true },
-        { upsert: true }
-      );
+    
+    if (minRewardVal !== undefined) {
+      settingsToSave.referral_min_reward = Number(minRewardVal);
+      settingsToSave.minimumReward = Number(minRewardVal);
     }
-    if (referral_coupon_expiry_enabled !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_coupon_expiry_enabled" },
-        { value: referral_coupon_expiry_enabled === true },
-        { upsert: true }
-      );
+    if (maxRewardVal !== undefined) {
+      settingsToSave.referral_max_reward = Number(maxRewardVal);
+      settingsToSave.maximumReward = Number(maxRewardVal);
     }
-    if (referral_min_reward !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_min_reward" },
-        { value: Number(referral_min_reward) },
-        { upsert: true }
-      );
+    if (bronzeWeightVal !== undefined) {
+      settingsToSave.referral_prob_bronze = Number(bronzeWeightVal);
+      settingsToSave.bronze = Number(bronzeWeightVal);
     }
-    if (referral_max_reward !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_max_reward" },
-        { value: Number(referral_max_reward) },
-        { upsert: true }
-      );
+    if (silverWeightVal !== undefined) {
+      settingsToSave.referral_prob_silver = Number(silverWeightVal);
+      settingsToSave.silver = Number(silverWeightVal);
     }
-    if (referral_prob_bronze !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_prob_bronze" },
-        { value: Number(referral_prob_bronze) },
-        { upsert: true }
-      );
+    if (goldWeightVal !== undefined) {
+      settingsToSave.referral_prob_gold = Number(goldWeightVal);
+      settingsToSave.gold = Number(goldWeightVal);
     }
-    if (referral_prob_silver !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_prob_silver" },
-        { value: Number(referral_prob_silver) },
-        { upsert: true }
-      );
+    if (diamondWeightVal !== undefined) {
+      settingsToSave.referral_prob_diamond = Number(diamondWeightVal);
+      settingsToSave.diamond = Number(diamondWeightVal);
     }
-    if (referral_prob_gold !== undefined) {
-      await SystemSetting.findOneAndUpdate(
-        { key: "referral_prob_gold" },
-        { value: Number(referral_prob_gold) },
-        { upsert: true }
-      );
+    if (tripSlotBonusEnabledVal !== undefined) {
+      settingsToSave.slotBonusEnabled = tripSlotBonusEnabledVal === true;
+      settingsToSave.tripSlotBonus = tripSlotBonusEnabledVal === true;
     }
-    if (referral_prob_diamond !== undefined) {
+    if (extraSlotsVal !== undefined) {
+      settingsToSave.extraSlotsPerReferral = Number(extraSlotsVal);
+    }
+    if (maxSlotsVal !== undefined) {
+      settingsToSave.bonusCap = Number(maxSlotsVal);
+    }
+    if (defaultSlotsVal !== undefined) {
+      settingsToSave.defaultSlots = Number(defaultSlotsVal);
+    }
+    if (approvalHoursVal !== undefined) {
+      settingsToSave.approvalHours = Number(approvalHoursVal);
+    }
+    if (slotPurchaseEnabledVal !== undefined) {
+      settingsToSave.slotPurchaseEnabled = slotPurchaseEnabledVal === true;
+    }
+    if (slotPriceVal !== undefined) {
+      settingsToSave.slotPrice = Number(slotPriceVal);
+    }
+
+    // 3. Save all to SystemSetting
+    for (const [key, value] of Object.entries(settingsToSave)) {
       await SystemSetting.findOneAndUpdate(
-        { key: "referral_prob_diamond" },
-        { value: Number(referral_prob_diamond) },
+        { key },
+        { value },
         { upsert: true }
       );
     }
 
-    // Update AgentSettings
+    // 4. Update AgentSettings
     const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
+    const agentSettingsUpdate = {};
+    if (defaultSlotsVal !== undefined) agentSettingsUpdate.defaultTripSlots = Number(defaultSlotsVal);
+    if (extraSlotsVal !== undefined) agentSettingsUpdate.extraSlotsPerReferral = Number(extraSlotsVal);
+    if (maxSlotsVal !== undefined) agentSettingsUpdate.maxSlots = Number(maxSlotsVal);
+    if (approvalHoursVal !== undefined) agentSettingsUpdate.approvalTimeLimit = Number(approvalHoursVal);
+    if (enabledVal !== undefined) agentSettingsUpdate.referralEnabled = enabledVal === true;
+    if (discountVal !== undefined) agentSettingsUpdate.referralDiscountPercent = Number(discountVal);
+    if (coinVal !== undefined) agentSettingsUpdate.inviterCoins = Number(coinVal);
+    if (scratchEnabledVal !== undefined) agentSettingsUpdate.scratchRewardsEnabled = scratchEnabledVal === true;
+    if (minRewardVal !== undefined) agentSettingsUpdate.minRewardPercent = Number(minRewardVal);
+    if (maxRewardVal !== undefined) agentSettingsUpdate.maxRewardPercent = Number(maxRewardVal);
+    if (tripSlotBonusEnabledVal !== undefined) agentSettingsUpdate.tripSlotBonusEnabled = tripSlotBonusEnabledVal === true;
+    if (slotPriceVal !== undefined) agentSettingsUpdate.slotPrice = Number(slotPriceVal);
+    if (slotPurchaseEnabledVal !== undefined) agentSettingsUpdate.slotPurchaseEnabled = slotPurchaseEnabledVal === true;
+
     await AgentSettings.findOneAndUpdate(
       { settingId: "global" },
-      {
-        $set: {
-          ...(defaultTripSlots !== undefined && { defaultTripSlots: Number(defaultTripSlots) }),
-          ...(extraSlotsPerReferral !== undefined && { extraSlotsPerReferral: Number(extraSlotsPerReferral) }),
-          ...(maxSlots !== undefined && { maxSlots: Number(maxSlots) }),
-          ...(approvalTimeLimit !== undefined && { approvalTimeLimit: Number(approvalTimeLimit) }),
-          ...(referralEnabled !== undefined && { referralEnabled: referralEnabled === true }),
-          ...(referralDiscountPercent !== undefined && { referralDiscountPercent: Number(referralDiscountPercent) }),
-          ...(inviterCoins !== undefined && { inviterCoins: Number(inviterCoins) }),
-          ...(scratchRewardsEnabled !== undefined && { scratchRewardsEnabled: scratchRewardsEnabled === true }),
-          ...(minRewardPercent !== undefined && { minRewardPercent: Number(minRewardPercent) }),
-          ...(maxRewardPercent !== undefined && { maxRewardPercent: Number(maxRewardPercent) }),
-          ...(tripSlotBonusEnabled !== undefined && { tripSlotBonusEnabled: tripSlotBonusEnabled === true }),
-          ...(slotPrice !== undefined && { slotPrice: Number(slotPrice) }),
-          ...(slotPurchaseEnabled !== undefined && { slotPurchaseEnabled: slotPurchaseEnabled === true }),
-        }
-      },
+      { $set: agentSettingsUpdate },
       { upsert: true }
     );
 
