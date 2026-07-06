@@ -190,6 +190,7 @@ export const TripDetails = () => {
         }
       } catch (err) {
         console.warn("Error fetching referral info:", err);
+      }
     };
     fetchReferralInfo();
   }, []);
