@@ -55,6 +55,8 @@ const UPIPaymentModal = ({
   onSuccess,  // (bookingId: string) => void
   onCancel,
   onClose,
+  onEditBooking,
+  onPaymentStarted,
 }) => {
   const toast = useToast();
 
@@ -94,10 +96,18 @@ const UPIPaymentModal = ({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  // Auto-trigger Razorpay checkout on mount
+  useEffect(() => {
+    handlePayNow();
+  }, []);
+
   // ── Main payment handler ───────────────────────────────────────────────────
   const handlePayNow = async () => {
     setError(null);
     setPhase("loading");
+    if (onPaymentStarted) {
+      onPaymentStarted();
+    }
 
     const localUser = JSON.parse(localStorage.getItem("user") || "{}");
     const localUserId = localUser?._id || localUser?.id;
@@ -522,13 +532,24 @@ const UPIPaymentModal = ({
               </button>
             )}
 
+            {/* Edit Booking */}
+            {phase !== "success" && onEditBooking && (
+              <button
+                type="button"
+                onClick={onEditBooking}
+                className="w-full py-2.5 border border-slate-800 hover:border-slate-700 text-slate-400 font-bold text-xs uppercase tracking-wider rounded-2xl transition-all flex items-center justify-center gap-1.5"
+              >
+                Change Seats or Passengers
+              </button>
+            )}
+
             {/* Cancel */}
             <button
               type="button"
               onClick={onCancel}
-              className="w-full py-2.5 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 font-bold text-xs uppercase tracking-wider rounded-2xl transition-all"
+              className="w-full py-2.5 border border-slate-800 hover:border-rose-500/30 text-slate-405 hover:text-rose-400 font-bold text-xs uppercase tracking-wider rounded-2xl transition-all"
             >
-              Cancel Booking
+              Cancel Booking & Release Seats
             </button>
 
             {/* Security note */}

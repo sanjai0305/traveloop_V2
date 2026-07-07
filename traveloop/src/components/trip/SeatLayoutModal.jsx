@@ -170,16 +170,18 @@ const SeatLayoutModal = ({
   requiredSeats,       // number of seats user must select
   onConfirm,           // (selectedSeats: string[], passengerList: Passenger[]) => void
   onClose,
+  initialSelected = [],
+  initialPassengerDetails = {},
 }) => {
   const toast = useToast();
   const { user, login, updateUser } = useAuth();
   const [seats, setSeats] = useState([]);
   const [counters, setCounters] = useState({ available: 0, male: 0, female: 0, reserved: 0 });
   const [layout, setLayout] = useState({ rows: [], seatsPerRow: 4 });
-  const [selected, setSelected] = useState([]);
+  const [selected, setSelected] = useState(initialSelected || []);
   
   // Passenger assignments indexed by seat number
-  const [passengerDetails, setPassengerDetails] = useState({});
+  const [passengerDetails, setPassengerDetails] = useState(initialPassengerDetails || {});
   
   // Active seat drawer state
   const [drawerSeat, setDrawerSeat] = useState(null);
@@ -673,6 +675,16 @@ const SeatLayoutModal = ({
     const failedSeats = [];
 
     for (const seatNumber of selected) {
+      // Prevent duplicate seat reservation requests if already reserved by me
+      const seatObj = seats.find(s => s.seatNumber === seatNumber);
+      const currentUserId = user?._id || user?.id;
+      const isAlreadyReservedByMe = seatObj && seatObj.status === "reserved" && currentUserId && String(seatObj.reservedByUserId) === String(currentUserId);
+      
+      if (isAlreadyReservedByMe) {
+        console.log(`[SeatLayoutModal] Seat ${seatNumber} is already reserved by current user ${currentUserId}, skipping reserve API call.`);
+        continue;
+      }
+
       try {
         const res = await fetch(getApiUrl("seats/reserve"), {
           method: "POST",
