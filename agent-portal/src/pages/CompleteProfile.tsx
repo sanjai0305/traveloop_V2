@@ -520,7 +520,7 @@ export const CompleteProfile: React.FC = () => {
                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Terms & Conditions</h4>
                     <p className="text-[11px] text-slate-400 mb-3">Review the TravelLoop Agent usage and guidelines.</p>
                     <a
-                      href="/legal-site/index.html?doc=terms"
+                      href="https://traveloop-v2-j88c.vercel.app/index.html?doc=terms"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
@@ -535,7 +535,7 @@ export const CompleteProfile: React.FC = () => {
                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Privacy Policy</h4>
                     <p className="text-[11px] text-slate-400 mb-3">Learn how we protect and process business data.</p>
                     <a
-                      href="/legal-site/index.html?doc=privacy"
+                      href="https://traveloop-v2-j88c.vercel.app/index.html?doc=privacy"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
