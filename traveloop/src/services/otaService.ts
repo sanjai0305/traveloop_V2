@@ -201,3 +201,14 @@ export class OTAService {
     }
 
 }
+
+export const BUNDLED_VERSION = "1.0.0";
+
+export class OTAServiceError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "OTAServiceError";
+    }
+}
+
+export default OTAService;
