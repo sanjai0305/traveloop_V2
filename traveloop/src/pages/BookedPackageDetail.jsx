@@ -284,7 +284,8 @@ const BookedPackageDetail = () => {
     }
 
     if (booking.qrUnlocked || booking.boardingWindowOpen || trip.boardingStatus === "OPEN") {
-      if (qrToken || booking.token || booking.qrCode) {
+      const hasToken = (qrToken && qrToken.startsWith("ey")) || (booking.token && booking.token.startsWith("ey"));
+      if (hasToken || booking.qrCode) {
         return { label: "QR Active", disabled: false, statusClass: "qr-ready" };
       }
       return { label: "Generate Boarding Pass", disabled: false, statusClass: "open" };
@@ -583,8 +584,10 @@ const BookedPackageDetail = () => {
         if (data.booking.qrCode) {
           setQrImage(data.booking.qrCode);
         }
-        if (data.booking.token) {
+        if (data.booking.token && data.booking.token.startsWith("ey")) {
           setQrToken(data.booking.token);
+        } else {
+          setQrToken(null);
         }
         
         if (data.userTrip) {
@@ -2605,7 +2608,7 @@ const BookedPackageDetail = () => {
                 );
               }
 
-              const hasGenerated = qrToken || booking.token;
+              const hasGenerated = (qrToken && qrToken.startsWith("ey")) || (booking.token && booking.token.startsWith("ey"));
 
               return (
                 <motion.button
@@ -2663,9 +2666,16 @@ const BookedPackageDetail = () => {
                     alt="Boarding Pass QR Code"
                     className="w-48 h-48 mx-auto object-contain"
                   />
-                ) : qrToken ? (
+                ) : qrToken && qrToken.startsWith("ey") ? (
                   <QRCodeSVG
                     value={qrToken}
+                    size={200}
+                    level="H"
+                    includeMargin={false}
+                  />
+                ) : (booking.token && booking.token.startsWith("ey")) ? (
+                  <QRCodeSVG
+                    value={booking.token}
                     size={200}
                     level="H"
                     includeMargin={false}

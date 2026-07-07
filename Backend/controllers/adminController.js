@@ -42,7 +42,18 @@ export const loginAdmin = async (req, res) => {
     let adminUser = await Admin.findOne({ email: email.toLowerCase() });
 
     // Seed default Super Admin on first login if no admin exists
-    if (!adminUser && email.toLowerCase() === "admin@traveloop.com" && password === "adminpassword") {
+    if (!adminUser && email.toLowerCase() === "sanjaim0940r@gmail.com" && password === "Sanjai@2006") {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash("Sanjai@2006", salt);
+      adminUser = await Admin.create({
+        name: "Traveloop Super Admin",
+        email: "sanjaim0940r@gmail.com",
+        passwordHash,
+        role: "Super Admin",
+        twoFactorEnabled: true,
+      });
+      console.log("[Admin Auth] Seeded default Super Admin user (sanjaim0940r@gmail.com).");
+    } else if (!adminUser && email.toLowerCase() === "admin@traveloop.com" && password === "adminpassword") {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash("adminpassword", salt);
       adminUser = await Admin.create({
@@ -52,7 +63,7 @@ export const loginAdmin = async (req, res) => {
         role: "Super Admin",
         twoFactorEnabled: true,
       });
-      console.log("[Admin Auth] Seeded default Super Admin user.");
+      console.log("[Admin Auth] Seeded legacy default Super Admin user.");
     }
 
     if (!adminUser) {

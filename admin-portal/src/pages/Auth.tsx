@@ -36,8 +36,8 @@ export const Auth: React.FC = () => {
     setError(null);
     setLoading(true);
 
-    const requestEmail = email.trim().toLowerCase() === "sanjaim0940r@gmail.com" ? "admin@traveloop.com" : email;
-    const requestPassword = (email.trim().toLowerCase() === "sanjaim0940r@gmail.com" && password === "Sanjai@2006") ? "adminpassword" : password;
+    const requestEmail = email.trim().toLowerCase();
+    const requestPassword = password;
 
     try {
       const res = await api.post("/admin/login", { email: requestEmail, password: requestPassword });
@@ -69,7 +69,7 @@ export const Auth: React.FC = () => {
     setError(null);
     setLoading(true);
 
-    const requestEmail = email.trim().toLowerCase() === "sanjaim0940r@gmail.com" ? "admin@traveloop.com" : email;
+    const requestEmail = email.trim().toLowerCase();
 
     try {
       const res = await api.post("/admin/verify-2fa", { email: requestEmail, otp });
@@ -86,8 +86,8 @@ export const Auth: React.FC = () => {
 
   const handleGoogleLogin = () => {
     // Simulate admin credentials for easy verification
-    setEmail("admin@traveloop.com");
-    setPassword("adminpassword");
+    setEmail("sanjaim0940r@gmail.com");
+    setPassword("Sanjai@2006");
     setError(null);
     // Notify user to click Submit to complete login flow
     setError("Google Sign-In simulated. Please click 'Authenticate Admin' below.");

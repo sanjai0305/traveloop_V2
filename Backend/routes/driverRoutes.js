@@ -518,10 +518,12 @@ const scanBoardingHandler = async (req, res) => {
       return res.status(400).json({ success: false, message: "qrToken required" });
     }
 
-    const qrSecret = process.env.DRIVER_QR_SECRET || process.env.JWT_SECRET || "super_secret_jwt_key_for_local_development_traveloop";
+    const qrSecret = (process.env.DRIVER_QR_SECRET && process.env.DRIVER_QR_SECRET.trim()) || 
+                    (process.env.JWT_SECRET && process.env.JWT_SECRET.trim()) || 
+                    "super_secret_jwt_key_for_local_development_traveloop";
     let decoded;
     try {
-      const decodedText = Buffer.from(qrToken, "base64").toString("utf-8");
+      const decodedText = Buffer.from(decodeURIComponent(qrToken.trim()), "base64").toString("utf-8");
       decoded = JSON.parse(decodedText);
     } catch (err) {
       console.log("QR decoding failed:", err.message);
@@ -568,6 +570,16 @@ const scanBoardingHandler = async (req, res) => {
     const trip = booking.tripId;
     const user = booking.userId;
 
+    // Validate passenger exists
+    if (!user) {
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "Passenger Not Found" });
+    }
+
+    // Validate trip exists
+    if (!trip) {
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "Trip Not Found" });
+    }
+
     // Check cancelled status
     const bStatusLower = (booking.bookingStatus || booking.status || "").toLowerCase();
     const pStatusLower = (booking.paymentStatus || "").toLowerCase();
@@ -575,8 +587,18 @@ const scanBoardingHandler = async (req, res) => {
       return res.status(400).json({ success: false, code: "BOOKING_CANCELLED", message: "Booking Cancelled" });
     }
 
+    // Validate booking status = confirmed
+    if (bStatusLower !== "confirmed") {
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "Booking Status Not Confirmed" });
+    }
+
+    // Validate trip approved
+    if (trip.approvalStatus !== "approved") {
+      return res.status(400).json({ success: false, code: "QR_TAMPERED", message: "Trip Not Approved" });
+    }
+
     // Check paymentStatus
-    if (pStatusLower !== "paid" && pStatusLower !== "confirmed") {
+    if (pStatusLower !== "paid" && pStatusLower !== "confirmed" && pStatusLower !== "completed") {
       return res.status(400).json({
         success: false,
         code: "PAYMENT_PENDING",
