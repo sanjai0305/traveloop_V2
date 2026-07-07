@@ -172,7 +172,7 @@ const SeatLayoutModal = ({
   onClose,
 }) => {
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, login, updateUser } = useAuth();
   const [seats, setSeats] = useState([]);
   const [counters, setCounters] = useState({ available: 0, male: 0, female: 0, reserved: 0 });
   const [layout, setLayout] = useState({ rows: [], seatsPerRow: 4 });
@@ -195,17 +195,22 @@ const SeatLayoutModal = ({
     verifiedAt: null,
   });
 
+  // ── Drawer OTP state (backend-issued, no Firebase dependency) ─────────────
   const [drawerOtpSending, setDrawerOtpSending] = useState(false);
   const [drawerOtpSent, setDrawerOtpSent] = useState(false);
-  const [drawerOtpCode, setDrawerOtpCode] = useState("");
+  const [drawerOtpBoxes, setDrawerOtpBoxes] = useState(["", "", "", "", "", ""]);
   const [drawerOtpVerifying, setDrawerOtpVerifying] = useState(false);
-  const [drawerConfirmationResult, setDrawerConfirmationResult] = useState(null);
   const [drawerOtpTimer, setDrawerOtpTimer] = useState(0);
+  const [drawerOtpSuccess, setDrawerOtpSuccess] = useState(false);
+  const [drawerOtpError, setDrawerOtpError] = useState("");
+  const [checkingVerification, setCheckingVerification] = useState(false);
+  const [drawerDebugOtp, setDrawerDebugOtp] = useState(null);
   const drawerOtpTimerRef = useRef(null);
+  const drawerOtpBoxRefs = useRef([]);
 
-  const startDrawerOtpTimer = () => {
+  const startDrawerOtpTimer = (seconds = 30) => {
     if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
-    setDrawerOtpTimer(60);
+    setDrawerOtpTimer(seconds);
     drawerOtpTimerRef.current = setInterval(() => {
       setDrawerOtpTimer((prev) => {
         if (prev <= 1) {
@@ -217,89 +222,92 @@ const SeatLayoutModal = ({
     }, 1000);
   };
 
+  // ── Send OTP via backend (JWT-protected, no Firebase dependency) ────────────
   const handleSendDrawerOtp = async (phone) => {
-    if (!/^[6-9][0-9]{9}$/.test(phone)) {
-      toast.error("Please enter a valid 10-digit mobile number starting with 6-9");
+    const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+    if (!/^[6-9][0-9]{9}$/.test(cleanPhone)) {
+      toast.error("Please enter a valid 10-digit Indian mobile number.");
       return;
     }
     setDrawerOtpSending(true);
+    setDrawerOtpError("");
     try {
-      const { RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
-      const { auth } = await import("../../services/firebase");
-
-      if (!window.drawerRecaptchaVerifier) {
-        window.drawerRecaptchaVerifier = new RecaptchaVerifier(auth, "passenger-recaptcha-container", {
-          size: "invisible",
-          callback: (response) => {
-            console.log("reCAPTCHA solved");
-          },
-          "expired-callback": () => {
-            console.log("reCAPTCHA expired");
-          }
-        });
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("passenger/send-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: cleanPhone })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDrawerOtpSent(true);
+        setDrawerOtpBoxes(["", "", "", "", "", ""]);
+        setDrawerDebugOtp(data.debugOtp || null);
+        startDrawerOtpTimer(30);
+        toast.success(data.message || "OTP sent to your registered email!");
+        // Auto-focus first box
+        setTimeout(() => drawerOtpBoxRefs.current[0]?.focus(), 100);
+      } else {
+        setDrawerOtpError(data.message || "Failed to send OTP.");
+        toast.error(data.message || "Failed to send OTP.");
       }
-
-      const formattedPhone = `+91${phone}`;
-      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.drawerRecaptchaVerifier);
-      setDrawerConfirmationResult(confirmationResult);
-      setDrawerOtpSent(true);
-      startDrawerOtpTimer();
-      toast.success("Verification SMS sent successfully!");
     } catch (err) {
-      console.error("Firebase SMS send failure:", err);
-      toast.error(err.message || "Failed to send verification SMS.");
+      console.error("[PassengerOTP] send-otp error:", err);
+      setDrawerOtpError("Network error sending OTP. Please try again.");
+      toast.error("Network error. Please check your connection.");
     } finally {
       setDrawerOtpSending(false);
     }
   };
 
-  const handleVerifyDrawerOtp = async (code, phone) => {
-    if (!code || code.length < 6) {
-      toast.error("Please enter a 6-digit OTP code");
+  // ── Verify OTP via backend ────────────────────────────────────────────────
+  const handleVerifyDrawerOtp = async (phone) => {
+    const code = drawerOtpBoxes.join("");
+    if (code.length < 6) {
+      setDrawerOtpError("Please enter all 6 digits of the OTP.");
       return;
     }
     setDrawerOtpVerifying(true);
+    setDrawerOtpError("");
     try {
-      if (!drawerConfirmationResult) {
-        throw new Error("No active phone verification session found.");
-      }
-      const result = await drawerConfirmationResult.confirm(code);
-      const idToken = await result.user.getIdToken();
-
-      // If bookingForOthers is FALSE, we verify and sync the account owner's phone to their profile!
-      if (!formData.bookingForOthers) {
-        const token = localStorage.getItem("token");
-        const res = await fetch(getApiUrl("user/verify-phone"), {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ phone, idToken, isAlternate: false })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Verification sync failed on server.");
+      const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("passenger/verify-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: cleanPhone, otp: code })
+      });
+      const data = await res.json();
+      if (data.success && data.verified) {
+        // Merge updated user into context so phoneVerified syncs immediately
+        if (data.user) {
+          const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+          const mergedUser = { ...cachedUser, ...data.user };
+          localStorage.setItem("user", JSON.stringify(mergedUser));
+          updateUser(mergedUser);
         }
-        // Update user context
-        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
-        const mergedUser = { ...cachedUser, ...data.user };
-        localStorage.setItem("user", JSON.stringify(mergedUser));
-        login(mergedUser, token);
+        setDrawerOtpSuccess(true);
+        if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
+        // Animate the success state then close OTP section
+        setTimeout(() => {
+          setFormData((prev) => ({
+            ...prev,
+            travelerPhone: phone,
+            travelerPhoneVerified: true,
+            verifiedAt: new Date().toISOString(),
+          }));
+          setDrawerOtpSent(false);
+          setDrawerOtpSuccess(false);
+          setDrawerOtpBoxes(["", "", "", "", "", ""]);
+          setDrawerDebugOtp(null);
+        }, 1800);
+        toast.success("Mobile number verified successfully! ✓");
+      } else {
+        setDrawerOtpError(data.message || "Invalid OTP. Please try again.");
       }
-
-      setFormData((prev) => ({
-        ...prev,
-        travelerPhone: phone,
-        travelerPhoneVerified: true,
-        verifiedAt: new Date().toISOString(),
-      }));
-      setDrawerOtpSent(false);
-      setDrawerOtpCode("");
-      toast.success("Mobile number verified successfully!");
     } catch (err) {
-      console.error("OTP verification failure:", err);
-      toast.error(err.message || "Invalid OTP code. Please try again.");
+      console.error("[PassengerOTP] verify-otp error:", err);
+      setDrawerOtpError("Network error. Please try again.");
     } finally {
       setDrawerOtpVerifying(false);
     }
@@ -431,7 +439,7 @@ const SeatLayoutModal = ({
     openPassengerDrawer(seatNum);
   };
 
-  const openPassengerDrawer = (seatNum) => {
+  const openPassengerDrawer = async (seatNum) => {
     const existing = passengerDetails[seatNum] || {};
     // Prefill first passenger with user profile if empty
     let initialName = existing.name || "";
@@ -442,23 +450,59 @@ const SeatLayoutModal = ({
       initialAge = user.age || "";
       initialGender = user.gender || "Male";
     }
-    
+
     const isBookingForOthers = existing.bookingForOthers || false;
-    const isPhoneVerified = existing.travelerPhoneVerified !== undefined 
-      ? existing.travelerPhoneVerified 
-      : (isBookingForOthers ? false : (user?.phoneVerified || user?.primaryVerified || false));
+    const isPhoneVerifiedFromProfile = user?.phoneVerified || user?.primaryVerified || user?.passengerVerified || false;
+
+    // Start with what we know from profile/existing
+    let isPhoneVerified = existing.travelerPhoneVerified !== undefined
+      ? existing.travelerPhoneVerified
+      : (isBookingForOthers ? false : isPhoneVerifiedFromProfile);
+
+    const phone = existing.travelerPhone || (isBookingForOthers ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""));
 
     setFormData({
       name: initialName,
       age: initialAge,
       gender: initialGender,
       bookingForOthers: isBookingForOthers,
-      travelerPhone: existing.travelerPhone || (isBookingForOthers ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || "")),
+      travelerPhone: phone,
       travelerPhoneVerified: isPhoneVerified,
       verifiedAt: existing.verifiedAt || null,
     });
     setDrawerSeat(seatNum);
+    setDrawerOtpSent(false);
+    setDrawerOtpBoxes(["", "", "", "", "", ""]);
+    setDrawerOtpError("");
+    setDrawerOtpSuccess(false);
+    setDrawerDebugOtp(null);
+
+    // Auto-detect existing verification from backend (skip OTP if already done)
+    if (!isBookingForOthers && !isPhoneVerified && phone) {
+      setCheckingVerification(true);
+      try {
+        const token = localStorage.getItem("token");
+        const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+        const res = await fetch(
+          getApiUrl(`passenger/check-verification?phone=${cleanPhone}`),
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await res.json();
+        if (data.success && data.verified) {
+          setFormData((prev) => ({
+            ...prev,
+            travelerPhoneVerified: true,
+            verifiedAt: data.passengerVerifiedAt || new Date().toISOString(),
+          }));
+        }
+      } catch (err) {
+        console.warn("[PassengerOTP] check-verification failed:", err.message);
+      } finally {
+        setCheckingVerification(false);
+      }
+    }
   };
+
 
   // ── Save Passenger Form Details ─────────────────────────────────────────────
   const handleSavePassenger = (e) => {
@@ -1185,158 +1229,294 @@ const SeatLayoutModal = ({
                 </div>
 
                 {/* Contact Verification Cards */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4.5 space-y-4">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-2 mb-1 flex items-center gap-1.5">
-                    📞 Traveler Contact Details
-                  </p>
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                  <div className="px-4 pt-3.5 pb-2.5 border-b border-slate-800 flex items-center gap-1.5">
+                    <ShieldCheck size={11} className="text-teal-400" />
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      Passenger Verification
+                    </p>
+                  </div>
 
-                  {!formData.bookingForOthers ? (
-                    /* Booking for Self */
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Email Address</label>
-                        <div className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
-                          <span>{user?.email || "No email available"}</span>
-                          <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
-                        </div>
-                      </div>
-
-                      {user?.phoneVerified || user?.primaryVerified ? (
-                        /* Scenario 2: Returning traveler (Verified) */
+                  <div className="p-4 space-y-3">
+                    {!formData.bookingForOthers ? (
+                      /* ── Booking for Self ──────────────────────────────── */
+                      <div className="space-y-3">
+                        {/* Email — always verified (account email) */}
                         <div>
-                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
-                          <div className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
-                            <span>{user?.phone || user?.phoneNumber || user?.primaryMobile}</span>
-                            <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
+                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Email Address</label>
+                          <div className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                            <span className="truncate max-w-[160px]">{user?.email || "No email available"}</span>
+                            <span className="text-[9px] font-black text-teal-400 tracking-wider shrink-0 ml-2">✓ Verified</span>
                           </div>
                         </div>
-                      ) : (
-                        /* Scenario 1: First-time traveler (Unverified) */
-                        <div className="space-y-3">
+
+                        {/* Mobile — check-verification loading state */}
+                        {checkingVerification ? (
+                          <div className="flex items-center gap-2 py-2 text-[10px] text-slate-400 font-semibold">
+                            <Loader2 size={11} className="animate-spin text-teal-400" />
+                            Checking verification status...
+                          </div>
+                        ) : formData.travelerPhoneVerified ? (
+                          /* Already verified — show badge */
                           <div>
                             <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
-                            <input
-                              type="tel"
-                              value={formData.travelerPhone}
-                              onChange={(e) => setFormData({ ...formData, travelerPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                              placeholder="Enter 10-digit number"
-                              disabled={formData.travelerPhoneVerified}
-                              className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                            />
+                            <div className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                              <span>{formData.travelerPhone || user?.phone || user?.phoneNumber || user?.primaryMobile}</span>
+                              <span className="text-[9px] font-black text-teal-400 tracking-wider shrink-0 ml-2">✓ Verified</span>
+                            </div>
                           </div>
-
-                          {formData.travelerPhoneVerified ? (
-                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
-                              <span>✓ Mobile Verified</span>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {!drawerOtpSent ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
-                                  disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
-                                  className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50"
-                                >
-                                  {drawerOtpSending ? "Sending OTP..." : "Verify Mobile Number"}
-                                </button>
-                              ) : (
-                                <div className="space-y-2">
-                                  <input
-                                    type="text"
-                                    maxLength="6"
-                                    value={drawerOtpCode}
-                                    onChange={(e) => setDrawerOtpCode(e.target.value.replace(/\D/g, ""))}
-                                    placeholder="Enter 6-digit OTP"
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-955 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
-                                  />
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleVerifyDrawerOtp(drawerOtpCode, formData.travelerPhone)}
-                                      disabled={drawerOtpVerifying || drawerOtpCode.length !== 6}
-                                      className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-all disabled:opacity-50"
-                                    >
-                                      {drawerOtpVerifying ? "Verifying..." : "Verify OTP"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setDrawerOtpSent(false)}
-                                      className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-xs font-bold"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* Booking for Others */
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Mobile Number</label>
-                        <input
-                          type="tel"
-                          value={formData.travelerPhone}
-                          onChange={(e) => setFormData({ ...formData, travelerPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                          placeholder="Enter Passenger Mobile"
-                          disabled={formData.travelerPhoneVerified}
-                          className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                        />
-                      </div>
-
-                      {formData.travelerPhoneVerified ? (
-                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
-                          <span>✓ Verified</span>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {!drawerOtpSent ? (
-                            <button
-                              type="button"
-                              onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
-                              disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
-                              className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50"
-                            >
-                              {drawerOtpSending ? "Sending OTP..." : "Send OTP"}
-                            </button>
-                          ) : (
-                            <div className="space-y-2">
+                        ) : (
+                          /* First-time / unverified */
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
                               <input
-                                type="text"
-                                maxLength="6"
-                                value={drawerOtpCode}
-                                onChange={(e) => setDrawerOtpCode(e.target.value.replace(/\D/g, ""))}
-                                placeholder="Enter 6-digit OTP"
-                                className="w-full px-4 py-3 rounded-xl border border-slate-805 bg-slate-955 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
+                                type="tel"
+                                value={formData.travelerPhone}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                  setFormData({ ...formData, travelerPhone: v });
+                                  setDrawerOtpSent(false);
+                                  setDrawerOtpBoxes(["", "", "", "", "", ""]);
+                                  setDrawerOtpError("");
+                                }}
+                                placeholder="Enter 10-digit number"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                               />
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleVerifyDrawerOtp(drawerOtpCode, formData.travelerPhone)}
-                                  disabled={drawerOtpVerifying || drawerOtpCode.length !== 6}
-                                  className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-all disabled:opacity-50"
-                                >
-                                  {drawerOtpVerifying ? "Verifying..." : "Verify OTP"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDrawerOtpSent(false)}
-                                  className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-xs font-bold"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
                             </div>
-                          )}
+
+                            {/* OTP Section */}
+                            {!drawerOtpSent ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
+                                disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
+                                className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              >
+                                {drawerOtpSending ? <><Loader2 size={11} className="animate-spin" /> Sending...</> : <><Phone size={11} /> Verify Mobile Number</>}
+                              </button>
+                            ) : drawerOtpSuccess ? (
+                              /* Success animation */
+                              <div className="flex flex-col items-center py-3 gap-2 animate-fade-in">
+                                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">
+                                  ✓
+                                </div>
+                                <p className="text-[10px] font-black text-emerald-400">Mobile Verified!</p>
+                              </div>
+                            ) : (
+                              /* 6-box OTP input */
+                              <div className="space-y-3 bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                                <div className="text-center">
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">OTP Verification</p>
+                                  <p className="text-[9px] text-slate-500 mt-0.5">Code sent to your email</p>
+                                </div>
+
+                                <div className="flex gap-1.5 justify-center">
+                                  {drawerOtpBoxes.map((val, idx) => (
+                                    <input
+                                      key={`dotp-${idx}`}
+                                      ref={(el) => (drawerOtpBoxRefs.current[idx] = el)}
+                                      id={`dotp-self-${idx}`}
+                                      type="text"
+                                      inputMode="numeric"
+                                      maxLength="1"
+                                      pattern="[0-9]*"
+                                      value={val}
+                                      onChange={(e) => {
+                                        const v = e.target.value.replace(/\D/g, "");
+                                        const boxes = [...drawerOtpBoxes];
+                                        boxes[idx] = v.slice(-1);
+                                        setDrawerOtpBoxes(boxes);
+                                        setDrawerOtpError("");
+                                        if (v && idx < 5) drawerOtpBoxRefs.current[idx + 1]?.focus();
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Backspace" && !drawerOtpBoxes[idx] && idx > 0) {
+                                          drawerOtpBoxRefs.current[idx - 1]?.focus();
+                                        }
+                                      }}
+                                      onPaste={(e) => {
+                                        e.preventDefault();
+                                        const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                                        if (pasted) {
+                                          const boxes = ["", "", "", "", "", ""];
+                                          pasted.split("").forEach((ch, i) => { if (i < 6) boxes[i] = ch; });
+                                          setDrawerOtpBoxes(boxes);
+                                          drawerOtpBoxRefs.current[Math.min(pasted.length, 5)]?.focus();
+                                        }
+                                      }}
+                                      className="w-9 h-11 rounded-xl border-2 border-slate-800 bg-slate-900 text-center font-black text-sm text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-all"
+                                    />
+                                  ))}
+                                </div>
+
+                                {/* Debug autofill */}
+                                {drawerDebugOtp && (
+                                  <div className="flex items-center justify-center gap-2 text-[9px] text-teal-400 font-mono bg-teal-500/5 border border-teal-500/10 rounded-lg px-2 py-1.5">
+                                    <span>Dev OTP: <strong>{drawerDebugOtp}</strong></span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDrawerOtpBoxes(String(drawerDebugOtp).split(""))}
+                                      className="px-1.5 py-0.5 bg-teal-500 text-slate-950 font-black rounded text-[8px] uppercase"
+                                    >Fill</button>
+                                  </div>
+                                )}
+
+                                {drawerOtpError && (
+                                  <p className="text-[9px] text-rose-400 font-bold text-center">{drawerOtpError}</p>
+                                )}
+
+                                {/* Resend timer */}
+                                <div className="flex items-center justify-between text-[9px]">
+                                  <span className="text-slate-500">
+                                    {drawerOtpTimer > 0 ? `Resend in ${drawerOtpTimer}s` : ""}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
+                                    disabled={drawerOtpTimer > 0 || drawerOtpSending}
+                                    className="text-teal-400 font-black disabled:opacity-40 disabled:cursor-not-allowed hover:text-teal-300"
+                                  >
+                                    {drawerOtpSending ? "Sending..." : "Resend OTP"}
+                                  </button>
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVerifyDrawerOtp(formData.travelerPhone)}
+                                    disabled={drawerOtpVerifying || drawerOtpBoxes.join("").length !== 6}
+                                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-[10px] uppercase tracking-wide transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                  >
+                                    {drawerOtpVerifying ? <><Loader2 size={11} className="animate-spin" /> Verifying...</> : <><Check size={11} /> Verify OTP</>}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setDrawerOtpSent(false); setDrawerOtpBoxes(["", "", "", "", "", ""]); setDrawerOtpError(""); }}
+                                    className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-[10px] font-bold"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* ── Booking for Others ────────────────────────────── */
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Mobile Number</label>
+                          <input
+                            type="tel"
+                            value={formData.travelerPhone}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, "").slice(0, 10);
+                              setFormData({ ...formData, travelerPhone: v });
+                              setDrawerOtpSent(false);
+                              setDrawerOtpBoxes(["", "", "", "", "", ""]);
+                              setDrawerOtpError("");
+                            }}
+                            placeholder="Enter Passenger Mobile"
+                            disabled={formData.travelerPhoneVerified}
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
                         </div>
-                      )}
-                    </div>
-                  )}
+
+                        {formData.travelerPhoneVerified ? (
+                          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center gap-2">
+                            <Check size={12} /> Passenger Verified
+                          </div>
+                        ) : !drawerOtpSent ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
+                            disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
+                            className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                          >
+                            {drawerOtpSending ? <><Loader2 size={11} className="animate-spin" /> Sending...</> : <><Phone size={11} /> Send OTP</>}
+                          </button>
+                        ) : drawerOtpSuccess ? (
+                          <div className="flex flex-col items-center py-3 gap-2">
+                            <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">✓</div>
+                            <p className="text-[10px] font-black text-emerald-400">Mobile Verified!</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 bg-slate-950 border border-slate-800 rounded-2xl p-3">
+                            <div className="text-center">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">OTP Verification</p>
+                              <p className="text-[9px] text-slate-500 mt-0.5">Code sent to your account email</p>
+                            </div>
+                            <div className="flex gap-1.5 justify-center">
+                              {drawerOtpBoxes.map((val, idx) => (
+                                <input
+                                  key={`dotp-oth-${idx}`}
+                                  ref={(el) => (drawerOtpBoxRefs.current[idx] = el)}
+                                  id={`dotp-others-${idx}`}
+                                  type="text"
+                                  inputMode="numeric"
+                                  maxLength="1"
+                                  pattern="[0-9]*"
+                                  value={val}
+                                  onChange={(e) => {
+                                    const v = e.target.value.replace(/\D/g, "");
+                                    const boxes = [...drawerOtpBoxes];
+                                    boxes[idx] = v.slice(-1);
+                                    setDrawerOtpBoxes(boxes);
+                                    setDrawerOtpError("");
+                                    if (v && idx < 5) drawerOtpBoxRefs.current[idx + 1]?.focus();
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Backspace" && !drawerOtpBoxes[idx] && idx > 0) {
+                                      drawerOtpBoxRefs.current[idx - 1]?.focus();
+                                    }
+                                  }}
+                                  onPaste={(e) => {
+                                    e.preventDefault();
+                                    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+                                    if (pasted) {
+                                      const boxes = ["", "", "", "", "", ""];
+                                      pasted.split("").forEach((ch, i) => { if (i < 6) boxes[i] = ch; });
+                                      setDrawerOtpBoxes(boxes);
+                                      drawerOtpBoxRefs.current[Math.min(pasted.length, 5)]?.focus();
+                                    }
+                                  }}
+                                  className="w-9 h-11 rounded-xl border-2 border-slate-800 bg-slate-900 text-center font-black text-sm text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-all"
+                                />
+                              ))}
+                            </div>
+                            {drawerDebugOtp && (
+                              <div className="flex items-center justify-center gap-2 text-[9px] text-teal-400 font-mono bg-teal-500/5 border border-teal-500/10 rounded-lg px-2 py-1.5">
+                                <span>Dev OTP: <strong>{drawerDebugOtp}</strong></span>
+                                <button type="button" onClick={() => setDrawerOtpBoxes(String(drawerDebugOtp).split(""))} className="px-1.5 py-0.5 bg-teal-500 text-slate-950 font-black rounded text-[8px] uppercase">Fill</button>
+                              </div>
+                            )}
+                            {drawerOtpError && <p className="text-[9px] text-rose-400 font-bold text-center">{drawerOtpError}</p>}
+                            <div className="flex items-center justify-between text-[9px]">
+                              <span className="text-slate-500">{drawerOtpTimer > 0 ? `Resend in ${drawerOtpTimer}s` : ""}</span>
+                              <button type="button" onClick={() => handleSendDrawerOtp(formData.travelerPhone)} disabled={drawerOtpTimer > 0 || drawerOtpSending} className="text-teal-400 font-black disabled:opacity-40 disabled:cursor-not-allowed hover:text-teal-300">
+                                {drawerOtpSending ? "Sending..." : "Resend OTP"}
+                              </button>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyDrawerOtp(formData.travelerPhone)}
+                                disabled={drawerOtpVerifying || drawerOtpBoxes.join("").length !== 6}
+                                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-[10px] uppercase tracking-wide transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              >
+                                {drawerOtpVerifying ? <><Loader2 size={11} className="animate-spin" /> Verifying...</> : <><Check size={11} /> Verify OTP</>}
+                              </button>
+                              <button type="button" onClick={() => { setDrawerOtpSent(false); setDrawerOtpBoxes(["", "", "", "", "", ""]); setDrawerOtpError(""); }} className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-[10px] font-bold">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div id="passenger-recaptcha-container" className="hidden" />
 

@@ -920,3 +920,49 @@ export const sendTravelerOtpEmail = async (to, otpCode) => {
     throw err;
   }
 };
+
+// ─── Passenger Verification OTP ───────────────────────────────────────────────
+export const sendPassengerOtpEmail = async ({ to, name, otp, phone }) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Passenger OTP email blocked for: ${to}`);
+    return;
+  }
+
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
+
+  const otpDigits = String(otp).split("").map(d =>
+    `<span style="display:inline-block;width:38px;height:48px;line-height:48px;text-align:center;font-size:22px;font-weight:900;background:#f1f5f9;border:2px solid #e2e8f0;border-radius:10px;color:#0f172a;margin:0 3px;">${d}</span>`
+  ).join("");
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">🛡️</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Passenger Verification</h2>
+    <p style="color: #475569; text-align: center;">Hi <strong>${name || "Traveler"}</strong>,</p>
+    <p style="color: #475569; text-align: center;">Use the code below to verify your mobile number <strong>${phone}</strong> for your Traveloop booking.</p>
+    <div style="text-align: center; margin: 28px 0 12px;">
+      ${otpDigits}
+    </div>
+    <p style="color: #94a3b8; text-align: center; font-size: 13px;">This code expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+    <p style="color: #94a3b8; text-align: center; font-size: 12px;">Once verified, you won't need to verify again for future bookings from the same account.</p>
+  `);
+
+  const mailOptions = {
+    from: `"Traveloop Booking" <${senderEmail}>`,
+    to,
+    subject: `${otp} — Traveloop Passenger Verification Code`,
+    html,
+  };
+
+  try {
+    const info = await sendMailWithRetry(transporter, mailOptions);
+    console.log(`[PassengerOTP] OTP email sent to ${to}. MessageId: ${info?.messageId}`);
+    return info;
+  } catch (err) {
+    console.error("[Email Service] sendPassengerOtpEmail error:", err.message);
+    throw err;
+  }
+};
+

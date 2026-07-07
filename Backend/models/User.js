@@ -41,6 +41,27 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // ── Passenger Verification (persists across bookings) ─────────────────────
+    passengerVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedPhone: {
+      type: String,
+      default: "",
+    },
+    verifiedEmail: {
+      type: String,
+      default: "",
+    },
+    passengerVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    verificationMethod: {
+      type: String,
+      default: "",
+    },
     alternateMobile: {
       type: String,
       default: "",
