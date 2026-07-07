@@ -161,19 +161,53 @@ export const verifyAdmin2FA = async (req, res) => {
 
     const data = otpSnap.data();
 
-    // Expiry check
-    if (new Date() > new Date(data.expiresAt)) {
-      await deleteDoc(otpDocRef);
-      return res.status(400).json({ success: false, message: "Verification code expired" });
+    console.log("[Admin verify2FA] OTP doc fetched for:", emailKey);
+    console.log("[Admin verify2FA] Current Time:", new Date().toISOString());
+    console.log("[Admin verify2FA] data.expiresAt:", data.expiresAt);
+    console.log("[Admin verify2FA] data.isUsed:", data.isUsed);
+    console.log("[Admin verify2FA] Submitted OTP:", otp);
+
+    // Guard: OTP hash must exist in Firestore document
+    if (!data.otp) {
+      console.error("[Admin verify2FA] Firestore OTP document is missing the 'otp' hash field.");
+      return res.status(500).json({ success: false, message: "OTP record is malformed. Please request a new code." });
     }
 
-    // Compare
+    // Guard: expiresAt must be present
+    if (!data.expiresAt) {
+      console.error("[Admin verify2FA] Firestore OTP document is missing the 'expiresAt' field.");
+      return res.status(500).json({ success: false, message: "OTP record is malformed. Please request a new code." });
+    }
+
+    // Guard: Already used
+    if (data.isUsed) {
+      return res.status(400).json({ success: false, message: "Verification code has already been used" });
+    }
+
+    // Expiry check
+    if (Date.now() > new Date(data.expiresAt).getTime()) {
+      await deleteDoc(otpDocRef);
+      console.log("[Admin verify2FA] OTP expired for:", emailKey);
+      return res.status(400).json({ success: false, message: "Verification code expired. Please request a new one." });
+    }
+
+    // Compare submitted OTP against the stored bcrypt hash
+    const isMatch = await bcrypt.compare(otp.toString(), data.otp);
+
+    console.log("[Admin verify2FA] Signature Valid (isMatch):", isMatch);
+    console.log("[Admin verify2FA] Scan Result:", isMatch ? "SUCCESS" : "INVALID_OTP");
+
     if (!isMatch) {
       return res.status(400).json({ success: false, message: "Invalid verification code" });
     }
 
-    // Clear OTP
+    // Clear OTP after successful verification
     await deleteDoc(otpDocRef);
+
+    // JWT_SECRET guard
+    if (!process.env.JWT_SECRET) {
+      console.warn("[Admin verify2FA] WARNING: JWT_SECRET is not set in environment. Using insecure fallback.");
+    }
 
     // Complete Login
     adminUser.lastLogin = new Date();
@@ -196,7 +230,7 @@ export const verifyAdmin2FA = async (req, res) => {
 
   } catch (error) {
     console.error("[Admin verify2FA Error]:", error);
-    res.status(500).json({ success: false, message: "Server Error during 2FA verification" });
+    res.status(500).json({ success: false, message: error.message || "Server Error during 2FA verification" });
   }
 };
 
