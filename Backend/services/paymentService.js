@@ -94,12 +94,32 @@ export class PaymentService {
     const { BookingLockService } = await import("./bookingLockService.js");
     await BookingLockService.releaseSeats(booking.tripId, booking.seatNumbers);
 
+    // Generate unique ticketId and verificationCode
+    const randDigits = Math.floor(100000 + Math.random() * 900000).toString();
+    booking.ticketId = `TLP-2026-${randDigits}`;
+    
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "TLP-";
+    for (let i = 0; i < 7; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    booking.verificationCode = code;
+    
     // Update payment status
     booking.paymentStatus = "PAID";
     booking.status = "Paid";
     booking.bookingStatus = "confirmed";
     booking.paymentVerified = true;
     booking.paymentDate = new Date();
+    
+    booking.qrToken = Buffer.from(JSON.stringify({
+      bookingId: booking._id.toString(),
+      ticketId: booking.ticketId,
+      verificationCode: booking.verificationCode,
+      seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime(),
+    })).toString("base64");
+
     await booking.save();
 
     // Confirm passenger and seat status
@@ -185,6 +205,22 @@ export class PaymentService {
       pricePaid: booking.pricePaid,
       paymentStatus: "PAID",
     });
+
+    // Trigger PDF generation and confirmation email
+    try {
+      const { generateTicketPdf } = await import("./pdfService.js");
+      const { sendBookingConfirmationEmail } = await import("./emailService.js");
+      
+      const primaryTraveler = travellersList[0] || {};
+      const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+      const passengerEmail = primaryTraveler.email || "traveler@traveloop.app";
+      
+      const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+      await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
+      console.log(`[Payment Service] Booking confirmation email sent to ${passengerEmail}`);
+    } catch (emailErr) {
+      console.error("[Payment Service] Failed to send ticket pass email:", emailErr.message);
+    }
 
     return { booking, payment };
   }

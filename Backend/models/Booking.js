@@ -211,6 +211,19 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    ticketId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    verificationCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    qrToken: {
+      type: String,
+    },
     passengers: [
       {
         name: String,

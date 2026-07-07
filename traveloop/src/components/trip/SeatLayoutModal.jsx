@@ -23,40 +23,47 @@ import { useToast } from "../mobile/MobileToast";
 
 const SEAT_STYLES = {
   available: {
-    bg: "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm",
-    text: "text-slate-700 dark:text-slate-350",
-    hover: "hover:border-teal-400 hover:shadow-[0_0_12px_rgba(20,184,166,0.25)] dark:hover:border-teal-500/60 cursor-pointer",
+    bg: "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-950/15 dark:border-emerald-500/20",
+    text: "text-emerald-500 dark:text-emerald-400",
+    hover: "hover:border-emerald-400 cursor-pointer",
     label: "Available",
   },
   selected: {
-    bg: "bg-gradient-to-br from-teal-400 to-cyan-500 border-teal-500 text-white shadow-lg shadow-teal-500/25",
+    bg: "bg-teal-500 border-teal-600 text-white shadow-lg shadow-teal-500/25",
     text: "text-white",
     hover: "cursor-pointer",
     label: "Selected",
   },
   reserved: {
-    bg: "bg-amber-50 dark:bg-amber-955/20 border-amber-300 dark:border-amber-900/60",
-    text: "text-amber-700 dark:text-amber-400",
+    bg: "bg-amber-500/10 border-amber-500/30 dark:bg-amber-950/15 dark:border-amber-500/20",
+    text: "text-amber-500 dark:text-amber-400",
     hover: "cursor-not-allowed",
     label: "Reserved",
   },
   booked_male: {
-    bg: "bg-sky-50 dark:bg-sky-955/20 border-sky-300 dark:border-sky-900/60",
-    text: "text-sky-700 dark:text-sky-400",
+    bg: "bg-rose-500/10 border-rose-500/30 dark:bg-rose-950/15 dark:border-rose-500/20",
+    text: "text-rose-500 dark:text-rose-450",
     hover: "cursor-not-allowed",
-    label: "Booked (Male)",
+    label: "Occupied",
   },
   booked_female: {
-    bg: "bg-pink-50 dark:bg-pink-955/20 border-pink-300 dark:border-pink-900/50",
-    text: "text-pink-700 dark:text-pink-400",
+    bg: "bg-rose-500/10 border-rose-500/30 dark:bg-rose-950/15 dark:border-rose-500/20",
+    text: "text-rose-500 dark:text-rose-450",
     hover: "cursor-not-allowed",
-    label: "Booked (Female)",
+    label: "Occupied (Female)",
+  },
+  locked: {
+    bg: "bg-slate-500/10 border-slate-500/30 dark:bg-slate-900/40 dark:border-slate-800",
+    text: "text-slate-500 dark:text-slate-400",
+    hover: "cursor-not-allowed",
+    label: "Locked",
   },
 };
 
 const getSeatStyle = (seat, isSelected) => {
   if (isSelected) return SEAT_STYLES.selected;
   if (seat.status === "reserved") return SEAT_STYLES.reserved;
+  if (seat.status === "locked") return SEAT_STYLES.locked;
   if (seat.status === "booked") {
     return seat.gender === "Female" ? SEAT_STYLES.booked_female : SEAT_STYLES.booked_male;
   }

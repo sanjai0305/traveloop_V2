@@ -21,6 +21,59 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    primaryMobile: {
+      type: String,
+      default: "",
+    },
+    primaryVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneNumber: {
+      type: String,
+      default: "",
+    },
+    phoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+    alternateMobile: {
+      type: String,
+      default: "",
+    },
+    alternateNumber: {
+      type: String,
+      default: "",
+    },
+    alternateVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emergencyContact: {
+      type: String,
+      default: "",
+    },
+    age: {
+      type: Number,
+      default: null,
+    },
+    gender: {
+      type: String,
+      enum: ["Male", "Female", "Other", ""],
+      default: "",
+    },
+    usersettingsCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    profileCompleted: {
+      type: Boolean,
+      default: false,
+    },
     city: {
       type: String,
       default: "",

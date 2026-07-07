@@ -21,12 +21,12 @@ import {
 
 // ─── STATIC DESTINATIONS (fallback / "Recommended For You") ─────────────────
 const STATIC_DESTINATIONS = [
-  { id: 1, name: "Bali",       country: "Indonesia",    emoji: "🌴", rating: 4.9, tag: "Trending",  gradient: "linear-gradient(135deg,#667EEA,#764BA2)" },
-  { id: 2, name: "Santorini",  country: "Greece",       emoji: "🏛️", rating: 4.8, tag: "Popular",   gradient: "linear-gradient(135deg,#F093FB,#F5576C)" },
-  { id: 3, name: "Maldives",   country: "Maldives",     emoji: "🐚", rating: 4.9, tag: "Luxury",    gradient: "linear-gradient(135deg,#4FACFE,#00F2FE)" },
-  { id: 4, name: "Tokyo",      country: "Japan",        emoji: "🌸", rating: 4.7, tag: "Culture",   gradient: "linear-gradient(135deg,#F77062,#FE5196)" },
-  { id: 5, name: "Swiss Alps", country: "Switzerland",  emoji: "🏔️", rating: 4.9, tag: "Adventure", gradient: "linear-gradient(135deg,#43E97B,#38F9D7)" },
-  { id: 6, name: "Goa",        country: "India",        emoji: "🏖️", rating: 4.6, tag: "Beach",     gradient: "linear-gradient(135deg,#FA709A,#FEE140)" },
+  { id: 1, name: "Bali",       country: "Indonesia",    emoji: "🌴", rating: 4.9, tag: "Trending",  gradient: "linear-gradient(135deg,#667EEA,#764BA2)", image: "https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=600&q=80" },
+  { id: 2, name: "Santorini",  country: "Greece",       emoji: "🏛️", rating: 4.8, tag: "Romance",   gradient: "linear-gradient(135deg,#F093FB,#F5576C)", image: "https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=600&q=80" },
+  { id: 3, name: "Maldives",   country: "Maldives",     emoji: "🐚", rating: 4.9, tag: "Luxury",    gradient: "linear-gradient(135deg,#4FACFE,#00F2FE)", image: "https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=600&q=80" },
+  { id: 4, name: "Tokyo",      country: "Japan",        emoji: "🌸", rating: 4.7, tag: "Culture",   gradient: "linear-gradient(135deg,#F77062,#FE5196)", image: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=600&q=80" },
+  { id: 5, name: "Swiss Alps", country: "Switzerland",  emoji: "🏔️", rating: 4.9, tag: "Adventure", gradient: "linear-gradient(135deg,#43E97B,#38F9D7)", image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80" },
+  { id: 6, name: "Goa",        country: "India",        emoji: "🏖️", rating: 4.6, tag: "Beach",     gradient: "linear-gradient(135deg,#FA709A,#FEE140)", image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80" },
 ];
 
 // ─── FIX 5: Trending Destinations (static with dynamic fallback) ─────────────
@@ -258,28 +258,47 @@ const Dashboard = () => {
     <MainLayout>
       <div className="pb-4 overflow-x-hidden">
 
-        {/* ── GREETING ──────────────────────────────────────── */}
-        <div className="px-4 pt-5 pb-4">
+        {/* ── GREETING HERO (Desktop: Horizontal, 110px max height) ──────────────────────────────────────── */}
+        <div className="px-4 pt-4 pb-4 lg:px-0 lg:pt-0 lg:pb-0 lg:h-[110px] lg:max-h-[110px] lg:flex lg:items-center lg:mb-6">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
+            className="w-full flex items-center justify-between gap-6"
           >
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-slate-500 text-[15px] font-medium">{greeting},</p>
-              <WeatherChip />
+            {/* Left: Greeting + Weather */}
+            <div className="flex-1 flex flex-col justify-center">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-[26px] lg:text-[40px] font-extrabold text-slate-800 lg:text-white leading-tight">
+                  {greeting}, {firstName} 👋
+                </h1>
+                <div className="inline-flex items-center mt-1 lg:mt-0">
+                  <WeatherChip />
+                </div>
+              </div>
+              {upcoming > 0 && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="text-xs lg:text-sm text-slate-400 lg:text-slate-300 mt-1"
+                  dangerouslySetInnerHTML={{ __html: t("home.upcomingTrips", { count: upcoming }) }}
+                />
+              )}
             </div>
-            <h2 className="text-[26px] font-extrabold text-slate-800 leading-tight">
-              {firstName} 👋
-            </h2>
-            {upcoming > 0 && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="text-sm text-slate-400 mt-1"
-                dangerouslySetInnerHTML={{ __html: t("home.upcomingTrips", { count: upcoming }) }}
-              />
+
+            {/* Right: Recent Trip CTA (Desktop only) */}
+            {recentTrips.length > 0 && (
+              <motion.button
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+                onClick={() => navigate("/my-trips")}
+                className="hidden lg:flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-semibold shadow-lg shadow-teal-500/20 hover:shadow-teal-500/30 transition-all hover:scale-[1.02]"
+              >
+                <span>Continue Planning</span>
+                <ArrowRight size={16} />
+              </motion.button>
             )}
           </motion.div>
         </div>
@@ -290,37 +309,37 @@ const Dashboard = () => {
         {/* ── REFERRAL & REWARDS CARD ────────────────────────── */}
         <ReferralCard />
 
-        {/* ── SEARCH BAR (Smart Explore) ─────────────────────── */}
+        {/* ── SEARCH BAR (Desktop: Full width, 56px height) ─────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
-          className="mx-4 mb-5"
+          className="mx-4 mb-4 lg:mx-0 lg:mb-6"
         >
-          <div className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] bg-white border border-slate-200 shadow-sm focus-within:border-teal-400 focus-within:ring-4 focus-within:ring-teal-50 transition-all duration-200">
+          <div className="flex items-center gap-3 px-4 py-3.5 lg:py-4 lg:px-5 rounded-[18px] lg:rounded-2xl bg-white border border-slate-200 lg:bg-slate-900/40 lg:backdrop-blur-md lg:border-white/10 shadow-sm focus-within:border-teal-400 focus-within:ring-4 focus-within:ring-teal-50/10 transition-all duration-200 lg:h-[56px]">
             {exploreLoading ? (
               <Loader2 size={18} className="text-teal-400 flex-shrink-0 animate-spin" />
             ) : (
-              <Search size={18} className="text-slate-400 flex-shrink-0" />
+              <Search size={18} className="text-slate-400 lg:text-slate-300 flex-shrink-0" />
             )}
             <input
               type="text"
               value={search}
               onChange={e => handleSearchChange(e.target.value)}
               placeholder={t("home.searchPlaceholder")}
-              className="flex-1 bg-transparent text-slate-700 text-sm font-medium placeholder:text-slate-400 outline-none"
+              className="flex-1 bg-transparent text-slate-700 lg:text-white text-sm lg:text-base font-medium placeholder:text-slate-400 lg:placeholder:text-slate-400 outline-none"
               aria-label="Search destinations"
             />
             {search && (
               <button
                 onClick={() => { setSearch(""); setExploreResults([]); setExploreQuery(""); if (abortRef.current) abortRef.current.abort(); }}
-                className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 flex-shrink-0"
+                className="w-6 h-6 rounded-full bg-slate-100 lg:bg-white/10 flex items-center justify-center text-slate-400 lg:text-slate-300 hover:bg-slate-200 lg:hover:bg-white/20 flex-shrink-0"
                 aria-label="Clear search"
               >
                 ×
               </button>
             )}
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
+            <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
               <Compass size={14} className="text-white" />
             </div>
           </div>
@@ -388,9 +407,9 @@ const Dashboard = () => {
         {/* ── AI ASSISTANT CARD ─────────────────────────────── */}
         <AIAssistantCard onOpen={() => setAiOpen(true)} />
 
-        {/* ── QUICK ACTIONS ─────────────────────────────────── */}
-        <div className="px-4 mb-6">
-          <div className="grid grid-cols-4 gap-3">
+        {/* ── QUICK ACTIONS (Desktop: 4 columns, equal heights, 24px gap) ─────────────────────────────────── */}
+        <div className="px-4 mb-4 lg:mx-0 lg:mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
             {QUICK_ACTIONS.map((action, i) => (
               <motion.button
                 key={action.label}
@@ -399,24 +418,24 @@ const Dashboard = () => {
                 transition={{ delay: 0.1 * i + 0.1, type: "spring", stiffness: 300 }}
                 whileTap={{ scale: 0.88 }}
                 onClick={() => navigate(action.path)}
-                className="flex flex-col items-center gap-2 min-h-[48px]"
+                className="flex flex-col items-center gap-2 lg:gap-3.5 p-4 lg:p-6 min-h-[120px] lg:h-[180px] lg:min-h-[180px] rounded-2xl bg-white border border-slate-200 lg:bg-slate-900/40 lg:backdrop-blur-md lg:border-white/10 shadow-sm hover:shadow-md hover:border-slate-300 lg:hover:border-teal-500/30 lg:hover:shadow-[0_8px_32px_rgba(20,184,181,0.15)] lg:hover:-translate-y-1 transition-all duration-300"
                 aria-label={t(action.label)}
               >
                 <div
-                  className="w-14 h-14 rounded-[18px] flex items-center justify-center text-2xl"
+                  className="w-14 h-14 lg:w-16 lg:h-16 rounded-[18px] lg:rounded-2xl flex items-center justify-center text-2xl lg:text-3xl"
                   style={{ background: action.bg }}
                 >
                   {action.emoji}
                 </div>
-                <span className="text-[11px] font-semibold text-slate-500">{t(action.label)}</span>
+                <span className="text-[11px] lg:text-sm font-semibold text-slate-500 lg:text-slate-300">{t(action.label)}</span>
               </motion.button>
             ))}
           </div>
         </div>
 
         {/* ── TRENDING ACTIVITIES ───────────────────────────── */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between px-4 mb-3">
+        <div className="mb-4 lg:mb-6">
+          <div className="flex items-center justify-between px-4 lg:px-0 mb-3">
             <div className="flex items-center gap-2">
               <TrendingUp size={16} className="text-teal-500" />
               <h3 className="text-[17px] font-bold text-slate-800">{t("home.trendingActivities")}</h3>
@@ -472,19 +491,19 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ── FIX 4: RECOMMENDED FOR YOU (Home/Explore Sync) ──────── */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between px-4 mb-3">
+        {/* ── RECOMMENDED FOR YOU (Desktop: 6 cards per row, 4:5 aspect ratio, Unsplash imagery) ──────── */}
+        <div className="mb-4 lg:mb-6">
+          <div className="flex items-center justify-between px-4 lg:px-0 mb-3 lg:mb-5">
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-teal-500" />
-              <h3 className="text-[17px] font-bold text-slate-800">{t("home.recommendedForYou")}</h3>
+              <h3 className="text-[17px] lg:text-2xl font-bold text-slate-800 lg:text-white">{t("home.recommendedForYou")}</h3>
             </div>
-            <button className="text-[13px] font-semibold text-teal-600 flex items-center gap-1">
+            <button className="text-[13px] lg:text-sm font-semibold text-teal-600 flex items-center gap-1">
               {t("home.seeAll")} <ChevronRight size={14} />
             </button>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto px-4 pb-2 hide-scrollbar">
+          <div className="flex gap-3 lg:gap-6 overflow-x-auto px-4 lg:px-0 pb-2 lg:grid lg:grid-cols-6 lg:overflow-visible lg:pb-0 hide-scrollbar">
             {STATIC_DESTINATIONS.map((dest, i) => (
               <motion.div
                 key={dest.id}
@@ -492,28 +511,37 @@ const Dashboard = () => {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.08 * i + 0.2 }}
                 whileTap={{ scale: 0.96 }}
-                className="relative flex-shrink-0 w-44 h-56 rounded-[24px] overflow-hidden cursor-pointer"
+                className="relative flex-shrink-0 w-44 h-56 lg:w-full lg:h-auto lg:aspect-[4/5] rounded-[24px] lg:rounded-[24px] overflow-hidden cursor-pointer lg:hover:-translate-y-1.5 lg:hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-all duration-300 group"
                 style={{ background: dest.gradient }}
               >
-                {/* Emoji */}
-                <div className="absolute top-4 left-4 text-5xl">{dest.emoji}</div>
+                {/* Image background for desktop/tablet */}
+                {dest.image && (
+                  <img
+                    src={dest.image}
+                    alt={dest.name}
+                    className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                  />
+                )}
+                {/* Gradient overlay for photo visibility */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent z-10" />
+
+                {/* Emoji (hidden on desktop/tablet photography view, or kept small) */}
+                <div className="absolute top-4 left-4 text-3xl lg:text-4xl z-20 transition-transform group-hover:scale-110">{dest.emoji}</div>
 
                 {/* Tag */}
-                <div className="absolute top-4 right-4 px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-sm">
-                  <span className="text-white text-[10px] font-bold">{dest.tag}</span>
+                <div className="absolute top-4 right-4 px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-sm z-20">
+                  <span className="text-white text-[10px] lg:text-xs font-bold">{dest.tag}</span>
                 </div>
 
                 {/* Bottom info */}
-                <div
-                  className="absolute bottom-0 inset-x-0 p-4"
-                  style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65), transparent)" }}
-                >
-                  <p className="text-white font-extrabold text-base leading-tight">{dest.name}</p>
+                <div className="absolute bottom-0 inset-x-0 p-4 lg:p-5 z-20">
+                  <p className="text-white font-extrabold text-base lg:text-lg leading-tight">{dest.name}</p>
                   <div className="flex items-center justify-between mt-1">
-                    <p className="text-white/70 text-xs">{dest.country}</p>
+                    <p className="text-white/70 text-xs lg:text-sm">{dest.country}</p>
                     <div className="flex items-center gap-1">
-                      <Star size={10} className="text-yellow-400 fill-yellow-400" />
-                      <span className="text-white text-xs font-semibold">{dest.rating}</span>
+                      <Star size={10} className="lg:w-3.5 lg:h-3.5 text-yellow-400 fill-yellow-400" />
+                      <span className="text-white text-xs lg:text-sm font-semibold">{dest.rating}</span>
                     </div>
                   </div>
                 </div>
@@ -522,26 +550,26 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ── RECENT TRIPS ──────────────────────────────────── */}
+        {/* ── RECENT TRIPS (Desktop: Horizontal cards, 2-3 per row) ──────────────────────────────────── */}
         {recentTrips.length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between px-4 mb-3">
+          <div className="mb-4 lg:mb-6">
+            <div className="flex items-center justify-between px-4 lg:px-0 mb-3 lg:mb-4">
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-amber-500" />
-                <h3 className="text-[17px] font-bold text-slate-800">{t("home.continuePlanning")}</h3>
+                <h3 className="text-[17px] lg:text-heading-lg font-bold text-slate-800">{t("home.continuePlanning")}</h3>
               </div>
               <button
                 onClick={() => navigate("/my-trips")}
-                className="text-[13px] font-semibold text-teal-600 flex items-center gap-1"
+                className="text-[13px] lg:text-sm font-semibold text-teal-600 flex items-center gap-1"
               >
                 {t("home.seeAll")} <ChevronRight size={14} />
               </button>
             </div>
 
-            <div className="px-4 flex flex-col gap-3">
+            <div className="px-4 lg:px-0 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-6">
               {loading ? (
                 [1, 2, 3].map(i => (
-                  <div key={i} className="h-20 w-full rounded-[20px] skeleton" />
+                  <div key={i} className="h-32 lg:h-40 w-full rounded-[20px] skeleton" />
                 ))
               ) : (
                 (recentTrips || []).map((trip, i) => {
@@ -561,16 +589,16 @@ const Dashboard = () => {
                       transition={{ delay: 0.05 * i + 0.1 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => navigate(`/build-itinerary/${trip._id}`)}
-                      className="premium-card p-4 flex items-center gap-4 cursor-pointer"
+                      className="premium-card p-4 lg:p-5 flex flex-col lg:flex-row items-start lg:items-center gap-3 lg:gap-4 cursor-pointer min-h-[120px] lg:min-h-[140px]"
                       role="link"
                       aria-label={`Open itinerary for ${trip.title} to ${trip.destination}`}
                     >
                       {/* Cover */}
                       <div
-                        className="relative w-14 h-14 rounded-[16px] flex-shrink-0 overflow-hidden"
+                        className="relative w-12 h-12 lg:w-16 lg:h-16 rounded-[16px] lg:rounded-2xl flex-shrink-0 overflow-hidden"
                         style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
                       >
-                        <div className="absolute inset-0 flex items-center justify-center text-2xl">
+                        <div className="absolute inset-0 flex items-center justify-center text-xl lg:text-2xl">
                           {getEmoji(trip.destination)}
                         </div>
                         {trip.image && (
@@ -582,21 +610,21 @@ const Dashboard = () => {
                           />
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-800" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{trip.title}</p>
+                      <div className="flex-1 min-w-0 w-full">
+                        <p className="text-sm lg:text-card-text font-bold text-slate-800" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{trip.title}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <MapPin size={11} className="text-slate-400 flex-shrink-0" />
-                          <span className="text-xs text-slate-400 truncate">{trip.destination}</span>
+                          <span className="text-xs lg:text-sm text-slate-400 truncate">{trip.destination}</span>
                         </div>
 
                         {/* Progress Bar */}
                         {days && (
-                          <div className="mt-2">
-                            <div className="flex justify-between items-center text-[10px] font-semibold text-slate-400 mb-0.5">
+                          <div className="mt-2 lg:mt-2.5">
+                            <div className="flex justify-between items-center text-[10px] lg:text-xs font-semibold text-slate-400 mb-0.5">
                               <span>{t("home.planningProgress")}</span>
                               <span className="text-teal-600 font-bold">{progressPercent}%</span>
                             </div>
-                            <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-1.5 lg:h-2 w-full rounded-full bg-slate-100 overflow-hidden">
                               <div
                                 className="h-full rounded-full"
                                 style={{
@@ -609,14 +637,14 @@ const Dashboard = () => {
                         )}
 
                         {/* Metadata row */}
-                        <div className="flex flex-wrap gap-x-2.5 gap-y-1 mt-2 text-[10px] font-bold text-slate-400" style={{overflow:'hidden'}}>
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-1 mt-2 lg:mt-2.5 text-[10px] lg:text-xs font-bold text-slate-400" style={{overflow:'hidden'}}>
                           {days && <span className="flex-shrink-0">🗓️ {t("home.days", { count: days })}</span>}
                           {daysRemaining > 0 && <span className="flex-shrink-0">⏳ {t("home.daysLeft", { count: daysRemaining })}</span>}
                           {totalSpent > 0 && <span className="text-teal-600 flex-shrink-0">💰 ₹{totalSpent.toLocaleString()} {t("home.spent")}</span>}
                           {trip.activitiesCount > 0 && <span className="text-indigo-500 flex-shrink-0">📍 {t("home.acts", { count: trip.activitiesCount })}</span>}
                         </div>
                       </div>
-                      <ArrowRight size={16} className="text-slate-300 flex-shrink-0" />
+                      <ArrowRight size={16} className="text-slate-300 flex-shrink-0 mt-2 lg:mt-0" />
                     </motion.div>
                   );
                 })

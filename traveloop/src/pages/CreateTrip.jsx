@@ -441,9 +441,9 @@ const CreateTrip = () => {
   return (
     // Wizard wrapper — NO BottomNavBar, NO MobileAppBar
     <div className="min-h-screen flex flex-col" style={{ background: bg }}>
-      {/* Wizard Header */}
+      {/* Wizard Header - Mobile/Tablet */}
       <div
-        className="sticky top-0 z-50 border-b"
+        className="sticky top-0 z-50 border-b lg:hidden"
         style={{
           background: isDark ? "rgba(18,24,33,0.95)" : "rgba(248,250,252,0.95)",
           borderColor,
@@ -476,14 +476,65 @@ const CreateTrip = () => {
         </div>
       </div>
 
+      {/* Desktop Header with 700px Progress Stepper */}
+      <div className="hidden lg:flex flex-col items-center py-6 border-b border-white/5 bg-slate-950/20 backdrop-blur-md">
+        <div className="flex items-center justify-between w-full px-10 mb-2">
+          <button
+            onClick={() => step > 1 ? prev() : navigate(-1)}
+            className="text-slate-400 hover:text-white flex items-center gap-2 font-bold text-sm"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <h1 className="text-2xl font-extrabold text-white">Create Your Dream Journey</h1>
+          <div className="w-[60px]" />
+        </div>
+
+        {/* 700px Stepper Progress Bar */}
+        <div className="relative w-[700px] flex items-center justify-between mt-6 mb-2">
+          {/* Background Track */}
+          <div className="absolute left-4 right-4 top-[20px] h-[6px] bg-slate-800 rounded-full z-0" />
+          {/* Active Gradient Track */}
+          <div
+            className="absolute left-4 top-[20px] h-[6px] rounded-full z-0 transition-all duration-500 bg-gradient-to-r from-teal-500 to-emerald-500"
+            style={{ width: `calc(${progress}% - 8px)` }}
+          />
+
+          {STEPS.map((s) => {
+            const StepIcon = s.icon;
+            const isCompleted = step > s.id;
+            const isActive = step === s.id;
+            return (
+              <div key={s.id} className="relative z-10 flex flex-col items-center w-20">
+                <button
+                  onClick={() => s.id < step && go(s.id)}
+                  disabled={s.id >= step}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
+                    isCompleted
+                      ? "bg-gradient-to-r from-teal-500 to-emerald-500 border-teal-400 text-white shadow-[0_0_10px_rgba(20,184,181,0.2)]"
+                      : isActive
+                        ? "bg-slate-900 border-teal-400 text-teal-400 scale-110 shadow-[0_0_20px_rgba(20,184,181,0.4)]"
+                        : "bg-slate-950 border-slate-800 text-slate-500"
+                  }`}
+                >
+                  <StepIcon size={16} />
+                </button>
+                <span className={`absolute top-12 text-[11px] font-bold tracking-wide whitespace-nowrap transition-colors duration-300 ${isActive ? "text-teal-400" : isCompleted ? "text-slate-300" : "text-slate-500"}`}>
+                  {s.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <main
         className="flex-1 overflow-y-auto"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 24px)" }}
       >
-        <div className="px-4 pt-4 pb-8 max-w-lg mx-auto">
+        <div className="px-4 pt-4 pb-8 max-w-lg mx-auto lg:max-w-7xl lg:px-10 lg:grid lg:grid-cols-[1fr_400px] lg:gap-12 lg:pt-10">
 
-        {/* ── STEP CONTENT ── */}
-        <div className="overflow-hidden">
+        {/* Left Column: STEP CONTENT */}
+        <div className="overflow-hidden flex flex-col justify-between">
           <AnimatePresence mode="wait" custom={dir}>
             <motion.div
               key={step}
@@ -498,12 +549,12 @@ const CreateTrip = () => {
               {/* STEP 1 — DESTINATION */}
               {step === 1 && (
                 <div>
-                  <h2 className="text-2xl font-extrabold mb-1" style={{ color: textPrimary }}>Where to? 🌍</h2>
+                  <h2 className="text-2xl lg:text-[32px] font-extrabold mb-1" style={{ color: textPrimary }}>Where to? 🌍</h2>
                   <p className="text-sm mb-5" style={{ color: textMuted }}>Pick your dream destination</p>
 
-                  <div className="relative mb-5">
+                  <div className="relative mb-6">
                     <div
-                      className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] border shadow-sm transition-all"
+                      className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] lg:rounded-2xl border shadow-sm transition-all"
                       style={{ background: cardBg, borderColor }}
                     >
                       {loadingDetails ? (
@@ -540,52 +591,55 @@ const CreateTrip = () => {
                   </div>
                   {errors.destination && <p className="text-red-500 text-xs mb-3">{errors.destination}</p>}
 
-                  <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: textMuted }}>Popular</p>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {POPULAR_DESTINATIONS.map(d => (
-                      <motion.button
-                        key={d.name}
-                        whileTap={{ scale: 0.92 }}
-                        onClick={() => setForm(f => ({
-                          ...f,
-                          destination: d.name,
-                          destinationName: d.name,
-                          placeId: "",
-                          formattedAddress: "",
-                          country: "",
-                          state: "",
-                          latitude: null,
-                          longitude: null,
-                        }))}
-                        className={`flex items-center gap-3 p-3.5 rounded-[18px] border-2 text-left transition-all relative ${
-                          form.destination === d.name
-                            ? "border-teal-400"
-                            : "border-transparent shadow-xs"
-                        }`}
-                        style={{
-                          background: form.destination === d.name
-                            ? "rgba(20,184,181,0.08)"
-                            : cardBg
-                        }}
-                      >
-                        <span className="text-2xl flex-shrink-0">{d.emoji}</span>
-                        <div className="min-w-0 pr-4">
-                          <p className="text-sm font-bold truncate leading-tight" style={{ color: textPrimary }}>{d.name.split(",")[0]}</p>
-                          <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>{d.tag}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => toggleSaveDest(d.name, e)}
-                          className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center active:scale-90"
-                          style={{ background: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)" }}
+                  <p className="text-xs font-bold uppercase tracking-widest mb-3 text-slate-400 lg:text-slate-300">Popular Destinations</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-5">
+                    {POPULAR_DESTINATIONS.map(d => {
+                      const isSelected = form.destination === d.name;
+                      return (
+                        <motion.button
+                          key={d.name}
+                          whileTap={{ scale: 0.94 }}
+                          onClick={() => setForm(f => ({
+                            ...f,
+                            destination: d.name,
+                            destinationName: d.name,
+                            placeId: "",
+                            formattedAddress: "",
+                            country: "",
+                            state: "",
+                            latitude: null,
+                            longitude: null,
+                          }))}
+                          className={`flex items-center lg:flex-col lg:justify-center lg:items-center lg:text-center gap-3 lg:gap-4 p-3.5 lg:p-6 lg:h-[160px] rounded-[18px] lg:rounded-2xl border-2 text-left transition-all relative ${
+                            isSelected
+                              ? "border-teal-400 bg-teal-500/10 lg:bg-teal-500/10"
+                              : "border-transparent bg-white dark:bg-slate-900/40 lg:bg-slate-900/40 lg:border-white/5 hover:border-teal-500/30 lg:hover:shadow-[0_8px_24px_rgba(20,184,181,0.15)] shadow-xs"
+                          }`}
+                          style={{
+                            background: isSelected
+                              ? "rgba(20,184,181,0.08)"
+                              : undefined
+                          }}
                         >
-                          <Heart
-                            size={11}
-                            className={savedPlaces.includes(d.name) ? "text-rose-500 fill-rose-500" : "text-slate-400"}
-                          />
-                        </button>
-                      </motion.button>
-                    ))}
+                          <span className="text-2xl lg:text-4xl flex-shrink-0">{d.emoji}</span>
+                          <div className="min-w-0 pr-4 lg:pr-0">
+                            <p className="text-sm font-bold truncate leading-tight" style={{ color: textPrimary }}>{d.name.split(",")[0]}</p>
+                            <p className="text-[10px] mt-0.5" style={{ color: textMuted }}>{d.tag}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => toggleSaveDest(d.name, e)}
+                            className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center active:scale-90"
+                            style={{ background: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)" }}
+                          >
+                            <Heart
+                              size={11}
+                              className={savedPlaces.includes(d.name) ? "text-rose-500 fill-rose-500" : "text-slate-400"}
+                            />
+                          </button>
+                        </motion.button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -593,35 +647,37 @@ const CreateTrip = () => {
               {/* STEP 2 — DATES */}
               {step === 2 && (
                 <div>
-                  <h2 className="text-2xl font-extrabold text-slate-800 mb-1">When? 📅</h2>
-                  <p className="text-slate-400 text-sm mb-6">Choose your travel dates</p>
+                  <h2 className="text-2xl lg:text-[32px] font-extrabold mb-1" style={{ color: textPrimary }}>When? 📅</h2>
+                  <p className="text-sm mb-6" style={{ color: textMuted }}>Choose your travel dates</p>
 
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <div>
-                      <label className="block text-sm font-bold text-slate-600 mb-2">Start Date</label>
-                      <div className="flex items-center gap-3 px-4 py-4 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 transition-all shadow-xs">
+                      <label className="block text-sm font-bold mb-2" style={{ color: textPrimary }}>Start Date</label>
+                      <div className="flex items-center gap-3 px-4 py-4 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 dark:bg-slate-900/40 dark:border-white/5 transition-all shadow-xs">
                         <CalendarDays size={20} className="text-teal-500 flex-shrink-0" />
                         <input
                           type="date"
                           value={form.startDate}
                           min={new Date().toISOString().split("T")[0]}
                           onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
-                          className="flex-1 text-slate-700 text-sm font-semibold outline-none bg-transparent"
+                          className="flex-1 text-sm font-semibold outline-none bg-transparent"
+                          style={{ color: textPrimary }}
                         />
                       </div>
                       {errors.startDate && <p className="text-red-500 text-xs mt-1">{errors.startDate}</p>}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-bold text-slate-600 mb-2">End Date</label>
-                      <div className="flex items-center gap-3 px-4 py-4 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 transition-all shadow-xs">
+                      <label className="block text-sm font-bold mb-2" style={{ color: textPrimary }}>End Date</label>
+                      <div className="flex items-center gap-3 px-4 py-4 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 dark:bg-slate-900/40 dark:border-white/5 transition-all shadow-xs">
                         <CalendarDays size={20} className="text-violet-500 flex-shrink-0" />
                         <input
                           type="date"
                           value={form.endDate}
                           min={form.startDate || new Date().toISOString().split("T")[0]}
                           onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                          className="flex-1 text-slate-700 text-sm font-semibold outline-none bg-transparent"
+                          className="flex-1 text-sm font-semibold outline-none bg-transparent"
+                          style={{ color: textPrimary }}
                         />
                       </div>
                       {errors.endDate && <p className="text-red-500 text-xs mt-1">{errors.endDate}</p>}
@@ -636,12 +692,12 @@ const CreateTrip = () => {
                       >
                         <span className="text-3xl">🗓️</span>
                         <div>
-                          <p className="text-sm font-bold text-teal-700">
+                          <p className="text-sm font-bold text-teal-700 dark:text-teal-400">
                             {Math.max(1, Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / 86400000)) === 1
                               ? "1 Day Trip"
                               : `${Math.max(1, Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / 86400000))} days adventure!`}
                           </p>
-                          <p className="text-xs text-teal-600">Perfect duration for exploring {form.destination?.split(",")[0] || "your destination"}</p>
+                          <p className="text-xs text-teal-600 dark:text-teal-500">Perfect duration for exploring {form.destination?.split(",")[0] || "your destination"}</p>
                         </div>
                       </motion.div>
                     )}
@@ -652,7 +708,7 @@ const CreateTrip = () => {
               {/* STEP 3 — BUDGET */}
               {step === 3 && (
                 <div>
-                  <h2 className="text-2xl font-extrabold mb-1" style={{ color: textPrimary }}>Budget 💰</h2>
+                  <h2 className="text-2xl lg:text-[32px] font-extrabold mb-1" style={{ color: textPrimary }}>Budget 💰</h2>
                   <p className="text-sm mb-6" style={{ color: textMuted }}>How much are you planning to spend?</p>
 
                   <div className="grid grid-cols-2 gap-3 mb-6">
@@ -687,7 +743,7 @@ const CreateTrip = () => {
                     ))}
                   </div>
 
-                  {/* FIX 1: Custom Budget — slider + text input synced, no min restriction */}
+                  {/* Custom Budget — slider + text input synced */}
                   <div
                     className="p-4 rounded-[20px] border"
                     style={{ background: cardBg, borderColor }}
@@ -714,7 +770,6 @@ const CreateTrip = () => {
                       </div>
                     </div>
 
-                    {/* FIX 1: Quick-pick chips */}
                     <div className="flex gap-2 mb-3 flex-wrap">
                       {[
                         { label: "₹5K",  value: 5000   },
@@ -764,7 +819,7 @@ const CreateTrip = () => {
               {/* STEP 4 — TRAVEL STYLE */}
               {step === 4 && (
                 <div>
-                  <h2 className="text-2xl font-extrabold mb-1" style={{ color: textPrimary }}>Your Style ✨</h2>
+                  <h2 className="text-2xl lg:text-[32px] font-extrabold mb-1" style={{ color: textPrimary }}>Your Style ✨</h2>
                   <p className="text-sm mb-4" style={{ color: textMuted }}>How do you like to travel?</p>
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     {TRAVEL_STYLES.map(s => {
@@ -776,7 +831,7 @@ const CreateTrip = () => {
                           animate={{ scale: selected ? 1.02 : 1 }}
                           onClick={() => {
                             setForm(f => ({ ...f, style: s.id }));
-                            setCustomStyle(""); // clear custom when picking a card
+                            setCustomStyle("");
                           }}
                           className="p-4 rounded-[20px] border-2 text-left transition-all relative overflow-hidden"
                           style={{
@@ -785,7 +840,6 @@ const CreateTrip = () => {
                             boxShadow: selected ? "0 0 0 3px rgba(20,184,181,0.15)" : isDark ? "none" : "0 1px 4px rgba(0,0,0,0.06)",
                           }}
                         >
-                          {/* Selected badge */}
                           {selected && (
                             <div
                               className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-white text-[9px] font-extrabold"
@@ -802,7 +856,6 @@ const CreateTrip = () => {
                     })}
                   </div>
 
-                  {/* FIX 2: Custom travel style input */}
                   <div className="p-4 rounded-[20px] border" style={{ background: cardBg, borderColor }}>
                     <label className="text-xs font-bold uppercase tracking-wider mb-2 block" style={{ color: textMuted }}>
                       🎨 Custom Travel Style
@@ -821,13 +874,12 @@ const CreateTrip = () => {
                           const val = e.target.value;
                           setCustomStyle(val);
                           if (val.trim()) {
-                            // Clear predefined style when user types custom
                             setForm(f => ({ ...f, style: val.trim() }));
                           } else {
                             setForm(f => ({ ...f, style: "" }));
                           }
                         }}
-                        placeholder="e.g. Photography, Food Tour, Temple Tour, Bike Trip..."
+                        placeholder="e.g. Photography, Food Tour, Temple Tour..."
                         className="flex-1 text-sm font-medium placeholder:text-slate-400 outline-none bg-transparent"
                         style={{ color: textPrimary }}
                         maxLength={60}
@@ -842,16 +894,8 @@ const CreateTrip = () => {
                         </button>
                       )}
                     </div>
-                    <p className="text-[10px] mt-1.5" style={{ color: textMuted }}>
-                      Describe your unique trip style — the AI will personalize suggestions.
-                    </p>
                   </div>
-
-                  {errors.style && (
-                    <p className="text-xs text-red-500 font-bold mt-3">
-                      {errors.style}
-                    </p>
-                  )}
+                  {errors.style && <p className="text-red-500 text-xs font-bold mt-3">{errors.style}</p>}
                 </div>
               )}
 
@@ -860,29 +904,29 @@ const CreateTrip = () => {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <Sparkles size={20} className="text-teal-500" />
-                    <h2 className="text-2xl font-extrabold text-slate-800">AI Suggestions</h2>
+                    <h2 className="text-2xl lg:text-[32px] font-extrabold" style={{ color: textPrimary }}>AI Suggestions</h2>
                   </div>
-                  <p className="text-slate-400 text-sm mb-5">
+                  <p className="text-sm mb-5" style={{ color: textMuted }}>
                     Traveloop AI curated these ideas for{" "}
                     <span className="font-bold text-teal-600">{form.destination?.split(",")[0] || "your trip"}</span>
                   </p>
 
-                  <div className="space-y-3">
+                  <div className="space-y-3.5">
                     {getSuggestionsForDestination(form.destination).map((s, i) => (
                       <motion.div
                         key={i}
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.1 }}
-                        className="flex items-center gap-3 p-4 rounded-[18px] bg-white border border-slate-100 shadow-xs"
+                        className="flex items-center gap-3 p-4 rounded-[18px] bg-white border border-slate-100 dark:bg-slate-900/40 dark:border-white/5 shadow-xs"
                       >
                         <div
-                          className="w-8 h-8 rounded-[12px] flex items-center justify-center flex-shrink-0 text-sm"
+                          className="w-8 h-8 rounded-[12px] flex items-center justify-center flex-shrink-0 text-sm font-bold text-teal-600 dark:text-teal-400"
                           style={{ background: "rgba(20,184,181,0.1)" }}
                         >
                           {i + 1}
                         </div>
-                        <p className="text-sm font-semibold text-slate-700">{s}</p>
+                        <p className="text-sm font-semibold" style={{ color: textPrimary }}>{s}</p>
                       </motion.div>
                     ))}
                   </div>
@@ -892,10 +936,10 @@ const CreateTrip = () => {
               {/* STEP 6 — REVIEW & CREATE */}
               {step === 6 && (
                 <div>
-                  <h2 className="text-2xl font-extrabold text-slate-800 mb-1">All set! 🎉</h2>
-                  <p className="text-slate-400 text-sm mb-5">Review your trip details before creating</p>
+                  <h2 className="text-2xl lg:text-[32px] font-extrabold mb-1" style={{ color: textPrimary }}>All set! 🎉</h2>
+                  <p className="text-sm mb-5" style={{ color: textMuted }}>Review your trip details before creating</p>
 
-                  <div className="premium-card p-5 mb-5 space-y-4">
+                  <div className="premium-card p-5 mb-5 space-y-4 lg:bg-slate-900/40 lg:border-white/10">
                     {[
                       { emoji: "🌍", label: "Destination", value: form.destination || "Not set" },
                       {
@@ -916,22 +960,23 @@ const CreateTrip = () => {
                         <span className="text-xl">{item.emoji}</span>
                         <div>
                           <p className="text-xs text-slate-400 font-medium">{item.label}</p>
-                          <p className="text-sm font-bold text-slate-800">{item.value}</p>
+                          <p className="text-sm font-bold" style={{ color: textPrimary }}>{item.value}</p>
                         </div>
                       </div>
                     ))}
                   </div>
 
-                  <div className="mb-5">
-                    <label className="block text-sm font-bold text-slate-600 mb-2">Trip Name (optional)</label>
-                    <div className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 transition-all shadow-xs">
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold mb-2" style={{ color: textPrimary }}>Trip Name (optional)</label>
+                    <div className="flex items-center gap-3 px-4 py-3.5 rounded-[18px] bg-white border-2 border-slate-200 focus-within:border-teal-400 dark:bg-slate-900/40 dark:border-white/5 transition-all shadow-xs">
                       <Plane size={18} className="text-teal-500 flex-shrink-0" />
                       <input
                         type="text"
                         value={form.tripName}
                         onChange={e => setForm(f => ({ ...f, tripName: e.target.value }))}
                         placeholder={`${form.destination?.split(",")[0] || "My"} Trip`}
-                        className="flex-1 text-slate-700 text-sm font-semibold placeholder:text-slate-400 outline-none bg-transparent"
+                        className="flex-1 text-sm font-semibold placeholder:text-slate-400 outline-none bg-transparent"
+                        style={{ color: textPrimary }}
                       />
                     </div>
                   </div>
@@ -950,31 +995,105 @@ const CreateTrip = () => {
 
             </motion.div>
           </AnimatePresence>
+
+          {/* Left Column Navigation Buttons */}
+          {step < 6 && (
+            <div className="flex items-center gap-3 mt-10">
+              {step > 1 && (
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={prev}
+                  className="flex items-center justify-center w-12 h-12 rounded-full"
+                  style={{ background: isDark ? "#1A2332" : "#F1F5F9", color: textPrimary }}
+                >
+                  <ArrowLeft size={20} />
+                </motion.button>
+              )}
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={next}
+                className="flex-1 flex items-center justify-center gap-2 py-4 rounded-full text-white font-bold shadow-brand"
+                style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
+              >
+                Continue <ArrowRight size={18} />
+              </motion.button>
+            </div>
+          )}
         </div>
 
-        {/* ── NAVIGATION ── */}
-        {step < 6 && (
-          <div className="flex items-center gap-3 mt-8">
-            {step > 1 && (
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                onClick={prev}
-                className="flex items-center justify-center w-12 h-12 rounded-full"
-                style={{ background: isDark ? "#1A2332" : "#F1F5F9", color: textPrimary }}
-              >
-                <ArrowLeft size={20} />
-              </motion.button>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              onClick={next}
-              className="flex-1 flex items-center justify-center gap-2 py-4 rounded-full text-white font-bold shadow-brand"
-              style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
-            >
-              Continue <ArrowRight size={18} />
-            </motion.button>
+        {/* Right Column: TRIP SIDEBAR SUMMARY & PREVIEWS */}
+        <div className="hidden lg:flex flex-col gap-6 sticky top-8 self-start">
+          <div className="p-6 rounded-[24px] bg-slate-900/40 backdrop-blur-md border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+            <h3 className="text-lg font-bold text-white mb-4">Journey Summary</h3>
+
+            {/* Travel Illustration / Destination Photo */}
+            <div className="h-44 rounded-xl bg-slate-950/40 border border-white/5 overflow-hidden relative mb-5 flex items-center justify-center">
+              {form.destination ? (
+                <>
+                  <img
+                    src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=80"
+                    alt="Travel Preview"
+                    className="absolute inset-0 w-full h-full object-cover opacity-60"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent" />
+                  <div className="absolute bottom-3 left-3 z-10">
+                    <p className="text-[10px] text-teal-400 font-bold uppercase tracking-widest">Active Destination</p>
+                    <p className="text-base font-extrabold text-white leading-tight">{form.destination.split(",")[0]}</p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center p-4">
+                  <span className="text-4xl">✈️</span>
+                  <p className="text-xs text-slate-400 mt-2 font-bold">Select destination in step 1</p>
+                </div>
+              )}
+            </div>
+
+            {/* Travel Parameters Detail List */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">📍</span>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Destination</p>
+                  <p className="text-sm font-bold text-white truncate max-w-[280px]">{form.destination || "Not selected yet"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xl">📅</span>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Travel Dates</p>
+                  <p className="text-sm font-bold text-white">
+                    {form.startDate && form.endDate
+                      ? `${new Date(form.startDate).toLocaleDateString("en-IN", { day:"numeric", month:"short" })} - ${new Date(form.endDate).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}`
+                      : "Awaiting Step 2"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xl">💳</span>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Budget Amount</p>
+                  <p className="text-sm font-bold text-teal-400">₹{Number(form.budget || 0).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xl">✨</span>
+                <div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Travel Style</p>
+                  <p className="text-sm font-bold text-white capitalize">
+                    {customStyle.trim()
+                      ? customStyle.trim()
+                      : (TRAVEL_STYLES.find(s => s.id === form.style)?.label || "Flexible")}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
-        )}
+        </div>
+
       </div>
       </main>
     </div>

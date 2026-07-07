@@ -1,28 +1,12 @@
-/**
- * PassengerFormModal.jsx — Per-Seat Passenger Details Form
- *
- * - One form per selected seat
- * - Seat number auto-filled (read-only)
- * - Fields: Name, Age, Gender, Phone, Emergency Contact, Seat Preference, Special Request
- * - Pagination: Previous / Next passenger
- * - Final step: "Proceed to Payment" CTA
- */
-
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, User, Phone, AlertCircle, ChevronLeft, ChevronRight,
-  Armchair, MessageSquare, Heart, CheckCircle2, Loader2, Bus
+  Armchair, ShieldCheck, Lock, Heart, CheckCircle2, Loader2, Bus
 } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
-const SEAT_PREFERENCE_OPTIONS = ["Window", "Aisle", "No Preference"];
-
-const getSeatType = (seatNumber) => {
-  const num = parseInt(seatNumber.replace(/\D/g, ""), 10);
-  if (isNaN(num)) return "Window";
-  return num % 2 === 0 ? "Aisle" : "Window";
-};
 
 const emptyPassenger = (seatNumber) => ({
   seatNumber,
@@ -30,29 +14,85 @@ const emptyPassenger = (seatNumber) => ({
   age: "",
   gender: "Male",
   phone: "",
+  email: "",
   emergencyContact: "",
-  seatPreference: "No Preference",
-  seatType: getSeatType(seatNumber),
-  specialRequest: "",
+  emergencyOption: "custom",
 });
 
 const PassengerFormModal = ({
-  selectedSeats,     // string[] e.g. ["A1", "A2"]
+  selectedSeats,
   trip,
-  onConfirm,         // (passengers: PassengerData[]) => void
+  onConfirm,
   onClose,
-  onBack,            // go back to seat selection
+  onBack,
 }) => {
+  const { user } = useAuth();
+
+  const getInitialPassenger = (seat, i) => {
+    const empty = emptyPassenger(seat);
+    if (i === 0 && user) {
+      const primaryPhone = user.phoneNumber || user.primaryMobile || user.phone || "";
+      const alternatePhone = user.alternateNumber || user.alternateMobile || "";
+      let defaultEmergencyOpt = "custom";
+      let defaultEmergencyVal = user.emergencyContact || "";
+
+      if (primaryPhone) {
+        defaultEmergencyOpt = "primary";
+        defaultEmergencyVal = primaryPhone;
+      }
+
+      return {
+        ...empty,
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        email: user.email || "",
+        phone: primaryPhone,
+        gender: user.gender || "Male",
+        age: user.age || "",
+        emergencyOption: defaultEmergencyOpt,
+        emergencyContact: defaultEmergencyVal,
+      };
+    }
+    return empty;
+  };
+
   const [passengers, setPassengers] = useState(() =>
-    selectedSeats.map((seat) => emptyPassenger(seat))
+    selectedSeats.map((seat, i) => getInitialPassenger(seat, i))
   );
   const [currentIdx, setCurrentIdx] = useState(0);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  // Sync if selectedSeats changes
   useEffect(() => {
-    setPassengers(selectedSeats.map((seat, i) => passengers[i] || emptyPassenger(seat)));
+    if (user) {
+      setPassengers(prev =>
+        prev.map((p, i) => {
+          if (i === 0) {
+            const primaryPhone = user.phoneNumber || user.primaryMobile || user.phone || "";
+            const alternatePhone = user.alternateNumber || user.alternateMobile || "";
+            const emergencyOpt = p.emergencyOption === "custom" && !p.emergencyContact ? (primaryPhone ? "primary" : "custom") : p.emergencyOption;
+            let emergencyVal = p.emergencyContact;
+            if (emergencyOpt === "primary") emergencyVal = primaryPhone;
+            if (emergencyOpt === "alternate") emergencyVal = alternatePhone;
+
+            return {
+              ...p,
+              name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+              email: user.email || "",
+              phone: primaryPhone,
+              gender: p.gender || user.gender || "Male",
+              age: p.age || user.age || "",
+              emergencyOption: emergencyOpt,
+              emergencyContact: emergencyVal,
+            };
+          }
+          return p;
+        })
+      );
+    }
+  }, [user]);
+
+  useEffect(() => {
+    setPassengers(selectedSeats.map((seat, i) => passengers[i] || getInitialPassenger(seat, i)));
   }, [selectedSeats]);
 
   const current = passengers[currentIdx] || {};
@@ -68,18 +108,43 @@ const PassengerFormModal = ({
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
+  const handleEmergencyOptionChange = (option) => {
+    const primaryPhone = user?.phoneNumber || user?.primaryMobile || user?.phone || "";
+    const alternatePhone = user?.alternateNumber || user?.alternateMobile || "";
+    let val = "";
+    if (option === "primary") val = primaryPhone;
+    else if (option === "alternate") val = alternatePhone;
+    else val = "";
+
+    setPassengers((prev) => {
+      const next = [...prev];
+      next[currentIdx] = {
+        ...next[currentIdx],
+        emergencyOption: option,
+        emergencyContact: val,
+      };
+      return next;
+    });
+    setErrors((prev) => ({ ...prev, emergencyContact: "" }));
+  };
+
   const validateCurrent = () => {
     const errs = {};
     if (!current.name?.trim()) errs.name = "Passenger name is required";
     if (!current.age || Number(current.age) < 1 || Number(current.age) > 120)
       errs.age = "Valid age (1–120) is required";
     if (!current.gender) errs.gender = "Gender is required";
-    if (!current.phone?.trim() || !/^\d{10}$/.test(current.phone.trim()))
-      errs.phone = "Valid 10-digit phone number is required";
-    if (!current.emergencyContact?.trim())
-      errs.emergencyContact = "Emergency contact is required";
-    if (!current.seatType)
-      errs.seatType = "Seat type is required";
+
+    if (!currentIdx === 0) {
+      if (!current.phone?.trim() || !/^\d{10}$/.test(current.phone.trim()))
+        errs.phone = "Valid 10-digit phone number is required";
+      if (!current.email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(current.email.trim()))
+        errs.email = "Valid email address is required";
+    }
+
+    if (!current.emergencyContact?.trim() || !/^\d{10}$/.test(current.emergencyContact.trim()))
+      errs.emergencyContact = "Valid 10-digit emergency contact is required";
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -98,7 +163,6 @@ const PassengerFormModal = ({
   const handleSubmit = () => {
     if (!validateCurrent()) return;
     setSubmitting(true);
-    // Normalize types
     const normalized = passengers.map((p) => ({
       ...p,
       age: Number(p.age),
@@ -106,12 +170,18 @@ const PassengerFormModal = ({
     onConfirm(normalized);
   };
 
-  const inputClass = (field) =>
-    `w-full px-3.5 py-3 rounded-xl text-xs font-semibold border transition-all duration-150 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder:text-slate-400 outline-none focus:ring-2 ${
+  const inputClass = (field, disabled = false) =>
+    `w-full px-3.5 py-3 rounded-xl text-xs font-semibold border transition-all duration-150 outline-none focus:ring-2 ${
+      disabled
+        ? "bg-slate-100 dark:bg-slate-800/60 text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed select-none"
+        : "bg-white dark:bg-slate-800 text-slate-850 dark:text-slate-200 placeholder:text-slate-400"
+    } ${
       errors[field]
         ? "border-rose-400 focus:ring-rose-300 dark:focus:ring-rose-800"
         : "border-slate-200 dark:border-slate-700 focus:ring-teal-300 dark:focus:ring-teal-800 focus:border-teal-400"
     }`;
+
+  const isPrimary = currentIdx === 0;
 
   return (
     <motion.div
@@ -120,38 +190,35 @@ const PassengerFormModal = ({
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center"
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
 
-      {/* Modal */}
       <motion.div
         initial={{ y: 80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 80, opacity: 0 }}
         transition={{ type: "spring", damping: 22, stiffness: 300 }}
-        className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col"
+        className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-slate-900 border border-white/10 rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col text-white"
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 px-5 pt-5 pb-4 rounded-t-3xl">
+        <div className="sticky top-0 z-10 bg-slate-900 border-b border-white/5 px-5 pt-5 pb-4 rounded-t-3xl">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <User size={16} className="text-teal-500" />
+              <h2 className="text-base font-black text-white flex items-center gap-2">
+                <User size={16} className="text-teal-400" />
                 Passenger {currentIdx + 1} of {passengers.length}
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Seat <span className="font-black text-teal-500">{current.seatNumber}</span> · {trip.title}
+                Seat <span className="font-black text-teal-450">{current.seatNumber}</span> · {trip.title}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-700"
+              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
             >
               <X size={14} />
             </button>
           </div>
 
-          {/* Step dots */}
           <div className="flex gap-1.5 items-center">
             {passengers.map((_, i) => (
               <div
@@ -160,18 +227,18 @@ const PassengerFormModal = ({
                   i < currentIdx
                     ? "bg-teal-500"
                     : i === currentIdx
-                    ? "bg-blue-500"
-                    : "bg-slate-200 dark:bg-slate-700"
+                    ? "bg-teal-400"
+                    : "bg-slate-800"
                 }`}
               />
             ))}
           </div>
         </div>
 
-        {/* Selected Seat Chips (Live allocations indicator) */}
-        <div className="flex flex-wrap gap-2 px-5 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/60">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide flex items-center mr-1">
-            Your Seats:
+        {/* Selected Seat Chips */}
+        <div className="flex flex-wrap gap-2 px-5 py-3 bg-slate-950/40 border-b border-white/5">
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide flex items-center mr-1">
+            Allocations:
           </span>
           {selectedSeats.map((seat, i) => (
             <button
@@ -185,10 +252,10 @@ const PassengerFormModal = ({
               }}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black border flex items-center gap-1 transition-all ${
                 i === currentIdx
-                  ? "bg-teal-500 border-teal-600 text-white shadow-sm shadow-teal-500/20"
+                  ? "bg-teal-500 border-teal-600 text-slate-950 shadow-sm shadow-teal-500/20"
                   : i < currentIdx
-                  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                  : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+                  ? "bg-teal-500/10 border-teal-500/20 text-teal-400"
+                  : "bg-slate-850 border-slate-800 text-slate-500"
               }`}
             >
               <Armchair size={10} />
@@ -198,7 +265,7 @@ const PassengerFormModal = ({
           ))}
         </div>
 
-        {/* Form */}
+        {/* Form Body */}
         <AnimatePresence mode="wait">
           <motion.div
             key={currentIdx}
@@ -208,29 +275,44 @@ const PassengerFormModal = ({
             transition={{ duration: 0.2 }}
             className="flex-1 px-5 py-4 space-y-4"
           >
-            {/* Seat badge */}
-            <div className="flex items-center gap-2 p-3 bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800">
-              <Bus size={14} className="text-teal-500" />
-              <span className="text-xs font-black text-teal-700 dark:text-teal-300">
-                Seat {current.seatNumber} — Auto Assigned
+            {/* Seat assignment status badge */}
+            <div className="flex items-center gap-2 p-3 bg-teal-500/10 rounded-xl border border-teal-500/20">
+              <Bus size={14} className="text-teal-450" />
+              <span className="text-xs font-black text-teal-300">
+                Seat {current.seatNumber} Assigned
               </span>
-              <span className="ml-auto px-2 py-0.5 rounded-lg bg-teal-500 text-white text-[10px] font-extrabold">RESERVED</span>
+              <span className="ml-auto flex items-center gap-1 text-[10px] font-black text-teal-400">
+                <ShieldCheck size={12} />
+                Verified ✓
+              </span>
             </div>
 
             {/* Name */}
             <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                Passenger Name *
-              </label>
-              <input
-                type="text"
-                value={current.name}
-                onChange={(e) => update("name", e.target.value)}
-                placeholder="Full name as on ID"
-                className={inputClass("name")}
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide">
+                  Passenger Name *
+                </label>
+                {isPrimary && (
+                  <span className="text-[9px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-0.5">
+                    <ShieldCheck size={10} /> Profile Linked
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={current.name}
+                  onChange={(e) => update("name", e.target.value)}
+                  disabled={isPrimary}
+                  readOnly={isPrimary}
+                  placeholder="Full name as on ID"
+                  className={inputClass("name", isPrimary)}
+                />
+                {isPrimary && <Lock size={12} className="absolute right-3.5 top-3.5 text-slate-500" />}
+              </div>
               {errors.name && (
-                <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-rose-400 font-semibold mt-1 flex items-center gap-1">
                   <AlertCircle size={10} /> {errors.name}
                 </p>
               )}
@@ -239,7 +321,7 @@ const PassengerFormModal = ({
             {/* Age + Gender row */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide mb-1.5">
                   Age *
                 </label>
                 <input
@@ -252,167 +334,145 @@ const PassengerFormModal = ({
                   className={inputClass("age")}
                 />
                 {errors.age && (
-                  <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                  <p className="text-[10px] text-rose-400 font-semibold mt-1 flex items-center gap-1">
                     <AlertCircle size={10} /> {errors.age}
                   </p>
                 )}
               </div>
               <div>
-                <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide mb-1.5">
                   Gender *
                 </label>
-                <div className="flex gap-1.5">
+                <select
+                  value={current.gender}
+                  onChange={(e) => update("gender", e.target.value)}
+                  className={inputClass("gender")}
+                >
                   {GENDER_OPTIONS.map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => update("gender", g)}
-                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black border-2 transition-all ${
-                        current.gender === g
-                          ? g === "Male"
-                            ? "bg-sky-500 border-sky-600 text-white"
-                            : g === "Female"
-                            ? "bg-pink-500 border-pink-600 text-white"
-                            : "bg-slate-500 border-slate-600 text-white"
-                          : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400"
-                      }`}
-                    >
-                      {g === "Male" ? "♂" : g === "Female" ? "♀" : "⚪"} {g.slice(0, 1)}
-                    </button>
+                    <option key={g} value={g} className="bg-slate-900 text-white">
+                      {g}
+                    </option>
                   ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Email (Pre-filled readonly for primary) */}
+            {isPrimary ? (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide">
+                    Email Address
+                  </label>
+                  <span className="text-[9px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-0.5 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full">
+                    Verified ✓
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={current.email}
+                    disabled
+                    readOnly
+                    className={inputClass("email", true)}
+                  />
+                  <Lock size={12} className="absolute right-3.5 top-3.5 text-slate-500" />
                 </div>
               </div>
-            </div>
+            ) : null}
 
-            {/* Phone */}
-            <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                Phone Number *
-              </label>
-              <div className="flex gap-2">
-                <span className="px-3 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-500 flex items-center">
-                  +91
-                </span>
-                <input
-                  type="tel"
-                  value={current.phone}
-                  onChange={(e) => update("phone", e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  placeholder="10-digit mobile number"
-                  className={`flex-1 ${inputClass("phone")}`}
-                />
+            {/* Primary Mobile (Pre-filled readonly for primary) */}
+            {isPrimary ? (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide">
+                    Primary Mobile Number
+                  </label>
+                  <span className="text-[9px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-0.5 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full">
+                    Verified ✓
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    value={current.phone}
+                    disabled
+                    readOnly
+                    className={inputClass("phone", true)}
+                  />
+                  <Lock size={12} className="absolute right-3.5 top-3.5 text-slate-500" />
+                </div>
               </div>
-              {errors.phone && (
-                <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
-                  <AlertCircle size={10} /> {errors.phone}
-                </p>
-              )}
-            </div>
+            ) : null}
 
             {/* Emergency Contact */}
-            <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+            <div className="space-y-2.5">
+              <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide flex items-center gap-1">
                 <Heart size={10} className="text-rose-400" /> Emergency Contact *
               </label>
+
+              {/* Selector Tabs */}
+              <div className="flex gap-1 bg-slate-950/80 p-1 rounded-xl border border-white/5">
+                <button
+                  type="button"
+                  onClick={() => handleEmergencyOptionChange("primary")}
+                  className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                    current.emergencyOption === "primary"
+                      ? "bg-teal-500 text-slate-950"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Primary
+                </button>
+                {user?.alternateNumber || user?.alternateMobile ? (
+                  <button
+                    type="button"
+                    onClick={() => handleEmergencyOptionChange("alternate")}
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                      current.emergencyOption === "alternate"
+                        ? "bg-teal-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Alternate
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleEmergencyOptionChange("custom")}
+                  className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
+                    current.emergencyOption === "custom"
+                      ? "bg-teal-500 text-slate-950"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* Input field */}
               <input
                 type="tel"
                 value={current.emergencyContact}
                 onChange={(e) => update("emergencyContact", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                disabled={current.emergencyOption !== "custom"}
                 placeholder="Emergency contact number"
-                className={inputClass("emergencyContact")}
+                className={inputClass("emergencyContact", current.emergencyOption !== "custom")}
               />
               {errors.emergencyContact && (
-                <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
+                <p className="text-[10px] text-rose-400 font-semibold mt-1 flex items-center gap-1">
                   <AlertCircle size={10} /> {errors.emergencyContact}
                 </p>
               )}
             </div>
-
-            {/* Seat Preference */}
-            <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                <Armchair size={10} /> Seat Preference
-              </label>
-              <div className="flex gap-2">
-                {SEAT_PREFERENCE_OPTIONS.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => update("seatPreference", p)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black border transition-all ${
-                      current.seatPreference === p
-                        ? "bg-teal-500 border-teal-600 text-white"
-                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
-                    }`}
-                  >
-                    {p === "Window" ? "🪟" : p === "Aisle" ? "🚶" : "✓"} {p === "No Preference" ? "Any" : p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Seat Type */}
-            <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                <Armchair size={10} /> Seat Type *
-              </label>
-              <div className="flex gap-2">
-                {["Window", "Aisle", "Upper", "Lower"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => update("seatType", t)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black border transition-all ${
-                      current.seatType === t
-                        ? "bg-teal-500 border-teal-600 text-white"
-                        : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
-                    }`}
-                  >
-                    {t === "Window" ? "🪟" : t === "Aisle" ? "🚶" : t === "Upper" ? "🔼" : "🔽"} {t}
-                  </button>
-                ))}
-              </div>
-              {errors.seatType && (
-                <p className="text-[10px] text-rose-500 font-semibold mt-1 flex items-center gap-1">
-                  <AlertCircle size={10} /> {errors.seatType}
-                </p>
-              )}
-            </div>
-
-            {/* Special Request */}
-            <div>
-              <label className="block text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                <MessageSquare size={10} /> Special Request
-                <span className="text-slate-300 font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={current.specialRequest}
-                onChange={(e) => update("specialRequest", e.target.value)}
-                placeholder="Dietary needs, wheelchair, extra luggage…"
-                rows={2}
-                className={`${inputClass("specialRequest")} resize-none`}
-              />
-            </div>
-
-            {/* Summary preview */}
-            {current.name && (
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mb-1">Preview</p>
-                <p className="text-xs font-black text-slate-800 dark:text-slate-200">{current.name}</p>
-                <p className="text-[11px] text-slate-500">
-                  {current.age && `Age ${current.age}`}
-                  {current.gender && ` · ${current.gender}`}
-                  {` · Seat ${current.seatNumber}`}
-                </p>
-              </div>
-            )}
           </motion.div>
         </AnimatePresence>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 px-4 pb-6 pt-3 flex gap-2">
+        <div className="sticky bottom-0 bg-slate-900 border-t border-white/5 px-4 pb-6 pt-3 flex gap-2">
           <button
             onClick={isFirst ? onBack : handlePrev}
-            className="flex-1 py-3.5 rounded-2xl border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-black text-xs flex items-center justify-center gap-1.5 hover:border-slate-300 transition-colors"
+            className="flex-1 py-3.5 rounded-2xl border-2 border-slate-700 text-slate-400 font-black text-xs flex items-center justify-center gap-1.5 hover:border-white transition-colors"
           >
             <ChevronLeft size={14} />
             {isFirst ? "Change Seats" : "Previous"}
@@ -422,7 +482,7 @@ const PassengerFormModal = ({
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex-[2] py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 to-blue-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/30 active:scale-98 transition-all"
+              className="flex-[2] py-3.5 rounded-2xl bg-teal-500 text-slate-955 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/20 active:scale-98 transition-all"
             >
               {submitting ? (
                 <><Loader2 size={14} className="animate-spin" /> Saving...</>
@@ -433,7 +493,7 @@ const PassengerFormModal = ({
           ) : (
             <button
               onClick={handleNext}
-              className="flex-[2] py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 to-blue-600 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/30 active:scale-98"
+              className="flex-[2] py-3.5 rounded-2xl bg-teal-500 text-slate-955 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/20 active:scale-98"
             >
               Next Passenger
               <ChevronRight size={14} />

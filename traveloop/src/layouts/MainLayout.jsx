@@ -22,12 +22,14 @@ const pageVariants = {
 const MainLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const [isTablet, setIsTablet] = useState(window.innerWidth >= 768 && window.innerWidth < 1024);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setIsDesktop(window.innerWidth >= 1024);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -48,8 +50,61 @@ const MainLayout = ({ children }) => {
 
   if (isDesktop) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex">
-        {/* SIDEBAR ON DESKTOP */}
+      <div className="min-h-screen text-white" style={{
+        background: `
+          radial-gradient(circle at top right, rgba(0,255,190,0.08), transparent 35%),
+          radial-gradient(circle at bottom left, rgba(0,150,255,0.05), transparent 40%),
+          linear-gradient(180deg, #05111E, #09192A, #0B2035)
+        `
+      }}>
+        {/* SIDEBAR ON DESKTOP - Fixed position, pinned permanently */}
+        <Sidebar
+          links={links}
+          activePath={location.pathname}
+          onNavigate={(path) => navigate(path)}
+          collapsed={false}
+          onCollapseToggle={() => {}}
+          onLogout={handleLogout}
+          pinned={true}
+        />
+
+        {/* CONTENT VIEWPORT - Fluid with max-width 1600px */}
+        <div className="flex-1 flex flex-col min-h-screen ml-sidebar-expanded">
+          <Navbar
+            brandName="Traveloop"
+            userName="Traveler"
+            onMenuToggle={null}
+          />
+          <main className="flex-1 px-4 py-6 lg:px-12 lg:pt-8 lg:pb-10 w-full max-w-[1600px] overflow-y-auto">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={location.pathname}
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+          <ServerStatusIndicator />
+        </div>
+      </div>
+    );
+  }
+
+  // Tablet viewport layout
+  if (isTablet) {
+    return (
+      <div className="min-h-screen text-white" style={{
+        background: `
+          radial-gradient(circle at top right, rgba(0,255,190,0.08), transparent 35%),
+          radial-gradient(circle at bottom left, rgba(0,150,255,0.05), transparent 40%),
+          linear-gradient(180deg, #05111E, #09192A, #0B2035)
+        `
+      }}>
+        {/* SIDEBAR ON TABLET - collapsible */}
         <Sidebar
           links={links}
           activePath={location.pathname}
@@ -60,13 +115,13 @@ const MainLayout = ({ children }) => {
         />
 
         {/* CONTENT VIEWPORT */}
-        <div className="flex-1 flex flex-col min-h-screen">
+        <div className="flex-1 flex flex-col min-h-screen ml-sidebar-collapsed md:ml-sidebar-expanded transition-all duration-300">
           <Navbar
             brandName="Traveloop"
             userName="Traveler"
             onMenuToggle={null}
           />
-          <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto w-full overflow-y-auto">
+          <main className="flex-1 px-6 py-6 w-full overflow-y-auto">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={location.pathname}

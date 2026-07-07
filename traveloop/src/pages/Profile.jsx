@@ -20,6 +20,8 @@ import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
 import { verifyReferralCode } from "../services/authService";
 import ScratchCardModal from "../components/dashboard/ScratchCardModal";
+import { auth } from "../services/firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 
 
@@ -243,10 +245,16 @@ const Profile = () => {
   useEffect(() => {
     if (authUser) {
       setProfileUser(authUser);
+      setAlternateEnabled(!!authUser.alternateMobile);
       setPersonalForm({
         firstName: authUser.firstName || "",
         lastName: authUser.lastName || "",
-        phone: authUser.phone || "",
+        phone: authUser.phoneNumber || authUser.primaryMobile || authUser.phone || "",
+        primaryMobile: authUser.phoneNumber || authUser.primaryMobile || authUser.phone || "",
+        alternateMobile: authUser.alternateNumber || authUser.alternateMobile || "",
+        emergencyContact: authUser.emergencyContact || "",
+        age: authUser.age || "",
+        gender: authUser.gender || "",
         city: authUser.city || "",
         country: authUser.country || "",
         upiId: authUser.upiId || "",
@@ -266,10 +274,16 @@ const Profile = () => {
     const handleUserUpdate = (e) => {
       if (e.detail) {
         setProfileUser(e.detail);
+        setAlternateEnabled(!!(e.detail.alternateNumber || e.detail.alternateMobile));
         setPersonalForm({
           firstName: e.detail.firstName || "",
           lastName: e.detail.lastName || "",
-          phone: e.detail.phone || "",
+          phone: e.detail.phoneNumber || e.detail.primaryMobile || e.detail.phone || "",
+          primaryMobile: e.detail.phoneNumber || e.detail.primaryMobile || e.detail.phone || "",
+          alternateMobile: e.detail.alternateNumber || e.detail.alternateMobile || "",
+          emergencyContact: e.detail.emergencyContact || "",
+          age: e.detail.age || "",
+          gender: e.detail.gender || "",
           city: e.detail.city || "",
           country: e.detail.country || "",
           upiId: e.detail.upiId || "",
@@ -412,8 +426,114 @@ const Profile = () => {
 
   const handlePersonalSubmit = async (e) => {
     e.preventDefault();
-    const ok = await updateProfileDetails(personalForm, t("toast.profileUpdated"));
+    const payload = {
+      ...personalForm,
+      age: personalForm.age ? Number(personalForm.age) : null,
+      usersettingsCompleted: true
+    };
+    const ok = await updateProfileDetails(payload, t("toast.profileUpdated"));
     if (ok) setPersonalSheet(false);
+  };
+
+  const [showPrimaryOtp, setShowPrimaryOtp] = useState(false);
+  const [showAlternateOtp, setShowAlternateOtp] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [alternateEnabled, setAlternateEnabled] = useState(false);
+
+  const handleSendOtp = async (phone, isAlternate) => {
+    if (!/^[6-9][0-9]{9}$/.test(phone)) {
+      toast.error("Please enter a valid 10-digit mobile number starting with 6-9");
+      return;
+    }
+    setOtpSending(true);
+    try {
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
+          callback: (response) => {
+            console.log("reCAPTCHA solved");
+          },
+          "expired-callback": () => {
+            console.log("reCAPTCHA expired");
+          }
+        });
+      }
+
+      const formattedPhone = `+91${phone}`;
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.recaptchaVerifier);
+      window.confirmationResult = confirmationResult;
+
+      toast.success("Verification SMS sent successfully!");
+      if (isAlternate) {
+        setShowAlternateOtp(true);
+      } else {
+        setShowPrimaryOtp(true);
+      }
+    } catch (err) {
+      console.error("Firebase SMS send failure:", err);
+      toast.error(err.message || "Failed to send verification SMS via Firebase.");
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const handleVerifyOtp = async (phone, isAlternate) => {
+    if (!otpCode || otpCode.length < 6) {
+      toast.error("Please enter 6-digit OTP code");
+      return;
+    }
+    setOtpVerifying(true);
+    try {
+      if (!window.confirmationResult) {
+        throw new Error("No active phone verification session found.");
+      }
+
+      const result = await window.confirmationResult.confirm(otpCode);
+      const idToken = await result.user.getIdToken();
+
+      // Submit token to backend
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("profile/verify-firebase-phone"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ phone, idToken, isAlternate })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message);
+        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+        const mergedUser = { ...cachedUser, ...data.user };
+        localStorage.setItem("user", JSON.stringify(mergedUser));
+        setProfileUser(mergedUser);
+        login(mergedUser, token);
+
+        setPersonalForm(f => ({
+          ...f,
+          phone: mergedUser.phone || "",
+          primaryMobile: mergedUser.primaryMobile || "",
+          alternateMobile: mergedUser.alternateMobile || "",
+        }));
+
+        if (isAlternate) {
+          setShowAlternateOtp(false);
+        } else {
+          setShowPrimaryOtp(false);
+        }
+        setOtpCode("");
+      } else {
+        toast.error(data.message || "Token sync verification failed.");
+      }
+    } catch (err) {
+      console.error("Firebase SMS verify failure:", err);
+      toast.error(err.message || "Invalid OTP code entered.");
+    } finally {
+      setOtpVerifying(false);
+    }
   };
 
   const handleNotifToggle = async (field) => {
@@ -538,26 +658,26 @@ const Profile = () => {
 
   return (
     <MainLayout>
-      {/* ── HERO HEADER ── */}
-      <div className="relative overflow-hidden" style={{ height: 180 }}>
+      {/* ── HERO HEADER (Desktop: Larger height) ── */}
+      <div className="relative overflow-hidden h-44 lg:h-56">
         <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, #0F172A 0%, #14B8B5 100%)" }} />
         <motion.div animate={{ x: [0,20,0], y: [0,-10,0] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/5" />
+          className="absolute -top-12 -right-12 w-48 h-48 lg:w-64 lg:h-64 rounded-full bg-white/5" />
         <motion.div animate={{ x: [0,-15,0], y: [0,10,0] }} transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute -bottom-8 -left-8 w-36 h-36 rounded-full bg-teal-400/15" />
-        <div className="absolute top-6 right-24 w-16 h-16 rounded-full bg-white/5" />
-        <Plane size={24} className="absolute top-8 left-6 text-white/20 rotate-12" />
+          className="absolute -bottom-8 -left-8 w-36 h-36 lg:w-48 lg:h-48 rounded-full bg-teal-400/15" />
+        <div className="absolute top-6 right-24 w-16 h-16 lg:w-24 lg:h-24 rounded-full bg-white/5" />
+        <Plane size={24} className="absolute top-8 left-6 text-white/20 rotate-12 lg:w-8 lg:h-8" />
       </div>
 
-      {/* ── AVATAR SECTION ── */}
-      <div className="px-4 -mt-14 mb-5">
-        <div className="flex items-end justify-between">
+      {/* ── AVATAR SECTION (Desktop: Centered, larger) ── */}
+      <div className="px-4 lg:px-content-desktop -mt-14 lg:-mt-16 mb-5 lg:mb-8">
+        <div className="flex items-end justify-between lg:items-center lg:justify-start lg:gap-6">
           <div className="relative">
-            <div className="w-24 h-24 rounded-full bg-white p-1 shadow-float overflow-hidden flex items-center justify-center">
-              <Avatar user={profileUser} size={88} />
+            <div className="w-24 h-24 lg:w-32 lg:h-32 rounded-full bg-white p-1 shadow-float overflow-hidden flex items-center justify-center">
+              <Avatar user={profileUser} size={88} className="lg:w-28 lg:h-28" />
             </div>
-            <label className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-teal-50 border-2 border-white flex items-center justify-center shadow-sm cursor-pointer">
-              <Camera size={12} className="text-white" />
+            <label className="absolute bottom-1 right-1 w-7 h-7 lg:w-9 lg:h-9 rounded-full bg-teal-50 border-2 border-white flex items-center justify-center shadow-sm cursor-pointer">
+              <Camera size={12} className="text-white lg:w-4 lg:h-4" />
               <input
                 type="file"
                 accept="image/*"
@@ -567,34 +687,34 @@ const Profile = () => {
             </label>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 lg:gap-3">
             {profileUser.authProvider === "google" ? (
-              <div className="px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 flex items-center gap-1.5">
-                <span className="text-blue-700 text-xs font-bold">{t("profile.googleConnected")}</span>
+              <div className="px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-blue-50 border border-blue-200 flex items-center gap-1.5">
+                <span className="text-blue-700 text-xs lg:text-sm font-bold">{t("profile.googleConnected")}</span>
               </div>
             ) : (
-              <div className="px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 flex items-center gap-1.5">
-                <span className="text-slate-700 text-xs font-bold">{t("profile.emailConnected")}</span>
+              <div className="px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-slate-100 border border-slate-200 flex items-center gap-1.5">
+                <span className="text-slate-700 text-xs lg:text-sm font-bold">{t("profile.emailConnected")}</span>
               </div>
             )}
-            <div className="px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1.5">
-              <ShieldCheck size={12} className="text-emerald-500" />
-              <span className="text-emerald-700 text-xs font-bold">{t("profile.verified")}</span>
+            <div className="px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1.5">
+              <ShieldCheck size={12} className="text-emerald-500 lg:w-4 lg:h-4" />
+              <span className="text-emerald-700 text-xs lg:text-sm font-bold">{t("profile.verified")}</span>
             </div>
           </div>
         </div>
 
-        <div className="mt-3">
-          <h1 className="text-xl font-extrabold text-slate-800">{profileUser.firstName} {profileUser.lastName}</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{profileUser.email}</p>
+        <div className="mt-3 lg:mt-4">
+          <h1 className="text-xl lg:text-3xl font-extrabold text-slate-800">{profileUser.firstName} {profileUser.lastName}</h1>
+          <p className="text-slate-400 text-sm lg:text-base mt-0.5">{profileUser.email}</p>
           <div className="flex items-center gap-1.5 mt-1.5">
-            <Flame size={14} className="text-orange-500" />
-            <span className="text-xs font-bold text-orange-500">{t("profile.streak", { count: profileUser.streak || 0 })}</span>
+            <Flame size={14} className="text-orange-500 lg:w-5 lg:h-5" />
+            <span className="text-xs lg:text-sm font-bold text-orange-500">{t("profile.streak", { count: profileUser.streak || 0 })}</span>
           </div>
 
           {/* Level and XP Progress Bar */}
-          <div className="mt-3 max-w-[280px]">
-            <div className="flex justify-between items-center text-xs font-bold text-slate-600 mb-1">
+          <div className="mt-3 max-w-[280px] lg:max-w-[400px]">
+            <div className="flex justify-between items-center text-xs lg:text-sm font-bold text-slate-600 mb-1">
               <span>{t("profile.level", { level: profileUser.level || 1 })}</span>
               <span className="text-slate-400">{t("profile.xp", { xp: (profileUser.xp || 0) % 100 })}</span>
             </div>
@@ -608,12 +728,12 @@ const Profile = () => {
         </div>
       </div>
 
-      {/* ── STATS ── */}
+      {/* ── STATS (Desktop: Larger cards) ── */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="mx-4 mb-5 premium-card p-4"
+        className="mx-4 lg:mx-content-desktop mb-5 lg:mb-8 premium-card p-4 lg:p-6"
       >
         <div className="flex items-center justify-around">
           {stats.map((s, i) => {
@@ -624,39 +744,39 @@ const Profile = () => {
                 initial={{ scale: 0.7, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.1 * i + 0.2, type: "spring" }}
-                className="flex flex-col items-center gap-2"
+                className="flex flex-col items-center gap-2 lg:gap-3"
               >
-                <div className="w-12 h-12 rounded-[16px] flex items-center justify-center" style={{ background: s.bg }}>
-                  <Icon size={20} style={{ color: s.color }} />
+                <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-[16px] lg:rounded-2xl flex items-center justify-center" style={{ background: s.bg }}>
+                  <Icon size={20} className="lg:w-6 lg:h-6" style={{ color: s.color }} />
                 </div>
-                <span className="text-xl font-extrabold text-slate-800">{s.value}</span>
-                <span className="text-[11px] font-semibold text-slate-400">{t(s.label)}</span>
+                <span className="text-xl lg:text-2xl font-extrabold text-slate-800">{s.value}</span>
+                <span className="text-[11px] lg:text-sm font-semibold text-slate-400">{t(s.label)}</span>
               </motion.div>
             );
           })}
         </div>
       </motion.div>
 
-      {/* ── ACHIEVEMENTS ── */}
-      <div className="mx-4 mb-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Award size={16} className="text-amber-500" />
-          <h3 className="text-[17px] font-bold text-slate-800">{t("profile.achievements")}</h3>
+      {/* ── ACHIEVEMENTS (Desktop: Grid layout) ── */}
+      <div className="mx-4 lg:mx-content-desktop mb-5 lg:mb-8">
+        <div className="flex items-center gap-2 mb-3 lg:mb-4">
+          <Award size={16} className="text-amber-500 lg:w-5 lg:h-5" />
+          <h3 className="text-[17px] lg:text-heading-lg font-bold text-slate-800">{t("profile.achievements")}</h3>
         </div>
-        <div className="flex gap-3 overflow-x-auto hide-scrollbar -mx-4 px-4 pb-1">
+        <div className="flex gap-3 lg:gap-4 overflow-x-auto lg:grid lg:grid-cols-4 lg:overflow-visible hide-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 pb-1 lg:pb-0">
           {(achievements.length > 0 ? achievements : ACHIEVEMENTS).map((badge, i) => (
             <motion.div
               key={badge.title || badge.label}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.08 + 0.2 }}
-              className={`flex-shrink-0 flex flex-col items-center gap-2 p-3 rounded-[20px] bg-white border border-slate-100 shadow-xs w-24 transition-opacity duration-300 ${
+              className={`flex-shrink-0 lg:flex-1 flex flex-col items-center gap-2 lg:gap-3 p-3 lg:p-4 rounded-[20px] lg:rounded-2xl bg-white border border-slate-100 shadow-xs w-24 lg:w-auto transition-opacity duration-300 ${
                 badge.unlocked === false ? "opacity-40" : "opacity-100"
               }`}
             >
-              <span className="text-3xl">{badge.icon || badge.emoji}</span>
-              <p className="text-[11px] font-bold text-slate-700 text-center leading-tight">{badge.title || badge.label}</p>
-              <p className="text-[9px] text-slate-400 text-center leading-tight">{badge.description || badge.desc}</p>
+              <span className="text-3xl lg:text-4xl">{badge.icon || badge.emoji}</span>
+              <p className="text-[11px] lg:text-sm font-bold text-slate-700 text-center leading-tight">{badge.title || badge.label}</p>
+              <p className="text-[9px] lg:text-xs text-slate-400 text-center leading-tight">{badge.description || badge.desc}</p>
             </motion.div>
           ))}
         </div>
@@ -992,82 +1112,237 @@ const Profile = () => {
       </div>
 
       {/* ── PERSONAL INFO SHEET ── */}
-      <BottomSheet isOpen={personalSheet} onClose={() => setPersonalSheet(false)} title={t("personal.title")} snapPoints={["65vh"]}>
-        <form onSubmit={handlePersonalSubmit} className="space-y-4">
+      <BottomSheet isOpen={personalSheet} onClose={() => setPersonalSheet(false)} title={t("personal.title")} snapPoints={["85vh"]}>
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pb-6 px-1">
+          {/* Name Row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.firstName")}</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">First Name</label>
               <input
                 type="text"
                 required
                 value={personalForm.firstName}
                 onChange={e => setPersonalForm(f => ({ ...f, firstName: e.target.value }))}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.lastName")}</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Last Name</label>
               <input
                 type="text"
                 required
                 value={personalForm.lastName}
                 onChange={e => setPersonalForm(f => ({ ...f, lastName: e.target.value }))}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
               />
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.phone")}</label>
-            <input
-              type="tel"
-              value={personalForm.phone}
-              onChange={e => setPersonalForm(f => ({ ...f, phone: e.target.value }))}
-              placeholder={t("personal.phonePlaceholder")}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.upi")}</label>
-            <input
-              type="text"
-              value={personalForm.upiId || ""}
-              onChange={e => setPersonalForm(f => ({ ...f, upiId: e.target.value }))}
-              placeholder={t("personal.upiPlaceholder")}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
-            />
-          </div>
+
+          {/* Age & Gender Row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.city")}</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Age</label>
               <input
-                type="text"
-                value={personalForm.city}
-                onChange={e => setPersonalForm(f => ({ ...f, city: e.target.value }))}
-                placeholder={t("personal.cityPlaceholder")}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
+                type="number"
+                value={personalForm.age || ""}
+                onChange={e => setPersonalForm(f => ({ ...f, age: e.target.value }))}
+                placeholder="Enter age"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">{t("personal.country")}</label>
-              <input
-                type="text"
-                value={personalForm.country}
-                onChange={e => setPersonalForm(f => ({ ...f, country: e.target.value }))}
-                placeholder={t("personal.countryPlaceholder")}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400"
-              />
+              <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Gender</label>
+              <select
+                value={personalForm.gender || ""}
+                onChange={e => setPersonalForm(f => ({ ...f, gender: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+              >
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
           </div>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+
+          {/* Email (Prefilled & Locked) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Email Address (Locked)</label>
+            <div className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-slate-200/60 bg-slate-55/40 dark:bg-slate-850/40 text-slate-500 text-sm font-semibold select-none">
+              <span>{profileUser.email}</span>
+              <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider flex items-center gap-1">
+                Verified ✔
+              </span>
+            </div>
+          </div>
+
+          {/* Primary Mobile */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Primary Mobile Number</label>
+            {profileUser.primaryVerified ? (
+              <div className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-slate-200/60 bg-slate-55/40 dark:bg-slate-850/40 text-slate-500 text-sm font-semibold select-none">
+                <span>{profileUser.primaryMobile || profileUser.phone}</span>
+                <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider flex items-center gap-1">
+                  Verified ✔
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    placeholder="Enter 10-digit number"
+                    value={personalForm.primaryMobile}
+                    onChange={e => setPersonalForm(f => ({ ...f, primaryMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                    disabled={showPrimaryOtp}
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                  />
+                  {!showPrimaryOtp && (
+                    <button
+                      type="button"
+                      onClick={() => handleSendOtp(personalForm.primaryMobile, false)}
+                      disabled={otpSending}
+                      className="px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs rounded-xl transition-all"
+                    >
+                      {otpSending ? "Sending..." : "Verify"}
+                    </button>
+                  )}
+                </div>
+
+                {showPrimaryOtp && (
+                  <div className="flex gap-2 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl">
+                    <input
+                      type="text"
+                      placeholder="Enter 6-digit OTP"
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="flex-1 px-3 py-2 rounded-lg border border-teal-500/30 text-sm font-semibold outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleVerifyOtp(personalForm.primaryMobile, false)}
+                      disabled={otpVerifying}
+                      className="px-4 bg-teal-500 text-slate-950 font-bold text-xs rounded-lg hover:bg-teal-400"
+                    >
+                      {otpVerifying ? "Verifying..." : "Confirm"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Alternate Mobile */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-500 uppercase">Enable Alternate Mobile Number</label>
+              <button
+                type="button"
+                onClick={() => setAlternateEnabled(!alternateEnabled)}
+                className="relative w-10 h-6 rounded-full transition-colors"
+                style={{ background: alternateEnabled ? "#14B8B5" : "#E2E8F0" }}
+              >
+                <div
+                  className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all"
+                  style={{ left: alternateEnabled ? "18px" : "2px" }}
+                />
+              </button>
+            </div>
+
+            {alternateEnabled && (
+              <div>
+                {profileUser.alternateVerified && (profileUser.alternateMobile === personalForm.alternateMobile || profileUser.alternateNumber === personalForm.alternateMobile) ? (
+                  <div className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-slate-200/60 bg-slate-55/40 dark:bg-slate-850/40 text-slate-500 text-sm font-semibold select-none">
+                    <span>{profileUser.alternateNumber || profileUser.alternateMobile}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider">
+                        Verified ✔
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPersonalForm(f => ({ ...f, alternateMobile: "" }));
+                          updateProfileDetails({ alternateMobile: "", alternateVerified: false });
+                        }}
+                        className="text-xs font-bold text-red-500 hover:underline"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="tel"
+                        placeholder="Enter alternate 10-digit number"
+                        value={personalForm.alternateMobile}
+                        onChange={e => setPersonalForm(f => ({ ...f, alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                        disabled={showAlternateOtp}
+                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                      />
+                      {!showAlternateOtp && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendOtp(personalForm.alternateMobile, true)}
+                          disabled={otpSending}
+                          className="px-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs rounded-xl transition-all"
+                        >
+                          {otpSending ? "Sending..." : "Verify"}
+                        </button>
+                      )}
+                    </div>
+
+                    {showAlternateOtp && (
+                      <div className="flex gap-2 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl">
+                        <input
+                          type="text"
+                          placeholder="Enter 6-digit OTP"
+                          value={otpCode}
+                          onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          className="flex-1 px-3 py-2 rounded-lg border border-teal-500/30 text-sm font-semibold outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyOtp(personalForm.alternateMobile, true)}
+                          disabled={otpVerifying}
+                          className="px-4 bg-teal-500 text-slate-950 font-bold text-xs rounded-lg hover:bg-teal-400"
+                        >
+                          {otpVerifying ? "Verifying..." : "Confirm"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Emergency Contact */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Emergency Contact</label>
+            <input
+              type="tel"
+              placeholder="10-digit emergency contact number"
+              value={personalForm.emergencyContact}
+              onChange={e => setPersonalForm(f => ({ ...f, emergencyContact: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+            />
+          </div>
+
+          {/* Save Button */}
+          <button
+            onClick={handlePersonalSubmit}
             disabled={submitting}
-            type="submit"
-            className="w-full py-4 rounded-full text-white font-bold text-sm shadow-brand mt-2"
+            className="w-full py-4 rounded-xl text-white font-bold text-sm shadow-brand mt-4 hover:opacity-90 active:scale-[0.99] transition-all"
             style={{ background: "linear-gradient(135deg,#14B8B5,#0D9488)" }}
           >
             {submitting ? t("personal.saving") : t("personal.saveChanges")}
-          </motion.button>
-        </form>
+          </button>
+          
+          {/* Recaptcha container placeholder for Firebase invisible phone auth verification */}
+          <div id="recaptcha-container"></div>
+        </div>
       </BottomSheet>
 
       {/* ── SECURITY SHEET ── */}
@@ -1374,4 +1649,4 @@ const Profile = () => {
   );
 };
 
-export default Profile;
+export default Profile;

@@ -1,0 +1,232 @@
+/* Traveloop Unified Design System — import once per portal after Tailwind directives */
+
+/* ─── CSS VARIABLES — LIGHT MODE ────────────────────────────── */
+:root {
+  --primary: #14B8B5;
+  --primary-dark: #0D9488;
+  --primary-light: #5EEAD4;
+  --secondary: #0F172A;
+  --secondary-light: #1E293B;
+  --accent: #F59E0B;
+  --accent-dark: #D97706;
+
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F8FAFC;
+  --surface-3: #F1F5F9;
+  --card: #FFFFFF;
+
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --text-inverse: #FFFFFF;
+
+  --border: #E2E8F0;
+  --border-light: #F1F5F9;
+  --border-focus: #14B8B5;
+
+  --shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.14);
+  --shadow-xl: 0 24px 60px rgba(15, 23, 42, 0.18);
+  --shadow-brand: 0 8px 32px rgba(20, 184, 181, 0.25);
+  --shadow-float: 0 20px 60px rgba(15, 23, 42, 0.15), 0 8px 24px rgba(15, 23, 42, 0.10);
+
+  --content-max-width: 1440px;
+  --content-padding: 16px;
+  --section-gap: 16px;
+  --radius-card: 16px;
+
+  --app-bar-height: 60px;
+  --bottom-nav-height: 80px;
+  --touch-target: 44px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-snap: 300ms cubic-bezier(0.32, 0.72, 0, 1);
+
+  --font-h1: 32px;
+  --font-h2: 24px;
+  --font-h3: 20px;
+  --font-body: 16px;
+}
+
+[data-theme="dark"] {
+  --bg: #0B0F14;
+  --surface: #121821;
+  --surface-2: #141C27;
+  --surface-3: #1A2332;
+  --card: #121821;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-inverse: #0B0F14;
+
+  --border: #1E293B;
+  --border-light: #172031;
+  --border-focus: #14B8B5;
+
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-brand: 0 8px 32px rgba(20, 184, 181, 0.2);
+  --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --content-padding: 24px;
+    --section-gap: 24px;
+    --font-h1: 40px;
+    --font-h2: 28px;
+    --font-h3: 22px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --content-padding: 40px;
+    --section-gap: 32px;
+    --font-h1: 48px;
+    --font-h2: 32px;
+    --font-h3: 24px;
+    --font-body: 16px;
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: "Inter", "Poppins", -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1 {
+    font-size: var(--font-h1);
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+  }
+
+  h2 {
+    font-size: var(--font-h2);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: var(--font-h3);
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .traveloop-container {
+    width: 100%;
+    max-width: var(--content-max-width);
+    margin-inline: auto;
+    padding-inline: var(--content-padding);
+  }
+
+  .traveloop-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--section-gap);
+  }
+
+  .traveloop-card {
+    border-radius: var(--radius-card);
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .traveloop-glass {
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+  }
+
+  .gradient-brand {
+    background: linear-gradient(135deg, #14B8B5, #0D9488);
+  }
+
+  .touch-target {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: calc(var(--safe-bottom) + var(--bottom-nav-height));
+  }
+
+  .safe-area-top {
+    padding-top: calc(var(--safe-top) + var(--app-bar-height));
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .no-horizontal-scroll {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  button,
+  a,
+  [role="button"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: var(--touch-target);
+  }
+}
+
+@media (max-height: 500px) {
+  .keyboard-avoid {
+    padding-bottom: max(var(--safe-bottom), 16px);
+  }
+}

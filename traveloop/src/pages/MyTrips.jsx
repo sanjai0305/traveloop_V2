@@ -250,13 +250,13 @@ const BookedPackageCard = ({ booking, index }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.06, duration: 0.35 }}
       whileTap={{ scale: 0.985 }}
-      className="premium-card overflow-hidden cursor-pointer bg-white border border-slate-100 rounded-[24px] shadow-sm hover:shadow-md transition-all duration-300"
+      className="premium-card overflow-hidden cursor-pointer bg-white border border-slate-100 rounded-[24px] lg:rounded-2xl shadow-sm hover:shadow-md transition-all duration-300"
       onClick={() => handleOpen("itinerary")}
     >
       {/* ── COVER ── */}
-      <div className="relative h-44 overflow-hidden" style={{ background: cover }}>
+      <div className="relative h-44 lg:h-52 overflow-hidden" style={{ background: cover }}>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-7xl">{emoji}</span>
+          <span className="text-7xl lg:text-8xl">{emoji}</span>
         </div>
         {trip.coverImage && !imageError && (
           <img
@@ -274,40 +274,40 @@ const BookedPackageCard = ({ booking, index }) => {
         {/* Booked Package badge */}
         <div className="absolute top-4 left-4 z-30">
           <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-extrabold text-white shadow-lg backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full text-[10px] lg:text-xs font-extrabold text-white shadow-lg backdrop-blur-md"
             style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
           >
-            <Package size={11} />
+            <Package size={11} className="lg:w-4 lg:h-4" />
             Booked Package
           </div>
         </div>
 
         {/* Agency Verified badge */}
-        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/90 text-white text-[10px] font-extrabold shadow-lg backdrop-blur-md">
-          <ShieldCheck size={11} />
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-emerald-500/90 text-white text-[10px] lg:text-xs font-extrabold shadow-lg backdrop-blur-md">
+          <ShieldCheck size={11} className="lg:w-4 lg:h-4" />
           Agency Verified
         </div>
 
         {/* Trip info overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 z-30">
-          <h3 className="text-white font-extrabold text-xl leading-tight truncate">
+        <div className="absolute bottom-0 left-0 right-0 p-4 lg:p-5 z-30">
+          <h3 className="text-white font-extrabold text-xl lg:text-2xl leading-tight truncate">
             {trip.title || "Booked Trip"}
           </h3>
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex items-center gap-1.5 min-w-0">
-              <MapPin size={13} className="text-white/80 flex-shrink-0" />
-              <span className="text-white/85 text-xs truncate max-w-[170px]">{dest}</span>
+              <MapPin size={13} className="text-white/80 flex-shrink-0 lg:w-4 lg:h-4" />
+              <span className="text-white/85 text-xs lg:text-sm truncate max-w-[170px] lg:max-w-[200px]">{dest}</span>
             </div>
-            <div className="flex items-center gap-1 flex-shrink-0 bg-white/20 px-2 py-0.5 rounded-md backdrop-blur-xs">
-              <Ticket size={11} className="text-teal-300" />
-              <span className="text-white text-[10px] font-mono font-extrabold">{booking.bookingId}</span>
+            <div className="flex items-center gap-1 flex-shrink-0 bg-white/20 px-2 lg:px-3 py-0.5 lg:py-1 rounded-md backdrop-blur-xs">
+              <Ticket size={11} className="text-teal-300 lg:w-3.5 lg:h-3.5" />
+              <span className="text-white text-[10px] lg:text-xs font-mono font-extrabold">{booking.bookingId}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* ── DETAIL FIELD GRID ── */}
-      <div className="p-4 grid grid-cols-2 gap-3 text-xs border-b border-slate-100 bg-slate-50/30">
+      <div className="p-4 lg:p-5 grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 text-xs lg:text-sm border-b border-slate-100 bg-slate-50/30">
         <div className="flex flex-col gap-0.5">
           <span className="text-slate-400 font-medium">Agency</span>
           <span className="font-bold text-slate-700 truncate">{trip.agent?.companyName || "Traveloop Partner"}</span>
@@ -335,20 +335,20 @@ const BookedPackageCard = ({ booking, index }) => {
       </div>
 
       {/* ── STATUS BADGES ROW ── */}
-      <div className="px-4 py-3 flex flex-wrap gap-2 border-b border-slate-100 bg-white">
-        <div className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${tripStatusColor} uppercase tracking-wider`}>
+      <div className="px-4 lg:px-5 py-3 lg:py-4 flex flex-wrap gap-2 lg:gap-3 border-b border-slate-100 bg-white">
+        <div className={`px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold border ${tripStatusColor} uppercase tracking-wider`}>
           Trip: {tripStatus}
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${qrStatusColor} uppercase tracking-wider`}>
+        <div className={`px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold border ${qrStatusColor} uppercase tracking-wider`}>
           QR: {qrStatus}
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${seatStatusColor} uppercase tracking-wider`}>
+        <div className={`px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold border ${seatStatusColor} uppercase tracking-wider`}>
           {seatStatusText}
         </div>
-        <div className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${driverStatusColor} uppercase tracking-wider`}>
+        <div className={`px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold border ${driverStatusColor} uppercase tracking-wider`}>
           {driverStatusText}
         </div>
-        <div className="px-2.5 py-1 rounded-full text-[10px] font-extrabold border border-teal-200 bg-teal-50 text-teal-800 uppercase tracking-wider">
+        <div className="px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold border border-teal-200 bg-teal-50 text-teal-800 uppercase tracking-wider">
           Payment: {booking.paymentStatus || "Paid"}
         </div>
       </div>
@@ -416,7 +416,7 @@ const BookedPackageCard = ({ booking, index }) => {
       </div>
 
       {/* ── QUICK ACTIONS ── */}
-      <div className="px-3 py-3 grid grid-cols-6 gap-1.5 bg-white">
+      <div className="px-3 lg:px-5 py-3 lg:py-4 grid grid-cols-6 gap-1.5 lg:gap-2 bg-white">
         {ACTIONS.map(action => {
           const Icon = action.icon;
           return (
@@ -424,11 +424,11 @@ const BookedPackageCard = ({ booking, index }) => {
               key={action.label}
               whileTap={{ scale: 0.88 }}
               onClick={e => { e.stopPropagation(); handleOpen(action.tab); }}
-              className={`flex flex-col items-center gap-1 py-2 rounded-[12px] ${action.bg} ${action.color} transition-all min-h-[48px]`}
+              className={`flex flex-col items-center gap-1 lg:gap-1.5 py-2 lg:py-3 rounded-[12px] lg:rounded-xl ${action.bg} ${action.color} transition-all min-h-[48px] lg:min-h-[64px]`}
               aria-label={`Open ${action.label}`}
             >
-              <Icon size={14} />
-              <span className="text-[9px] font-bold leading-tight text-center">{action.label}</span>
+              <Icon size={14} className="lg:w-5 lg:h-5" />
+              <span className="text-[9px] lg:text-xs font-bold leading-tight text-center">{action.label}</span>
             </motion.button>
           );
         })}
@@ -478,9 +478,9 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
       onClick={() => onClick(trip)}
     >
       {/* ── COVER ── */}
-      <div className="relative h-44 overflow-hidden" style={{ background: cover }}>
+      <div className="relative h-44 lg:h-52 overflow-hidden" style={{ background: cover }}>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-7xl">{emoji}</span>
+          <span className="text-7xl lg:text-8xl">{emoji}</span>
         </div>
         {trip.image && !imageError && (
           <img
@@ -496,18 +496,18 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
         <div className="absolute top-4 left-4 z-30">
           {trip.tripType === "booked" ? (
             <div
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold text-white shadow-lg"
+              className="flex items-center gap-1 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold text-white shadow-lg"
               style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
             >
-              <Package size={10} />
+              <Package size={10} className="lg:w-4 lg:h-4" />
               Booked Package
             </div>
           ) : (
             <div
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold text-white shadow-lg"
+              className="flex items-center gap-1 px-2.5 lg:px-3 py-1 lg:py-1.5 rounded-full text-[10px] lg:text-xs font-extrabold text-white shadow-lg"
               style={{ background: "linear-gradient(135deg, #7C3AED, #6D28D9)" }}
             >
-              <User size={10} />
+              <User size={10} className="lg:w-4 lg:h-4" />
               Personal Trip
             </div>
           )}
@@ -517,7 +517,7 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onStatusClick(trip._id, trip.status || "planning"); }}
-          className={`absolute top-4 right-4 z-30 px-3 py-1 rounded-full text-[11px] font-bold ${status.bg} ${status.text} shadow-xs active:scale-95 transition-all`}
+          className={`absolute top-4 right-4 z-30 px-3 lg:px-4 py-1 lg:py-1.5 rounded-full text-[11px] lg:text-xs font-bold ${status.bg} ${status.text} shadow-xs active:scale-95 transition-all`}
           aria-label={`Change status for ${trip.title}`}
         >
           {status.label}
@@ -525,29 +525,29 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
 
         {/* Days left pill */}
         {daysLeft !== null && daysLeft > 0 && (
-          <div className="absolute top-[52px] left-4 z-30 px-3 py-1 rounded-full bg-white/90 backdrop-blur-sm">
-            <span className="text-[11px] font-bold text-slate-700">{daysLeft}d to go</span>
+          <div className="absolute top-[52px] left-4 z-30 px-3 lg:px-4 py-1 lg:py-1.5 rounded-full bg-white/90 backdrop-blur-sm">
+            <span className="text-[11px] lg:text-xs font-bold text-slate-700">{daysLeft}d to go</span>
           </div>
         )}
 
         {/* Trip name overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 z-30">
-          <h3 className="text-white font-extrabold text-lg leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div className="absolute bottom-0 left-0 right-0 p-4 lg:p-5 z-30">
+          <h3 className="text-white font-extrabold text-lg lg:text-xl leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {trip.title}
           </h3>
           <div className="flex items-center justify-between gap-1.5 mt-1 min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <MapPin size={12} className="text-white/70 flex-shrink-0" />
-              <span className="text-white/70 text-xs truncate max-w-[140px]">{trip.destination}</span>
+              <MapPin size={12} className="text-white/70 flex-shrink-0 lg:w-4 lg:h-4" />
+              <span className="text-white/70 text-xs lg:text-sm truncate max-w-[140px] lg:max-w-[180px]">{trip.destination}</span>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               {badgeText && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-white/20 text-white border border-white/10 uppercase tracking-wider backdrop-blur-xs">
+                <span className="px-2 lg:px-2.5 py-0.5 lg:py-1 rounded-full text-[9px] lg:text-[10px] font-extrabold bg-white/20 text-white border border-white/10 uppercase tracking-wider backdrop-blur-xs">
                   {badgeText}
                 </span>
               )}
               {(unreadCount > 0 || (!unreadCount && trip.unreadCount > 0)) && (
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-500 text-white border border-rose-400 uppercase tracking-wider">
+                <span className="px-2 lg:px-2.5 py-0.5 lg:py-1 rounded-full text-[9px] lg:text-[10px] font-extrabold bg-rose-500 text-white border border-rose-400 uppercase tracking-wider">
                   💬 {unreadCount || trip.unreadCount}
                 </span>
               )}
@@ -557,32 +557,32 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
       </div>
 
       {/* ── INFO ROW ── */}
-      <div className="px-4 py-3 flex items-center justify-between gap-2 border-b border-slate-50">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+      <div className="px-4 lg:px-5 py-3 lg:py-4 flex items-center justify-between gap-2 border-b border-slate-50">
+        <div className="flex flex-wrap items-center gap-x-3 lg:gap-x-4 gap-y-1.5 min-w-0">
           {trip.startDate && (
-            <div className="flex items-center gap-1.5 text-slate-500 text-xs flex-shrink-0">
-              <CalendarDays size={12} className="text-teal-500" />
+            <div className="flex items-center gap-1.5 text-slate-500 text-xs lg:text-sm flex-shrink-0">
+              <CalendarDays size={12} className="text-teal-500 lg:w-4 lg:h-4" />
               <span>{new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
             </div>
           )}
           {days && (
-            <div className="flex items-center gap-1.5 text-slate-500 text-xs flex-shrink-0">
-              <Clock size={12} className="text-violet-500" />
+            <div className="flex items-center gap-1.5 text-slate-500 text-xs lg:text-sm flex-shrink-0">
+              <Clock size={12} className="text-violet-500 lg:w-4 lg:h-4" />
               <span>{days} days</span>
             </div>
           )}
           {trip.budget && (
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 flex-shrink-0">
-              <DollarSign size={12} />
+            <div className="flex items-center gap-1.5 text-xs lg:text-sm font-semibold text-amber-600 flex-shrink-0">
+              <DollarSign size={12} className="lg:w-4 lg:h-4" />
               <span>₹{trip.budget.toLocaleString()}</span>
             </div>
           )}
         </div>
-        <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
+        <ChevronRight size={16} className="text-slate-300 flex-shrink-0 lg:w-5 lg:h-5" />
       </div>
 
       {/* ── QUICK ACTIONS ── */}
-      <div className="px-3 py-3 flex gap-2">
+      <div className="px-3 lg:px-5 py-3 lg:py-4 flex gap-2 lg:gap-3">
         {ACTIONS.map(action => {
           const Icon = action.icon;
           return (
@@ -590,11 +590,11 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
               key={action.label}
               whileTap={{ scale: 0.88 }}
               onClick={e => { e.stopPropagation(); navigate(action.path); }}
-              className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-[14px] ${action.bg} ${action.color} transition-all min-h-[48px]`}
+              className={`flex-1 flex flex-col items-center gap-1.5 lg:gap-2 py-2.5 lg:py-3 rounded-[14px] lg:rounded-xl ${action.bg} ${action.color} transition-all min-h-[48px] lg:min-h-[64px]`}
               aria-label={`Open ${action.label} for ${trip.title}`}
             >
-              <Icon size={16} />
-              <span className="text-[10px] font-semibold">{action.label}</span>
+              <Icon size={16} className="lg:w-5 lg:h-5" />
+              <span className="text-[10px] lg:text-xs font-semibold">{action.label}</span>
             </motion.button>
           );
         })}
@@ -806,13 +806,13 @@ const MyTrips = () => {
 
   return (
     <MainLayout>
-      <div className="px-4 pt-4 pb-8">
+      <div className="px-4 pt-4 pb-8 lg:px-content-desktop lg:pt-6 lg:pb-12">
 
-        {/* ── Search ── */}
+        {/* ── Search (Desktop: Centered, 70% width) ── */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 px-4 py-3.5 mb-4 rounded-[18px] bg-white border border-slate-200 shadow-sm focus-within:border-teal-400 focus-within:ring-4 focus-within:ring-teal-50 transition-all duration-200"
+          className="flex items-center gap-3 px-4 py-3.5 mb-4 lg:mb-6 rounded-[18px] lg:rounded-2xl bg-white border border-slate-200 shadow-sm focus-within:border-teal-400 focus-within:ring-4 focus-within:ring-teal-50 transition-all duration-200 lg:mx-auto lg:w-[70%] lg:h-[56px]"
         >
           <Map size={18} className="text-slate-400 flex-shrink-0" />
           <input
@@ -820,13 +820,13 @@ const MyTrips = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search trips, destinations, booking ID..."
-            className="flex-1 bg-transparent text-slate-700 text-sm font-medium placeholder:text-slate-400 outline-none"
+            className="flex-1 bg-transparent text-slate-700 text-sm lg:text-base font-medium placeholder:text-slate-400 outline-none"
             aria-label="Search trips and destinations"
           />
         </motion.div>
 
-        {/* ── Tab Strip ── */}
-        <div className="chip-row mb-5 -mx-4 px-4">
+        {/* ── Tab Strip (Desktop: Better spacing) ── */}
+        <div className="chip-row mb-5 lg:mb-8 -mx-4 px-4 lg:mx-0 lg:px-0">
           {TABS.map((tab, i) => (
             <motion.button
               key={tab.key}
@@ -835,7 +835,7 @@ const MyTrips = () => {
               transition={{ delay: i * 0.04 }}
               whileTap={{ scale: 0.90 }}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
+              className={`flex-shrink-0 px-4 lg:px-6 py-2 lg:py-2.5 rounded-full text-sm lg:text-base font-semibold transition-all duration-200 ${
                 activeTab === tab.key
                   ? "text-white shadow-brand"
                   : "bg-white text-slate-500 border border-slate-200"
@@ -895,7 +895,7 @@ const MyTrips = () => {
             )}
           </motion.div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:gap-6">
             <AnimatePresence>
               {/* Booked Packages section */}
               {visibleBooked.length > 0 && (
@@ -903,17 +903,19 @@ const MyTrips = () => {
                   {activeTab === "all" && (
                     <div className="flex items-center gap-2 mt-1">
                       <div
-                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white"
+                        className="flex items-center gap-1.5 px-3 lg:px-4 py-1 lg:py-1.5 rounded-full text-xs lg:text-sm font-bold text-white"
                         style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
                       >
-                        <Package size={11} />
+                        <Package size={11} className="lg:w-4 lg:h-4" />
                         Booked Packages ({visibleBooked.length})
                       </div>
                     </div>
                   )}
-                  {visibleBooked.map((booking, i) => (
-                    <BookedPackageCard key={`booked-pkg-${booking._id || booking.id || i}-${i}`} booking={booking} index={i} />
-                  ))}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+                    {visibleBooked.map((booking, i) => (
+                      <BookedPackageCard key={`booked-pkg-${booking._id || booking.id || i}-${i}`} booking={booking} index={i} />
+                    ))}
+                  </div>
                 </>
               )}
 
@@ -923,24 +925,26 @@ const MyTrips = () => {
                   {activeTab === "all" && (
                     <div className="flex items-center gap-2 mt-2">
                       <div
-                        className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white"
+                        className="flex items-center gap-1.5 px-3 lg:px-4 py-1 lg:py-1.5 rounded-full text-xs lg:text-sm font-bold text-white"
                         style={{ background: "linear-gradient(135deg, #0EA5E9, #0284C7)" }}
                       >
-                        <ListChecks size={11} />
+                        <ListChecks size={11} className="lg:w-4 lg:h-4" />
                         Trip Planners ({visibleBookedPlans.length})
                       </div>
                     </div>
                   )}
-                  {visibleBookedPlans.map((trip, i) => (
-                    <PersonalTripCard
-                      key={`booked-plan-${trip._id || trip.id || i}-${i}`}
-                      trip={trip}
-                      index={i}
-                      unreadCount={unreadCounts[trip._id] || 0}
-                      onStatusClick={(id, curStatus) => setSelectedTripForStatus({ id, status: curStatus })}
-                      onClick={() => navigate(`/build-itinerary/${trip._id}`)}
-                    />
-                  ))}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+                    {visibleBookedPlans.map((trip, i) => (
+                      <PersonalTripCard
+                        key={`booked-plan-${trip._id || trip.id || i}-${i}`}
+                        trip={trip}
+                        index={i}
+                        unreadCount={unreadCounts[trip._id] || 0}
+                        onStatusClick={(id, curStatus) => setSelectedTripForStatus({ id, status: curStatus })}
+                        onClick={() => navigate(`/build-itinerary/${trip._id}`)}
+                      />
+                    ))}
+                  </div>
                 </>
               )}
 

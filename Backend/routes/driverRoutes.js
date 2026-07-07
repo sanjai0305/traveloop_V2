@@ -772,4 +772,71 @@ router.get("/seats/:tripId", protectDriver, async (req, res) => {
   }
 });
 
+// POST /api/driver/verify-ticket
+// @desc Verify traveler via Ticket ID, Verification Code, or Booking ID
+router.post("/verify-ticket", protectDriver, async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) {
+      return res.status(400).json({ success: false, message: "Ticket ID, Booking ID, or Verification Code is required" });
+    }
+
+    const booking = await Booking.findOne({
+      $or: [
+        { ticketId: query.trim() },
+        { verificationCode: query.trim() },
+        { bookingId: query.trim() }
+      ]
+    }).populate("userId").populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Passenger booking not found." });
+    }
+
+    // Check payment status
+    if (booking.paymentStatus !== "PAID" && booking.paymentStatus !== "completed") {
+      return res.status(400).json({ success: false, message: "Payment pending or failed for this booking." });
+    }
+
+    const user = booking.userId;
+    const trip = booking.tripId;
+
+    // Log this verification attempt
+    try {
+      const DriverVerificationLog = (await import("../models/DriverVerificationLog.js")).default;
+      const isCode = query.trim().startsWith("TLP-") && query.trim().length <= 11;
+      const method = query.trim().startsWith("TLP-2026-") ? "Ticket ID" : (isCode ? "Manual" : "QR");
+
+      await DriverVerificationLog.create({
+        driverId: req.driver._id,
+        bookingId: booking._id,
+        method
+      });
+    } catch (logErr) {
+      console.error("[Driver verification log failed]", logErr.message);
+    }
+
+    res.json({
+      success: true,
+      booking: {
+        id: booking._id.toString(),
+        travelerName: booking.travelerName || (user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : "Traveler"),
+        phone: booking.contactNumber || (user ? user.phone : ""),
+        assignedSeat: booking.assignedSeat || booking.seatNumber || "",
+        boardingStatus: booking.boardingStatus,
+        paymentStatus: booking.paymentStatus,
+        seatsCount: booking.seats || 1,
+        tripTitle: trip?.title || "Premium Voyage",
+        busNumber: trip?.busNumber || "TLP-2026",
+        pickupLocation: booking.pickupLocation || trip?.pickupLocation || "",
+        verified: true
+      }
+    });
+
+  } catch (err) {
+    console.error("[Driver verify-ticket]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 export default router;

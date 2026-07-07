@@ -59,51 +59,52 @@ Join TravelLoop today and travel smarter.`;
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.22, duration: 0.4 }}
-        className="premium-card p-4 mx-4 mb-4 select-none"
+        className="premium-card p-4 mx-4 mb-4 lg:py-4 lg:px-6 lg:mx-0 lg:mb-6 select-none lg:bg-slate-900/40 lg:border-white/10 lg:backdrop-blur-md"
       >
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-1.5">
-          <div className="w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-600 dark:text-teal-400">
-            <Gift size={16} />
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
+          {/* Left: Icon + Title & Description in single row elements */}
+          <div className="flex items-center gap-3 lg:flex-1 min-w-0">
+            <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg lg:rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-600 dark:text-teal-400 flex-shrink-0">
+              <Gift size={16} className="lg:w-5 lg:h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm lg:text-base font-extrabold text-slate-800 dark:text-white font-poppins truncate">
+                Invite Friends & Earn Travel Rewards
+              </h3>
+              <p className="text-[11px] lg:text-xs text-slate-400 font-medium leading-normal truncate mt-0.5">
+                Share TravelLoop with friends and get discounts on your next trip.
+              </p>
+            </div>
           </div>
-          <h3 className="text-sm font-extrabold text-slate-800 dark:text-white font-poppins">
-            Invite Friends & Earn Travel Rewards
-          </h3>
-        </div>
 
-        {/* Subtitle */}
-        <p className="text-[11px] text-slate-400 font-medium leading-normal mb-3.5 pl-9">
-          Share TravelLoop with friends and get discounts on your next trip.
-        </p>
-
-        {/* Code & Buttons Container */}
-        <div className="flex items-center justify-between gap-3 p-3 bg-slate-50/60 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-2xl">
-          <div className="flex flex-col pl-1">
-            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">
-              Referral Code
+          {/* Center: Referral Code */}
+          <div className="flex items-center gap-2 p-2 lg:px-4 lg:py-2 bg-slate-50/60 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl lg:flex-shrink-0">
+            <span className="text-[9px] lg:text-xs uppercase font-bold text-slate-400 tracking-wider">
+              Code:
             </span>
-            <span className="text-sm font-black text-teal-605 dark:text-teal-400 tracking-wide font-mono mt-0.5 select-text">
+            <span className="text-sm lg:text-base font-black text-teal-600 dark:text-teal-400 tracking-wide font-mono select-text">
               {referralCode}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* Right: Action Buttons */}
+          <div className="flex items-center gap-2 lg:gap-3 lg:flex-shrink-0">
             {/* Copy Button */}
             <button
               onClick={handleCopyCode}
-              className="h-9 px-3.5 bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all duration-200 active:scale-95 flex items-center gap-1.5 border border-slate-200/20"
+              className="h-9 lg:h-10 px-3.5 lg:px-5 bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs lg:text-sm font-bold rounded-lg transition-all duration-200 active:scale-95 flex items-center gap-1.5 border border-slate-200/20"
             >
-              {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-              <span>{copied ? "Copied" : "Copy Code"}</span>
+              {copied ? <Check size={13} className="lg:w-4 lg:h-4" /> : <Copy size={13} className="lg:w-4 lg:h-4" />}
+              <span>{copied ? "Copied" : "Copy"}</span>
             </button>
 
             {/* Share Button */}
             <button
               onClick={handleShareApp}
-              className="h-9 px-3.5 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-black rounded-xl transition-all duration-200 active:scale-95 flex items-center gap-1.5 shadow-md shadow-teal-500/10"
+              className="h-9 lg:h-10 px-3.5 lg:px-5 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs lg:text-sm font-bold rounded-lg transition-all duration-200 active:scale-95 flex items-center gap-1.5 shadow-md shadow-teal-500/10"
             >
-              <Share2 size={13} />
-              <span>Share App</span>
+              <Share2 size={13} className="lg:w-4 lg:h-4" />
+              <span>Share</span>
             </button>
           </div>
         </div>

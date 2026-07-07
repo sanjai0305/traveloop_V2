@@ -573,3 +573,136 @@ export const sendScheduleUpdateNotification = async (to, name, data) => {
     html,
   });
 };
+
+export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfBuffer) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Booking confirmation email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+
+  const travelDate = trip?.startDate
+    ? new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "TBD";
+
+  const html = `
+    <div style="background-color: #05111E; padding: 30px; font-family: 'Poppins', 'Inter', sans-serif; color: #FFFFFF; max-width: 600px; margin: 0 auto; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #14B8B5; margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Traveloop</h1>
+        <p style="color: #94A3B8; margin: 4px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Premium Voyage Pass</p>
+      </div>
+
+      <div style="background: linear-gradient(135deg, rgba(20,184,181,0.15) 0%, rgba(6,182,212,0.05) 100%); border: 1px solid rgba(20,184,181,0.2); border-radius: 16px; padding: 20px; text-align: center; margin-bottom: 20px;">
+        <span style="font-size: 32px; display: block; margin-bottom: 8px;">✈️</span>
+        <h2 style="color: #FFFFFF; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.5px;">Booking Confirmed</h2>
+        <p style="color: #14B8B5; margin: 4px 0 0 0; font-size: 12px; font-weight: 700; font-family: monospace;">Ticket #${booking?.ticketId || 'TLP-2026-XXXXXX'}</p>
+      </div>
+
+      <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 20px; margin-bottom: 20px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Passenger</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${name || 'Traveler'}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Trip / Route</td>
+            <td style="color: #14B8B5; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.title || 'Premium Voyage'}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Assigned Seat</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">Seat ${booking?.assignedSeat || booking?.seatNumber || 'TBD'}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Bus Number</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.busNumber || 'TLP-2026'}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Travel Date</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${travelDate}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Boarding Terminal</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.pickupLocation || booking?.pickupLocation || 'Main Terminal'}</td>
+          </tr>
+          <tr>
+            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Drop Point</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.dropPoint || 'Destination Terminus'}</td>
+          </tr>
+          <tr style="border-top: 1px solid rgba(255,255,255,0.08);">
+            <td style="color: #94A3B8; padding: 12px 0 0 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Fare Paid</td>
+            <td style="color: #14B8B5; padding: 12px 0 0 0; font-size: 16px; font-weight: 900; text-align: right;">₹${(booking?.pricePaid || booking?.amountPaid || 3999).toLocaleString('en-IN')}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="background-color: rgba(20,184,181,0.05); border: 1px dashed rgba(20,184,181,0.3); border-radius: 16px; padding: 16px; text-align: center; margin-bottom: 20px;">
+        <span style="color: #94A3B8; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px;">Fallback Verification Code</span>
+        <span style="color: #14B8B5; font-size: 20px; font-weight: 900; letter-spacing: 2px; font-family: monospace;">${booking?.verificationCode || 'TLP-XXXXXXX'}</span>
+        <p style="color: #94A3B8; margin: 6px 0 0 0; font-size: 10px; line-height: 1.4;">If your QR pass fails to scan, please present this manual check-in code directly to the driver.</p>
+      </div>
+
+      <p style="font-size: 11px; text-align: center; color: #94A3B8; line-height: 1.6; margin-bottom: 20px;">
+        Your official boarding pass is attached to this email as a premium PDF.
+      </p>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; text-align: center; font-size: 11px; color: #64748B;">
+        <p style="margin: 0 0 4px 0;">&copy; ${new Date().getFullYear()} Traveloop. All rights reserved.</p>
+        <p style="margin: 0;">Need immediate assistance? Contact <a href="mailto:support@traveloop.com" style="color: #14B8B5; text-decoration: none;">support@traveloop.com</a></p>
+      </div>
+    </div>
+  `;
+
+  await sendMailWithRetry(transporter, {
+    from: `"Traveloop" <${senderEmail}>`,
+    to,
+    subject: `Traveloop Booking Confirmed • Ticket #${booking?.ticketId || 'TLP-2026-000123'}`,
+    html,
+    attachments: [
+      {
+        filename: `Traveloop-Ticket-${booking?.ticketId || 'Pass'}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf"
+      }
+    ]
+  });
+};
+
+export const sendEmailVerificationOtp = async (to, firstName, otpCode) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing OTP email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+
+  const html = `
+    <div style="background-color: #05111E; padding: 30px; font-family: 'Poppins', 'Inter', sans-serif; color: #FFFFFF; max-width: 500px; margin: 0 auto; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h1 style="color: #14B8B5; margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Traveloop</h1>
+        <p style="color: #94A3B8; margin: 4px 0 0 0; font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Security Verification</p>
+      </div>
+
+      <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 24px; text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #FFFFFF; margin: 0 0 12px 0; font-size: 16px; font-weight: 800;">Verify Your Action</h2>
+        <p style="color: #94A3B8; font-size: 12px; line-height: 1.5; margin-bottom: 20px;">Hi ${firstName || 'Traveler'}, please enter the following verification code to confirm your email update. This code is valid for exactly 10 minutes.</p>
+        
+        <div style="background: linear-gradient(135deg, rgba(20,184,181,0.1) 0%, rgba(6,182,212,0.03) 100%); border: 1px dashed rgba(20,184,181,0.3); border-radius: 12px; padding: 16px; display: inline-block;">
+          <span style="color: #14B8B5; font-size: 28px; font-weight: 900; letter-spacing: 4px; font-family: monospace;">${otpCode}</span>
+        </div>
+      </div>
+
+      <div style="text-align: center; font-size: 10px; color: #64748B;">
+        <p style="margin: 0 0 4px 0;">&copy; ${new Date().getFullYear()} Traveloop. All rights reserved.</p>
+        <p style="margin: 0;">If you did not request this verification, please ignore this email.</p>
+      </div>
+    </div>
+  `;
+
+  await sendMailWithRetry(transporter, {
+    from: `"Traveloop" <${senderEmail}>`,
+    to,
+    subject: `Traveloop Verification Code • ${otpCode}`,
+    html,
+  });
+};
