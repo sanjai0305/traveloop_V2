@@ -12,6 +12,7 @@ import Driver from "../models/Driver.js";
 import AgentSettings from "../models/AgentSettings.js";
 import AgentReferral from "../models/AgentReferral.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
+import checkAgentKYC from "../middleware/kycMiddleware.js";
 import DriverOtp from "../models/DriverOtp.js";
 import { sendOtpEmail, sendDriverOtpEmail } from "../services/emailService.js";
 import bcrypt from "bcryptjs";
