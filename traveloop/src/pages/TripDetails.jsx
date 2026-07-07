@@ -381,6 +381,14 @@ export const TripDetails = () => {
     const femaleCount = passengerList.filter(p => p.gender === "Female").length;
 
     // Create booking on backend before showing payment modal
+    const localUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const localUserId = localUser?._id || localUser?.id;
+    if (!localUserId) {
+      toast.error("User session expired. Please log in again to book.");
+      setBookingStage("passenger_form");
+      return;
+    }
+
     try {
       const token = localStorage.getItem("token");
       const bookingRes = await fetch(getApiUrl("bookings"), {
@@ -399,10 +407,19 @@ export const TripDetails = () => {
           pickupLocation: trip.pickupLocation || "",
         }),
       });
+
       const bookingData = await bookingRes.json();
+
+      if (!bookingRes.ok || !bookingData.success) {
+        throw new Error(bookingData.message || "Failed to create booking on backend.");
+      }
 
       const bookingRef = bookingData.bookingId || bookingData.booking?.bookingId;
       const bookingMongoId = bookingData.booking?._id || bookingData.bookingId;
+
+      if (!bookingRef || !bookingMongoId) {
+        throw new Error("Invalid booking reference returned from server.");
+      }
 
       setConfirmedBooking({
         bookingId: bookingRef,
@@ -414,7 +431,8 @@ export const TripDetails = () => {
       });
       setBookingStage("upi_payment");
     } catch (err) {
-      toast.error("Failed to create booking. Please try again.");
+      console.error("[Booking Creation Error]:", err);
+      toast.error(err.message || "Failed to create booking. Please try again.");
       setBookingStage("passenger_form");
     }
   };

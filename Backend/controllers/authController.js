@@ -307,7 +307,7 @@ export const verifyOtp = async (req, res) => {
         });
 
       
-      user = { ...newUser, _id: newUser.id };
+      user = { ...newUser.toObject(), _id: newUser._id, id: newUser._id.toString() };
 
       // Send welcome email (async)
       try {
@@ -333,7 +333,7 @@ export const verifyOtp = async (req, res) => {
       success: true,
       message: "User registered and verified successfully.",
       user: {
-        _id: user.id,
+        _id: user._id || user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -344,7 +344,7 @@ export const verifyOtp = async (req, res) => {
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: "2026-06",
       },
-      token: generateToken(user.id),
+      token: generateToken(user._id || user.id),
     });
 
   } catch (err) {
@@ -522,7 +522,7 @@ export const registerUser = async (req, res) => {
     }
 
     
-    const user = { ...newUser, _id: newUser.id };
+    const user = { ...newUser.toObject(), _id: newUser._id, id: newUser._id.toString() };
 
     // Send welcome email (async)
     try {
@@ -535,7 +535,7 @@ export const registerUser = async (req, res) => {
       success: true,
       message: "Registration Successful",
       user: {
-        _id: user.id,
+        _id: user._id || user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -549,7 +549,7 @@ export const registerUser = async (req, res) => {
         referralVerified: newUser.referralVerified || false,
         rewardUnlocked: newUser.rewardUnlocked || false,
       },
-      token: generateToken(user.id),
+      token: generateToken(user._id || user.id),
       // Referral reward info (populated when a referral code was used)
       referral: inviterUser ? {
         used: true,
@@ -660,7 +660,7 @@ export const loginUser = async (req, res) => {
       success: true,
       message: "Login Successful",
       user: {
-        _id: user.id,
+        _id: user._id || user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -673,7 +673,7 @@ export const loginUser = async (req, res) => {
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
       },
-      token: generateToken(user.id),
+      token: generateToken(user._id || user.id),
     });
 
   } catch (error) {

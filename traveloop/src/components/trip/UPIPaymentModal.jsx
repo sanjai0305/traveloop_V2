@@ -99,18 +99,27 @@ const UPIPaymentModal = ({
     setError(null);
     setPhase("loading");
 
+    const localUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const localUserId = localUser?._id || localUser?.id;
+    const resolvedBookingId = mongoId || bookingRef;
+
     // ISSUE 7: Debug log — before payment
     console.log("[Payment] Initiating Razorpay payment:", {
-      bookingId: mongoId || bookingRef,
+      bookingId: resolvedBookingId,
       tripId: trip?._id,
       amount,
-      userId: JSON.parse(localStorage.getItem("user") || "{}")?._id,
+      userId: localUserId,
       tripTitle,
       seats: seatNumbers,
     });
 
-    // ISSUE 2: Validate bookingId before any backend call
-    const resolvedBookingId = mongoId || bookingRef;
+    if (!localUserId) {
+      setError("User session not found. Please log in again to book.");
+      setPhase("failed");
+      toast.error("User session not found. Please log in.");
+      return;
+    }
+
     if (!resolvedBookingId) {
       setError("Booking reference not found. Please restart the booking flow.");
       setPhase("failed");
