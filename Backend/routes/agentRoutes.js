@@ -377,6 +377,38 @@ router.get("/me", protectAgent, async (req, res) => {
   });
 });
 
+// @route   PATCH /api/agent/accept-terms
+// @desc    Accept terms & conditions for agent
+router.patch("/accept-terms", protectAgent, async (req, res) => {
+  try {
+    const { termsVersion } = req.body;
+    
+    const agent = await Agent.findById(req.agent._id);
+    if (!agent) {
+      return res.status(404).json({ success: false, message: "Agent not found." });
+    }
+
+    agent.acceptedTerms = true;
+    agent.termsAcceptedAt = new Date();
+    agent.termsVersion = termsVersion || "v1.0";
+    
+    await agent.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Terms accepted successfully",
+      agent: {
+        acceptedTerms: agent.acceptedTerms,
+        termsAcceptedAt: agent.termsAcceptedAt,
+        termsVersion: agent.termsVersion,
+      }
+    });
+  } catch (error) {
+    console.error("[Agent Auth] Accept terms error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server Error" });
+  }
+});
+
 // @route   PUT /api/agent/profile
 // @desc    Update agent profile details (including Onboarding submission)
 router.put("/profile", protectAgent, async (req, res) => {

@@ -56,8 +56,18 @@ const SocialLogin = () => {
 
       // Commit auth state (synchronous)
       login(data.user, data.token);
-      console.log("[GoogleAuth Audit] Login successful. Navigating to dashboard.");
-      navigate("/dashboard", { replace: true });
+      console.log("[GoogleAuth Audit] Login successful.");
+
+      const needsConsent = !data?.user?.acceptedTerms;
+      const needsPhoneVerification = !data?.user?.phoneVerified;
+
+      if (needsConsent || needsPhoneVerification) {
+        console.log("[GoogleAuth Audit] Onboarding incomplete. Redirecting to legal consent.");
+        navigate("/legal-consent", { replace: true });
+      } else {
+        console.log("[GoogleAuth Audit] Onboarding complete. Navigating to dashboard.");
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err) {
       console.error("[GoogleAuth Audit] Unexpected error:", err.message, err);
       window.dispatchEvent(

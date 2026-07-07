@@ -670,6 +670,8 @@ export const loginUser = async (req, res) => {
         avatar: user.avatar || "",
         authProvider: user.authProvider || "email",
         acceptedTerms: user.acceptedTerms,
+        privacyAccepted: user.privacyAccepted || false,
+        phoneVerified: user.phoneVerified || false,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
       },
@@ -832,6 +834,8 @@ export const getMe = async (req, res) => {
         upiId: user.upiId || "",
         achievements: user.achievements || [],
         acceptedTerms: user.acceptedTerms || false,
+        privacyAccepted: user.privacyAccepted || false,
+        phoneVerified: user.phoneVerified || false,
         termsAcceptedAt: user.termsAcceptedAt || null,
         termsVersion: user.termsVersion || "",
         firebaseUid: user.firebaseUid || "",
@@ -901,16 +905,16 @@ export const googleAuth = async (req, res) => {
       userRow = emailUser;
 
       if (userRow) {
-        // Ensure existing users always get termsVersion set when linking Google account
+        // Ensure existing users keep their terms/privacy settings when linking Google account
         const updateData = {
           googleId: sub,
           firebaseUid: sub,
           avatar: picture || userRow.avatar || "",
           authProvider: "google",
           ...(!userRow.termsVersion ? {
-            acceptedTerms: true,
-            termsAcceptedAt: userRow.termsAcceptedAt || new Date().toISOString(),
-            termsVersion: "2026-06",
+            acceptedTerms: userRow.acceptedTerms || false,
+            privacyAccepted: userRow.privacyAccepted || false,
+            termsVersion: userRow.termsVersion || "",
           } : {}),
         };
         Object.assign(userRow, updateData);
@@ -929,9 +933,9 @@ export const googleAuth = async (req, res) => {
           firebaseUid: sub,
           avatar: picture || "",
           authProvider: "google",
-          acceptedTerms: true,
-          termsAcceptedAt: new Date().toISOString(),
-          termsVersion: "2026-06",
+          acceptedTerms: false,
+          privacyAccepted: false,
+          termsVersion: "",
         });
 
         userRow = newUser;
@@ -958,6 +962,8 @@ export const googleAuth = async (req, res) => {
         avatar: user.avatar || "",
         authProvider: user.authProvider || "email",
         acceptedTerms: user.acceptedTerms,
+        privacyAccepted: user.privacyAccepted || false,
+        phoneVerified: user.phoneVerified || false,
         termsAcceptedAt: user.termsAcceptedAt,
         termsVersion: user.termsVersion,
       }
@@ -975,8 +981,9 @@ export const googleAuth = async (req, res) => {
 // ACCEPT TERMS & CONDITIONS
 export const acceptTerms = async (req, res) => {
   try {
-    const { termsVersion } = req.body;
-    if (termsVersion !== "2026-06") {
+    const { termsVersion, acceptedTerms, privacyAccepted, acceptedAt } = req.body;
+    const normalizedVersion = termsVersion || "2026-07";
+    if (normalizedVersion !== "2026-07" && normalizedVersion !== "2026-06") {
       return res.status(400).json({
         success: false,
         message: "Invalid terms version.",
@@ -993,9 +1000,10 @@ export const acceptTerms = async (req, res) => {
     }
 
     const updateData = {
-      acceptedTerms: true,
-      termsAcceptedAt: new Date().toISOString(),
-      termsVersion,
+      acceptedTerms: acceptedTerms !== undefined ? acceptedTerms : true,
+      privacyAccepted: privacyAccepted !== undefined ? privacyAccepted : true,
+      termsAcceptedAt: acceptedAt ? new Date(acceptedAt) : new Date(),
+      termsVersion: normalizedVersion,
     };
 
     await User.findByIdAndUpdate(userRow.id, updateData, { returnDocument: "after" })
@@ -1013,9 +1021,10 @@ export const acceptTerms = async (req, res) => {
         country: userRow.country || "",
         avatar: userRow.avatar || "",
         authProvider: userRow.authProvider || "email",
-        acceptedTerms: true,
+        acceptedTerms: updateData.acceptedTerms,
+        privacyAccepted: updateData.privacyAccepted,
         termsAcceptedAt: updateData.termsAcceptedAt,
-        termsVersion,
+        termsVersion: normalizedVersion,
       },
     });
   } catch (error) {

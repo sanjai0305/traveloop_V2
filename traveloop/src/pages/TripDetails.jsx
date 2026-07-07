@@ -374,6 +374,7 @@ export const TripDetails = () => {
   // SeatLayoutModal already collects per-seat passenger details in its drawer,
   // so we skip PassengerFormModal and go directly to booking creation.
   const handleSeatsConfirmed = (seats, passengerList) => {
+    console.log("Seat Selected:", seats);
     setSelectedSeatsList(seats);
     setSeatSelected(true);
     if (passengerList && passengerList.length > 0) {
@@ -437,7 +438,16 @@ export const TripDetails = () => {
       (typeof user !== "undefined" ? user?.email : "") ||
       (typeof profile !== "undefined" ? profile?.email : "") ||
       (passengerList && passengerList[0]?.email) ||
+      (passengerList && passengerList[0]?.contactEmail) ||
       "";
+
+    // Validate accountEmail before booking creation
+    if (!accountEmail || !accountEmail.includes("@")) {
+      console.error("[BookingFlow] Missing or invalid accountEmail:", accountEmail);
+      toast.error("Account email is required for booking. Please ensure your profile has a valid email.");
+      setBookingStage("passenger_form");
+      return;
+    }
 
     if (!localUserId) {
       toast.error("User session expired. Please log in again to book.");
@@ -462,6 +472,19 @@ export const TripDetails = () => {
         seatNumbers: activeSeats,
         totalAmount: total,
       });
+      console.log("Booking Payload:", {
+        tripId: trip._id,
+        travellers: enrichedPassengers,
+        seats: enrichedPassengers.length,
+        seatNumbers: activeSeats,
+        totalAmount: total,
+        maleCount,
+        femaleCount,
+        adults: enrichedPassengers.length,
+        children: 0,
+        pickupLocation: trip.pickupLocation || "",
+        contactEmail: accountEmail,
+      });
 
       const bookingRes = await fetch(getApiUrl("bookings"), {
         method: "POST",
@@ -484,6 +507,7 @@ export const TripDetails = () => {
       const bookingData = await bookingRes.json();
 
       if (!bookingRes.ok || !bookingData.success) {
+        console.error("[BookingFlow] Booking creation failed:", bookingData);
         throw new Error(bookingData.message || "Failed to create booking on backend.");
       }
 
@@ -491,6 +515,7 @@ export const TripDetails = () => {
       const bookingMongoId = bookingData.booking?._id || bookingData.bookingId;
 
       if (!bookingRef || !bookingMongoId) {
+        console.error("[BookingFlow] Invalid booking reference:", bookingData);
         throw new Error("Invalid booking reference returned from server.");
       }
 
@@ -511,6 +536,8 @@ export const TripDetails = () => {
       setPassengerSaved(true);
       setPassengerCompleted(true);
       setBookingStage("upi_payment");
+      console.log("Launching Razorpay");
+      console.log("Payment Started");
     } catch (err) {
       console.error("[Booking Creation Error]:", err);
       toast.error(err.message || "Failed to create booking. Please try again.");

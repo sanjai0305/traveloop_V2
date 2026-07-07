@@ -40,7 +40,17 @@ export const GoogleLoginButton: React.FC<GoogleLoginButtonProps> = ({ onSuccess,
       }
       const resData = response.data;
       setAuth(resData.token, resData.agent);
-      onSuccess(resData.agent);
+      
+      const needsConsent = !resData.agent?.acceptedTerms;
+      const needsPhoneVerification = !resData.agent?.mobileVerified;
+
+      if (needsConsent || needsPhoneVerification) {
+        console.log("[Google Login] Onboarding incomplete. Redirecting to legal consent.");
+        onSuccess(resData.agent);
+        window.location.href = "/legal-consent";
+      } else {
+        onSuccess(resData.agent);
+      }
     } catch (err: any) {
       console.error("[Google Login] Error encountered during authentication:", err);
       

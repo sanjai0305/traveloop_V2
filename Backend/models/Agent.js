@@ -165,6 +165,27 @@ const agentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Legal compliance fields
+    acceptedTerms: {
+      type: Boolean,
+      default: false,
+    },
+    privacyAccepted: {
+      type: Boolean,
+      default: false,
+    },
+    acceptedAt: {
+      type: Date,
+      default: null,
+    },
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    termsVersion: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

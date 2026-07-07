@@ -28,11 +28,16 @@ const ProtectedRoute = ({ children, isTermsPage = false }) => {
     );
   }
 
-  // Redirect to Terms & Conditions page if the user has not accepted the latest terms version
-  if (user && user.termsVersion !== "2026-06" && !isTermsPage) {
+  // Redirect to Legal Consent if user has not accepted terms & privacy or verified phone
+  if (user && (!user.acceptedTerms || !user.privacyAccepted || !user.phoneVerified) && !isTermsPage) {
+    console.log("[ProtectedRoute] Redirecting to /legal-consent:", {
+      acceptedTerms: user.acceptedTerms,
+      privacyAccepted: user.privacyAccepted,
+      phoneVerified: user.phoneVerified
+    });
     return (
       <Navigate
-        to="/terms-and-conditions?force=true"
+        to="/legal-consent"
         replace
       />
     );

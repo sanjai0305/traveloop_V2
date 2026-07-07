@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -10,6 +11,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [
     react(),
+
+    {
+      name: 'serve-legal-site',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url.startsWith('/legal-site/')) {
+            const cleanUrl = req.url.split('?')[0].split('#')[0];
+            const filePath = path.resolve(__dirname, '..', cleanUrl.startsWith('/') ? cleanUrl.slice(1) : cleanUrl);
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+              res.setHeader('Content-Type', 'text/html');
+              res.end(fs.readFileSync(filePath));
+              return;
+            }
+          }
+          next();
+        });
+      }
+    },
 
     VitePWA({
       registerType: 'autoUpdate',

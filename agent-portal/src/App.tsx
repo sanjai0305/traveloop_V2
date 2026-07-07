@@ -10,6 +10,7 @@ import { Settings } from "./pages/Settings";
 import { CompleteProfile } from "./pages/CompleteProfile";
 import { Wallet } from "./pages/Wallet";
 import { ScheduleVerification } from "./pages/ScheduleVerification";
+import LegalConsent from "./pages/LegalConsent";
 import { MainLayout } from "./components/layout";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
 import { useAuthStore } from "./store/authStore";
@@ -51,6 +52,7 @@ export const App: React.FC = () => {
           {/* ── Public auth routes ── */}
           <Route path="/login" element={<Auth />} />
           <Route path="/signup" element={<Auth />} />
+          <Route path="/legal-consent" element={<LegalConsent />} />
 
           {/* ── Protected app routes ── */}
           <Route
@@ -150,6 +152,15 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <CompleteProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/legal-consent"
+            element={
+              <ProtectedRoute>
+                <LegalConsent />
               </ProtectedRoute>
             }
           />

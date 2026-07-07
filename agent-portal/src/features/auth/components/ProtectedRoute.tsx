@@ -41,10 +41,19 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const agent = useAuthStore.getState().agent;
   const kycStatus = agent?.kycStatus || "PENDING";
   
+  const needsConsent = agent && (!agent.acceptedTerms || !agent.privacyAccepted);
+  const needsPhone = agent && !agent.mobileVerified;
+
+  if ((needsConsent || needsPhone) && location.pathname !== "/legal-consent") {
+    console.log("[ProtectedRoute] Agent needs legal/phone verification, redirecting to /legal-consent");
+    return <Navigate to="/legal-consent" replace />;
+  }
+
   if (
     kycStatus !== "KYC_COMPLETED" &&
     kycStatus !== "APPROVED" &&
-    location.pathname !== "/complete-profile"
+    location.pathname !== "/complete-profile" &&
+    location.pathname !== "/legal-consent"
   ) {
     console.log(`[ProtectedRoute] KYC incomplete (${kycStatus}) — redirecting to /complete-profile`);
     return <Navigate to="/complete-profile" replace />;

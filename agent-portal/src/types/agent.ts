@@ -24,6 +24,11 @@ export interface Agent {
   profileImage: string;
   profileCompleted: boolean;
   emailVerified: boolean;
+  acceptedTerms?: boolean;
+  privacyAccepted?: boolean;
+  acceptedAt?: string;
+  termsAcceptedAt?: string;
+  termsVersion?: string;
   status?: "approved" | "pending" | "suspended" | string;
   role?: string;
   isApproved?: boolean;

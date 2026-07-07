@@ -4,9 +4,10 @@
  * Handles persistent passenger OTP verification for the Traveloop booking flow.
  *
  * Routes:
- *   POST /api/passenger/send-otp          — Generate & send 6-digit OTP via email
- *   POST /api/passenger/verify-otp        — Verify OTP, persist verification in DB
- *   GET  /api/passenger/check-verification — Check if user is already verified
+ *   POST /api/passenger/send-otp               — Generate & send 6-digit OTP via email
+ *   POST /api/passenger/verify-otp             — Verify OTP, persist verification in DB
+ *   POST /api/passenger/update-phone-verified  — Update phone verification after Firebase Phone Auth
+ *   GET  /api/passenger/check-verification     — Check if user is already verified
  */
 
 import express from "express";
@@ -260,6 +261,66 @@ router.get("/check-verification", protect, async (req, res) => {
   } catch (err) {
     console.error("[PassengerOTP] check-verification error:", err);
     return res.status(500).json({ success: false, message: "Server error checking verification." });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// POST /api/passenger/update-phone-verified
+// Body: { phone, phoneVerified }
+// Updates phone verification status after Firebase Phone Auth verification
+// ───────────────────────────────────────────────────────────────────────────
+router.post("/update-phone-verified", protect, async (req, res) => {
+  try {
+    const { phone, phoneVerified } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ success: false, message: "Phone number is required." });
+    }
+
+    const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    // Update phone verification status
+    user.passengerVerified = phoneVerified;
+    user.verifiedPhone = `+91${cleanPhone}`;
+    user.verifiedEmail = user.email;
+    user.passengerVerifiedAt = new Date();
+    user.verificationMethod = "Firebase Phone Auth";
+
+    // Also sync primary phone fields for consistency
+    if (phoneVerified) {
+      user.phoneNumber = `+91${cleanPhone}`;
+      user.primaryMobile = `+91${cleanPhone}`;
+      user.phone = `+91${cleanPhone}`;
+      user.phoneVerified = true;
+      user.primaryVerified = true;
+      user.verifiedAt = new Date();
+    }
+
+    await user.save();
+
+    return res.json({
+      success: true,
+      verified: phoneVerified,
+      message: "Phone verification status updated successfully!",
+      user: {
+        passengerVerified: user.passengerVerified,
+        verifiedPhone: user.verifiedPhone,
+        verifiedEmail: user.verifiedEmail,
+        passengerVerifiedAt: user.passengerVerifiedAt,
+        phoneVerified: user.phoneVerified,
+        primaryVerified: user.primaryVerified,
+        phone: user.phone,
+      }
+    });
+
+  } catch (err) {
+    console.error("[PassengerOTP] update-phone-verified error:", err);
+    return res.status(500).json({ success: false, message: "Server error updating phone verification." });
   }
 });
 

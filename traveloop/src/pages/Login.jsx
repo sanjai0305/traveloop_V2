@@ -14,14 +14,21 @@ import ServerStatusIndicator from "../components/common/ServerStatusIndicator";
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
 const Login = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      navigate("/dashboard", { replace: true });
+      const needsConsent = !!user && !user.acceptedTerms;
+      const needsPhoneVerification = !!user && !user.phoneVerified;
+
+      if (needsConsent || needsPhoneVerification) {
+        navigate("/legal-consent", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     }
-  }, [isAuthenticated, loading, navigate]);
+  }, [isAuthenticated, loading, user, navigate]);
 
   if (loading) {
     return <PageSkeletonLoader />;

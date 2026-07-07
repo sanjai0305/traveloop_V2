@@ -6,7 +6,7 @@ import {
   getFirestore
 } from "firebase/firestore";
 import { getDatabase } from "firebase/database";
-import { getAuth, GoogleAuthProvider, EmailAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, EmailAuthProvider, RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,

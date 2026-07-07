@@ -139,7 +139,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    privacyAccepted: {
+      type: Boolean,
+      default: false,
+    },
     termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    acceptedAt: {
       type: Date,
       default: null,
     },

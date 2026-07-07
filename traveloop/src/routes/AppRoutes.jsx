@@ -17,6 +17,7 @@ import AndroidBackButtonHandler from "../components/mobile/AndroidBackButtonHand
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import VerifyEmail from "../pages/VerifyEmail";
+import LegalConsent from "../pages/LegalConsent";
 
 // LAZY LOADED PAGES
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -81,6 +82,12 @@ const AppRoutes = () => {
           <Route
             path="/forgot-password"
             element={<ForgotPassword />}
+          />
+
+          {/* LEGAL CONSENT */}
+          <Route
+            path="/legal-consent"
+            element={<LegalConsent />}
           />
 
           {/* DASHBOARD */}

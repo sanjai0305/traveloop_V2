@@ -19,6 +19,7 @@ import { io as socketIO } from "socket.io-client";
 import { getApiUrl, getSocketUrl } from "../../utils/api";
 import { useToast } from "../mobile/MobileToast";
 import { useAuth } from "../../context/AuthContext";
+import { sendPhoneOtp, verifyPhoneOtp, clearPhoneAuth } from "../../services/phoneAuthService";
 
 // ─── SEAT STATUS COLOURS & STYLES ───────────────────────────────────────────
 
@@ -197,7 +198,7 @@ const SeatLayoutModal = ({
     verifiedAt: null,
   });
 
-  // ── Drawer OTP state (backend-issued, no Firebase dependency) ─────────────
+  // ── Drawer OTP state (Firebase Phone Auth for SMS verification) ─────────────
   const [drawerOtpSending, setDrawerOtpSending] = useState(false);
   const [drawerOtpSent, setDrawerOtpSent] = useState(false);
   const [drawerOtpBoxes, setDrawerOtpBoxes] = useState(["", "", "", "", "", ""]);
@@ -206,9 +207,9 @@ const SeatLayoutModal = ({
   const [drawerOtpSuccess, setDrawerOtpSuccess] = useState(false);
   const [drawerOtpError, setDrawerOtpError] = useState("");
   const [checkingVerification, setCheckingVerification] = useState(false);
-  const [drawerDebugOtp, setDrawerDebugOtp] = useState(null);
   const drawerOtpTimerRef = useRef(null);
   const drawerOtpBoxRefs = useRef([]);
+  const recaptchaContainerRef = useRef(null);
 
   const startDrawerOtpTimer = (seconds = 30) => {
     if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
@@ -224,7 +225,7 @@ const SeatLayoutModal = ({
     }, 1000);
   };
 
-  // ── Send OTP via backend (JWT-protected, no Firebase dependency) ────────────
+  // ── Send OTP via Firebase Phone Auth (SMS verification) ────────────────────
   const handleSendDrawerOtp = async (phone) => {
     const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
     if (!/^[6-9][0-9]{9}$/.test(cleanPhone)) {
@@ -234,35 +235,29 @@ const SeatLayoutModal = ({
     setDrawerOtpSending(true);
     setDrawerOtpError("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(getApiUrl("passenger/send-otp"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: cleanPhone })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setDrawerOtpSent(true);
-        setDrawerOtpBoxes(["", "", "", "", "", ""]);
-        setDrawerDebugOtp(data.debugOtp || null);
-        startDrawerOtpTimer(30);
-        toast.success(data.message || "OTP sent to your registered email!");
-        // Auto-focus first box
-        setTimeout(() => drawerOtpBoxRefs.current[0]?.focus(), 100);
-      } else {
-        setDrawerOtpError(data.message || "Failed to send OTP.");
-        toast.error(data.message || "Failed to send OTP.");
-      }
+      // Use Firebase Phone Auth to send SMS OTP
+      await sendPhoneOtp(`+91${cleanPhone}`, "passenger-recaptcha-container");
+      setDrawerOtpSent(true);
+      setDrawerOtpBoxes(["", "", "", "", "", ""]);
+      startDrawerOtpTimer(30);
+      toast.success("OTP sent to your mobile number via SMS!");
+      // Auto-focus first box
+      setTimeout(() => drawerOtpBoxRefs.current[0]?.focus(), 100);
     } catch (err) {
-      console.error("[PassengerOTP] send-otp error:", err);
-      setDrawerOtpError("Network error sending OTP. Please try again.");
-      toast.error("Network error. Please check your connection.");
+      console.error("[PassengerOTP] Firebase Phone Auth error:", err);
+      const errorMessage = err.code === "auth/too-many-requests" 
+        ? "Too many requests. Please try again later."
+        : err.code === "auth/invalid-phone-number"
+        ? "Invalid phone number format."
+        : "Failed to send OTP. Please try again.";
+      setDrawerOtpError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDrawerOtpSending(false);
     }
   };
 
-  // ── Verify OTP via backend ────────────────────────────────────────────────
+  // ── Verify OTP via Firebase Phone Auth ────────────────────────────────────────
   const handleVerifyDrawerOtp = async (phone) => {
     const code = drawerOtpBoxes.join("");
     if (code.length < 6) {
@@ -272,22 +267,28 @@ const SeatLayoutModal = ({
     setDrawerOtpVerifying(true);
     setDrawerOtpError("");
     try {
-      const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
-      const token = localStorage.getItem("token");
-      const res = await fetch(getApiUrl("passenger/verify-otp"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: cleanPhone, otp: code })
-      });
-      const data = await res.json();
-      if (data.success && data.verified) {
-        // Merge updated user into context so phoneVerified syncs immediately
-        if (data.user) {
+      // Verify OTP using Firebase Phone Auth
+      const userCredential = await verifyPhoneOtp(code);
+      
+      if (userCredential && userCredential.user) {
+        // Update user phone verification status via backend
+        const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+        const token = localStorage.getItem("token");
+        const res = await fetch(getApiUrl("passenger/update-phone-verified"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ phone: cleanPhone, phoneVerified: true })
+        });
+        const data = await res.json();
+        
+        // Merge updated user into context
+        if (data.success && data.user) {
           const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
           const mergedUser = { ...cachedUser, ...data.user };
           localStorage.setItem("user", JSON.stringify(mergedUser));
           updateUser(mergedUser);
         }
+        
         setDrawerOtpSuccess(true);
         if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
         // Animate the success state then close OTP section
@@ -301,15 +302,18 @@ const SeatLayoutModal = ({
           setDrawerOtpSent(false);
           setDrawerOtpSuccess(false);
           setDrawerOtpBoxes(["", "", "", "", "", ""]);
-          setDrawerDebugOtp(null);
         }, 1800);
         toast.success("Mobile number verified successfully! ✓");
-      } else {
-        setDrawerOtpError(data.message || "Invalid OTP. Please try again.");
       }
     } catch (err) {
-      console.error("[PassengerOTP] verify-otp error:", err);
-      setDrawerOtpError("Network error. Please try again.");
+      console.error("[PassengerOTP] Firebase verify OTP error:", err);
+      const errorMessage = err.code === "auth/invalid-verification-code"
+        ? "Invalid OTP. Please try again."
+        : err.code === "auth/code-expired"
+        ? "OTP has expired. Please request a new one."
+        : "Verification failed. Please try again.";
+      setDrawerOtpError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDrawerOtpVerifying(false);
     }
@@ -675,7 +679,15 @@ const SeatLayoutModal = ({
     const activeSelected = selectedOverride || selected;
     const activeDetails = detailsOverride || passengerDetails;
 
-    const missing = activeSelected.filter((seatNum) => !activeDetails[seatNum]);
+    // Validate activeSelected is an array before using filter
+    const selectedSeatsArray = Array.isArray(activeSelected) ? activeSelected : [];
+    if (!Array.isArray(activeSelected)) {
+      console.error("[SeatLayoutModal] activeSelected is not an array:", activeSelected);
+      toast.error("Invalid seat selection. Please try again.");
+      return;
+    }
+
+    const missing = selectedSeatsArray.filter((seatNum) => !activeDetails[seatNum]);
     if (missing.length > 0) {
       toast.error(`Please fill passenger details for seat(s): ${missing.join(", ")}`);
       openPassengerDrawer(missing[0]);

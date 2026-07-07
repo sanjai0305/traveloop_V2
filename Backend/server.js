@@ -48,6 +48,7 @@ import masterRoutes from "./routes/masterRoutes.js";
 import seatRoutes from "./routes/seatRoutes.js";
 import referralRoutes from "./routes/referralRoutes.js";
 import passengerVerificationRoutes from "./routes/passengerVerificationRoutes.js";
+import legalRoutes from "./routes/legalRoutes.js";
 
 // Multi-Model Database Additions
 import healthRoutes from "./routes/healthRoutes.js";
@@ -282,6 +283,7 @@ app.get("/", (req, res) => {
 ------------------------------ */
 
 app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/legal", legalRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/itinerary", itineraryRoutes);
 app.use("/api/checklist", checklistRoutes);

@@ -21,8 +21,9 @@ router.get("/profile", protect, async (req, res) => {
 // PATCH /api/user/verify-phone
 router.patch("/verify-phone", protect, async (req, res) => {
   try {
-    const { phone, idToken, isAlternate, firebaseUid } = req.body;
-    if (!phone) {
+    const { phone, phoneNumber, idToken, isAlternate, firebaseUid, phoneVerified } = req.body;
+    const normalizedPhone = phone || phoneNumber || "";
+    if (!normalizedPhone) {
       return res.status(400).json({ success: false, message: "Phone number is required." });
     }
 
@@ -42,7 +43,7 @@ router.patch("/verify-phone", protect, async (req, res) => {
     }
 
     // Standardize to +91XXXXXXXXXX
-    const cleanPhone = phone.replace(/\D/g, "");
+    const cleanPhone = normalizedPhone.replace(/\D/g, "");
     const formattedPhone = cleanPhone.startsWith("91") && cleanPhone.length === 12
       ? `+${cleanPhone}`
       : `+91${cleanPhone.slice(-10)}`;
@@ -55,9 +56,9 @@ router.patch("/verify-phone", protect, async (req, res) => {
       user.phoneNumber = formattedPhone;
       user.primaryMobile = formattedPhone;
       user.phone = formattedPhone;
-      user.phoneVerified = true;
-      user.primaryVerified = true;
-      user.verifiedAt = new Date();
+      user.phoneVerified = phoneVerified !== undefined ? Boolean(phoneVerified) : true;
+      user.primaryVerified = user.phoneVerified;
+      user.verifiedAt = user.phoneVerified ? new Date() : user.verifiedAt;
       if (uid) {
         user.firebaseUid = uid;
         user.firebaseUID = uid;
