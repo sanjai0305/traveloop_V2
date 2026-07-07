@@ -588,6 +588,9 @@ router.post("/confirm-manual", protect, async (req, res) => {
   if (!bookingId) {
     return res.status(400).json({ success: false, message: "bookingId is required" });
   }
+  if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+    return res.status(400).json({ success: false, message: "Invalid booking reference" });
+  }
   try {
     const { PaymentService } = await import("../services/paymentService.js");
     const result = await PaymentService.confirmManualPayment(bookingId, paymentMethod || "upi_qr", transactionId, upiReference);

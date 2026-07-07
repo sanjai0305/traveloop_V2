@@ -6,6 +6,12 @@ import QRPayment from "./QRPayment";
 import UPIPayment from "./UPIPayment";
 import PaymentRetry from "./PaymentRetry";
 
+
+const isValidObjectId = (id) => {
+  if (!id || typeof id !== "string") return false;
+  return /^[a-f\d]{24}$/i.test(id.trim());
+};
+
 export const PaymentModal = ({
   isOpen,
   onClose,
@@ -190,6 +196,11 @@ export const PaymentModal = ({
 
   const handleUPIRequest = async (upiVPA) => {
     // UPI collect request logic
+    if (!isValidObjectId(bookingId)) {
+      setStatus(PaymentStatus.FAILED);
+      setErrorMessage("Invalid booking reference");
+      return;
+    }
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
       const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -248,6 +259,11 @@ export const PaymentModal = ({
 
   // Confirm manual payment
   const handleConfirmManualQR = async () => {
+    if (!isValidObjectId(bookingId)) {
+      setStatus(PaymentStatus.FAILED);
+      setErrorMessage("Invalid booking reference");
+      return;
+    }
     setStatus(PaymentStatus.VERIFICATION_PENDING);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
