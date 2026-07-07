@@ -15,7 +15,7 @@ async function getOtp() {
   const otpSnap = await getDoc(otpDocRef);
   if (otpSnap.exists()) {
     const data = otpSnap.data();
-    console.log("FOUND_OTP:" + (data.debugOtp || "NO_DEBUG_OTP_FIELD"));
+    console.log("FOUND_OTP:" + (data.otpCode || "NO_OTP_FIELD"));
   } else {
     console.log("FOUND_OTP:NOT_FOUND");
   }

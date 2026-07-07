@@ -13,7 +13,7 @@ import {
   ChevronRight, Bell, Lock, Eye, Palette, HelpCircle, LogOut,
   Camera, Map, Plane, Clock, Moon, Sun, Award, Flame, Star,
   Languages, ChevronDown, Heart, AlertTriangle, Trash2, FileText, Info,
-  Gift, Share2, Copy
+  Gift, Share2, Copy, RefreshCw
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import BottomSheet from "../components/mobile/BottomSheet";
@@ -64,6 +64,232 @@ const SETTINGS_GROUPS = [
     ],
   },
 ];
+
+const maskSentPhone = (phone) => {
+  if (!phone) return "";
+  const cleaned = phone.replace(/\D/g, "");
+  const base = cleaned.slice(-10);
+  return `+91 ${base.slice(0, 5)} ${base.slice(5).replace(/./g, "X")}`;
+};
+
+const OtpVerifier = ({ phone, isAlternate, onVerify, onResend, onCancel }) => {
+  const [otp, setOtp] = React.useState(new Array(6).fill(""));
+  const [timer, setTimer] = React.useState(120);
+  const [loading, setLoading] = React.useState(false);
+  const [success, setSuccess] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const inputRefs = React.useRef([]);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      if (inputRefs.current[0]) {
+        inputRefs.current[0].focus();
+      }
+    }, 100);
+    return () => clearTimeout(t);
+  }, []);
+
+  React.useEffect(() => {
+    let interval = null;
+    if (timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timer]);
+
+  const formatTimer = (secs) => {
+    const mins = Math.floor(secs / 60).toString().padStart(2, "0");
+    const seconds = (secs % 60).toString().padStart(2, "0");
+    return `${mins}:${seconds}`;
+  };
+
+  const handleChange = (val, index) => {
+    if (isNaN(val)) return;
+    const newOtp = [...otp];
+    newOtp[index] = val.substring(val.length - 1);
+    setOtp(newOtp);
+    setError("");
+
+    if (val && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (e, index) => {
+    if (e.key === "Backspace") {
+      const newOtp = [...otp];
+      if (!otp[index] && index > 0) {
+        newOtp[index - 1] = "";
+        setOtp(newOtp);
+        inputRefs.current[index - 1]?.focus();
+      } else {
+        newOtp[index] = "";
+        setOtp(newOtp);
+      }
+      setError("");
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").trim();
+    if (/^\d{6}$/.test(pasted)) {
+      const digits = pasted.split("");
+      setOtp(digits);
+      inputRefs.current[5]?.focus();
+      setError("");
+    }
+  };
+
+  const handleVerify = async () => {
+    const code = otp.join("");
+    if (code.length < 6) {
+      setError("Please enter all 6 digits.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await onVerify(code);
+      setSuccess(true);
+    } catch (err) {
+      setError(err.message || "Invalid OTP code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (timer > 0) return;
+    setError("");
+    setOtp(new Array(6).fill(""));
+    try {
+      await onResend();
+      setTimer(120);
+      if (inputRefs.current[0]) {
+        inputRefs.current[0].focus();
+      }
+    } catch (err) {
+      setError(err.message || "Failed to resend OTP.");
+    }
+  };
+
+  const maskedPhone = maskSentPhone(phone);
+
+  return (
+    <div className="w-full bg-slate-900 border border-teal-500/25 rounded-2xl p-5 shadow-2xl relative overflow-hidden text-white font-sans">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+      
+      {success ? (
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="flex flex-col items-center justify-center py-6 text-center"
+        >
+          <motion.div
+            initial={{ scale: 0, rotate: -45 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
+            className="w-16 h-16 rounded-full bg-teal-500 flex items-center justify-center mb-4 shadow-lg shadow-teal-500/30"
+          >
+            <ShieldCheck size={36} className="text-slate-950" />
+          </motion.div>
+          <h3 className="text-lg font-black text-teal-400">Verification Successful!</h3>
+          <p className="text-xs text-slate-400 mt-1.5 font-medium">Your phone number is now linked and verified.</p>
+        </motion.div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-teal-500/20 flex items-center justify-center">
+                <ShieldCheck size={16} className="text-teal-400" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-teal-450">TravelLoop Secure</h4>
+                <p className="text-[10px] text-slate-400 font-bold">SMS Sent</p>
+              </div>
+            </div>
+            <span className="text-[10px] bg-teal-500/15 text-teal-405 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+              OTP Sent Successfully
+            </span>
+          </div>
+
+          <div className="text-center py-2">
+            <p className="text-[11px] text-slate-400 font-semibold">Code sent to</p>
+            <p className="text-sm font-black text-teal-350 mt-0.5 tracking-wide">{maskedPhone}</p>
+          </div>
+
+          <div className="flex justify-center gap-2" onPaste={handlePaste}>
+            {otp.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => (inputRefs.current[idx] = el)}
+                type="text"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleChange(e.target.value, idx)}
+                onKeyDown={(e) => handleKeyDown(e, idx)}
+                className="w-10 h-12 bg-slate-800 border border-slate-700 focus:border-teal-400 rounded-xl text-center text-lg font-black text-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
+              />
+            ))}
+          </div>
+
+          {error && (
+            <p className="text-[10px] text-red-400 font-bold text-center">{error}</p>
+          )}
+
+          <div className="flex items-center justify-between text-xs pt-1">
+            <div className="flex items-center gap-1.5 text-slate-450">
+              <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-teal-455 font-bold">
+                {formatTimer(timer)}
+              </span>
+              <span className="text-[10px] font-semibold">remaining</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={timer > 0}
+              className={`text-xs font-bold transition-all ${
+                timer > 0 
+                  ? "text-slate-600 cursor-not-allowed" 
+                  : "text-teal-400 hover:text-teal-300 hover:underline"
+              }`}
+            >
+              Resend OTP
+            </button>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 py-2.5 rounded-xl border border-slate-750 hover:border-slate-600 text-slate-300 font-bold text-xs transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleVerify}
+              disabled={loading || otp.join("").length < 6}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-950 font-black text-xs transition-all shadow-md shadow-teal-500/10 flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <span>Confirm</span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Profile = () => {
   const navigate  = useNavigate();
@@ -479,60 +705,49 @@ const Profile = () => {
     }
   };
 
-  const handleVerifyOtp = async (phone, isAlternate) => {
-    if (!otpCode || otpCode.length < 6) {
-      toast.error("Please enter 6-digit OTP code");
-      return;
+  const handleVerifyOtp = async (code, phone, isAlternate) => {
+    if (!code || code.length < 6) {
+      throw new Error("Please enter a 6-digit OTP code");
     }
-    setOtpVerifying(true);
-    try {
-      if (!window.confirmationResult) {
-        throw new Error("No active phone verification session found.");
-      }
+    if (!window.confirmationResult) {
+      throw new Error("No active phone verification session found.");
+    }
 
-      const result = await window.confirmationResult.confirm(otpCode);
-      const idToken = await result.user.getIdToken();
+    const result = await window.confirmationResult.confirm(code);
+    const idToken = await result.user.getIdToken();
 
-      // Submit token to backend
-      const token = localStorage.getItem("token");
-      const res = await fetch(getApiUrl("profile/verify-firebase-phone"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ phone, idToken, isAlternate })
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(data.message);
-        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
-        const mergedUser = { ...cachedUser, ...data.user };
-        localStorage.setItem("user", JSON.stringify(mergedUser));
-        setProfileUser(mergedUser);
-        login(mergedUser, token);
+    // Submit token to backend PATCH /user/verify-phone
+    const token = localStorage.getItem("token");
+    const res = await fetch(getApiUrl("user/verify-phone"), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ phone, idToken, isAlternate })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Verification sync failed on server.");
+    }
 
-        setPersonalForm(f => ({
-          ...f,
-          phone: mergedUser.phone || "",
-          primaryMobile: mergedUser.primaryMobile || "",
-          alternateMobile: mergedUser.alternateMobile || "",
-        }));
+    const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const mergedUser = { ...cachedUser, ...data.user };
+    localStorage.setItem("user", JSON.stringify(mergedUser));
+    setProfileUser(mergedUser);
+    login(mergedUser, token);
 
-        if (isAlternate) {
-          setShowAlternateOtp(false);
-        } else {
-          setShowPrimaryOtp(false);
-        }
-        setOtpCode("");
-      } else {
-        toast.error(data.message || "Token sync verification failed.");
-      }
-    } catch (err) {
-      console.error("Firebase SMS verify failure:", err);
-      toast.error(err.message || "Invalid OTP code entered.");
-    } finally {
-      setOtpVerifying(false);
+    setPersonalForm(f => ({
+      ...f,
+      phone: mergedUser.phone || "",
+      primaryMobile: mergedUser.primaryMobile || "",
+      alternateMobile: mergedUser.alternateMobile || "",
+    }));
+
+    if (isAlternate) {
+      setShowAlternateOtp(false);
+    } else {
+      setShowPrimaryOtp(false);
     }
   };
 
@@ -1188,16 +1403,15 @@ const Profile = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="flex gap-2">
-                  <input
-                    type="tel"
-                    placeholder="Enter 10-digit number"
-                    value={personalForm.primaryMobile}
-                    onChange={e => setPersonalForm(f => ({ ...f, primaryMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
-                    disabled={showPrimaryOtp}
-                    className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-                  />
-                  {!showPrimaryOtp && (
+                {!showPrimaryOtp ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="tel"
+                      placeholder="Enter 10-digit number"
+                      value={personalForm.primaryMobile}
+                      onChange={e => setPersonalForm(f => ({ ...f, primaryMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                    />
                     <button
                       type="button"
                       onClick={() => handleSendOtp(personalForm.primaryMobile, false)}
@@ -1206,27 +1420,15 @@ const Profile = () => {
                     >
                       {otpSending ? "Sending..." : "Verify"}
                     </button>
-                  )}
-                </div>
-
-                {showPrimaryOtp && (
-                  <div className="flex gap-2 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl">
-                    <input
-                      type="text"
-                      placeholder="Enter 6-digit OTP"
-                      value={otpCode}
-                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      className="flex-1 px-3 py-2 rounded-lg border border-teal-500/30 text-sm font-semibold outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyOtp(personalForm.primaryMobile, false)}
-                      disabled={otpVerifying}
-                      className="px-4 bg-teal-500 text-slate-950 font-bold text-xs rounded-lg hover:bg-teal-400"
-                    >
-                      {otpVerifying ? "Verifying..." : "Confirm"}
-                    </button>
                   </div>
+                ) : (
+                  <OtpVerifier
+                    phone={personalForm.primaryMobile}
+                    isAlternate={false}
+                    onVerify={(code) => handleVerifyOtp(code, personalForm.primaryMobile, false)}
+                    onResend={() => handleSendOtp(personalForm.primaryMobile, false)}
+                    onCancel={() => setShowPrimaryOtp(false)}
+                  />
                 )}
               </div>
             )}
@@ -1272,16 +1474,15 @@ const Profile = () => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <input
-                        type="tel"
-                        placeholder="Enter alternate 10-digit number"
-                        value={personalForm.alternateMobile}
-                        onChange={e => setPersonalForm(f => ({ ...f, alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
-                        disabled={showAlternateOtp}
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-                      />
-                      {!showAlternateOtp && (
+                    {!showAlternateOtp ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="tel"
+                          placeholder="Enter alternate 10-digit number"
+                          value={personalForm.alternateMobile}
+                          onChange={e => setPersonalForm(f => ({ ...f, alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
+                          className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold outline-none focus:border-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                        />
                         <button
                           type="button"
                           onClick={() => handleSendOtp(personalForm.alternateMobile, true)}
@@ -1290,27 +1491,15 @@ const Profile = () => {
                         >
                           {otpSending ? "Sending..." : "Verify"}
                         </button>
-                      )}
-                    </div>
-
-                    {showAlternateOtp && (
-                      <div className="flex gap-2 p-3 bg-teal-500/10 border border-teal-500/20 rounded-xl">
-                        <input
-                          type="text"
-                          placeholder="Enter 6-digit OTP"
-                          value={otpCode}
-                          onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          className="flex-1 px-3 py-2 rounded-lg border border-teal-500/30 text-sm font-semibold outline-none bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleVerifyOtp(personalForm.alternateMobile, true)}
-                          disabled={otpVerifying}
-                          className="px-4 bg-teal-500 text-slate-950 font-bold text-xs rounded-lg hover:bg-teal-400"
-                        >
-                          {otpVerifying ? "Verifying..." : "Confirm"}
-                        </button>
                       </div>
+                    ) : (
+                      <OtpVerifier
+                        phone={personalForm.alternateMobile}
+                        isAlternate={true}
+                        onVerify={(code) => handleVerifyOtp(code, personalForm.alternateMobile, true)}
+                        onResend={() => handleSendOtp(personalForm.alternateMobile, true)}
+                        onCancel={() => setShowAlternateOtp(false)}
+                      />
                     )}
                   </div>
                 )}

@@ -134,6 +134,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    firebaseUID: {
+      type: String,
+      default: "",
+    },
     pin: {
       type: String,
       default: "",

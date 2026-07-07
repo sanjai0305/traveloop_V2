@@ -637,7 +637,7 @@ router.post("/verify-email-otp", protectAgent, async (req, res) => {
 });
 
 // @route   POST /api/agent/send-mobile-otp
-// @desc    Generate + Send mobile verification OTP (simulated)
+// @desc    Send mobile verification OTP (managed via Firebase Client SDK)
 router.post("/send-mobile-otp", protectAgent, async (req, res) => {
   try {
     const agent = await Agent.findById(req.agent._id);
@@ -649,19 +649,10 @@ router.post("/send-mobile-otp", protectAgent, async (req, res) => {
       return res.status(400).json({ success: false, message: "Mobile number is required before sending OTP" });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    agent.mobileOtp = otp;
-    agent.mobileOtpExpiry = expiry;
-    await agent.save();
-
-    console.log(`[KYC Mobile OTP] Generated OTP for ${agent.mobile}: ${otp}`);
-
+    // Client-side Firebase SDK handles sending the actual SMS OTP.
     res.status(200).json({
       success: true,
-      message: "Mobile OTP sent successfully (simulated)",
-      otp,
+      message: "Please initiate SMS OTP sending using Firebase Client SDK on the frontend.",
     });
   } catch (error) {
     console.error("Send mobile OTP error:", error);
@@ -673,9 +664,9 @@ router.post("/send-mobile-otp", protectAgent, async (req, res) => {
 // @desc    Verify mobile OTP and transition to KYC_COMPLETED
 router.post("/verify-mobile-otp", protectAgent, async (req, res) => {
   try {
-    const { otp } = req.body;
-    if (!otp) {
-      return res.status(400).json({ success: false, message: "OTP is required" });
+    const { idToken, phone } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: "idToken is required" });
     }
 
     const agent = await Agent.findById(req.agent._id);
@@ -683,13 +674,18 @@ router.post("/verify-mobile-otp", protectAgent, async (req, res) => {
       return res.status(404).json({ success: false, message: "Agent not found" });
     }
 
-    if (agent.mobileOtp !== otp || !agent.mobileOtpExpiry || agent.mobileOtpExpiry < new Date()) {
-      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    // Verify Firebase ID Token
+    try {
+      await admin.auth().verifyIdToken(idToken);
+    } catch (fbErr) {
+      return res.status(401).json({ success: false, message: "Invalid or expired Firebase Auth token." });
     }
 
     agent.mobileVerified = true;
-    agent.mobileOtp = "";
-    agent.mobileOtpExpiry = null;
+    if (phone) {
+      agent.mobile = phone;
+      agent.phone = phone;
+    }
 
     const hasGst = agent.gstNo || agent.gstNumber;
     const hasLogo = agent.companyLogo || agent.logo;
@@ -2775,23 +2771,36 @@ router.post("/trips/:id/start-refund", protectAgent, checkAgentKYC, async (req, 
       return res.status(400).json({ success: false, message: "No active bookings found for this trip." });
     }
 
+    const User = (await import("../models/User.js")).default;
+    const { sendOtpEmail } = await import("../services/emailService.js");
+
     for (const b of bookings) {
       b.refundStatus = "Pending";
       const travelerOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      b.assignedSeat = travelerOtp; // Simulated traveler OTP storage
+      b.assignedSeat = travelerOtp; // OTP code
       b.otpVerified = false;
       await b.save();
+
+      // Find traveler user details and send email
+      try {
+        const travelerUser = await User.findById(b.userId);
+        if (travelerUser && travelerUser.email) {
+          await sendOtpEmail(travelerUser.email, travelerUser.firstName || "Traveler", travelerOtp);
+          console.log(`[Refund OTP] Sent OTP to traveler email: ${travelerUser.email}`);
+        }
+      } catch (err) {
+        console.error("Failed to send refund OTP to traveler:", err);
+      }
     }
 
     res.status(200).json({
       success: true,
-      message: "Refunds processing initiated. Traveler OTPs generated.",
+      message: "Refunds processing initiated. Traveler OTPs sent to their registered emails.",
       bookings: bookings.map(b => ({
         bookingId: b.bookingId,
         _id: b._id,
         travelerName: b.travelerName,
         pricePaid: b.pricePaid,
-        otp: b.assignedSeat
       }))
     });
   } catch (error) {

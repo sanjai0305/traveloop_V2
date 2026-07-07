@@ -6,6 +6,8 @@ import { ImageUploadBox } from "../components/ui";
 import { OTPInput } from "../features/auth/components/OTPInput";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
+import { auth } from "../../../traveloop/src/services/firebase";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 export const CompleteProfile: React.FC = () => {
   const [step, setStep] = useState(1);
@@ -163,22 +165,34 @@ export const CompleteProfile: React.FC = () => {
 
   // ── Step 5: Mobile OTP Actions ─────────────────────────────────────────────
   const sendMobileOtp = async () => {
+    if (!/^[6-9][0-9]{9}$/.test(mobile)) {
+      setErrorMsg("Please enter a valid 10-digit mobile number starting with 6-9");
+      return;
+    }
     setErrorMsg("");
     setSuccessMsg("");
     setLoading(true);
     try {
-      const response = await api.post("/agent/send-mobile-otp");
-      if (response.data?.success) {
-        setOtpSentMobile(true);
-        setSuccessMsg(`Simulated OTP sent to ${mobile}`);
-        if (response.data.otp) {
-          setMobileOtpCode(response.data.otp);
-        }
-      } else {
-        setErrorMsg(response.data?.message || "Failed to send mobile OTP");
+      if (!(window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
+          callback: () => {
+            console.log("reCAPTCHA solved");
+          },
+          "expired-callback": () => {
+            console.log("reCAPTCHA expired");
+          }
+        });
       }
+
+      const formattedPhone = `+91${mobile}`;
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, (window as any).recaptchaVerifier);
+      (window as any).confirmationResult = confirmationResult;
+      setOtpSentMobile(true);
+      setSuccessMsg(`Verification SMS sent successfully to ${mobile}`);
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || "Failed to send OTP to mobile");
+      console.error("Firebase SMS send error:", err);
+      setErrorMsg(err.message || "Failed to send OTP via Firebase.");
     } finally {
       setLoading(false);
     }
@@ -190,7 +204,13 @@ export const CompleteProfile: React.FC = () => {
     setSuccessMsg("");
     setLoading(true);
     try {
-      const response = await api.post("/agent/verify-mobile-otp", { otp: mobileOtp });
+      if (!(window as any).confirmationResult) {
+        throw new Error("No active phone verification session found.");
+      }
+      const result = await (window as any).confirmationResult.confirm(mobileOtp);
+      const idToken = await result.user.getIdToken();
+
+      const response = await api.post("/agent/verify-mobile-otp", { idToken, phone: mobile });
       if (response.data?.success) {
         updateAgent(response.data.agent);
         setSuccessMsg("Mobile verified successfully! KYC profile is now completed.");
@@ -201,7 +221,8 @@ export const CompleteProfile: React.FC = () => {
         setErrorMsg(response.data?.message || "Verification failed");
       }
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || "Invalid or expired OTP");
+      console.error("Firebase SMS verify error:", err);
+      setErrorMsg(err.message || "Invalid OTP code entered.");
     } finally {
       setLoading(false);
     }
@@ -446,11 +467,7 @@ export const CompleteProfile: React.FC = () => {
                   <div className="space-y-4">
                     <OTPInput value={mobileOtp} onChange={setMobileOtp} length={6} />
 
-                    {mobileOtpCode && (
-                      <p className="text-[11px] text-amber-500 font-bold bg-amber-500/10 p-2 rounded-xl">
-                        Simulated OTP Code: {mobileOtpCode}
-                      </p>
-                    )}
+                    {/* Simulated OTP display removed */}
 
                     <div className="flex gap-4 mt-6">
                       <Button variant="outline" onClick={() => setOtpSentMobile(false)} className="flex-1" disabled={loading}>
@@ -470,6 +487,7 @@ export const CompleteProfile: React.FC = () => {
                     </button>
                   </div>
                 )}
+                <div id="recaptcha-container"></div>
               </div>
             )}
 

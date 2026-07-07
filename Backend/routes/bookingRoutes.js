@@ -668,8 +668,7 @@ router.post("/:bookingId/send-cancel-otp", protect, async (req, res) => {
       expiresAt
     });
 
-    console.log(`[Cancellation OTP] Booking: ${bookingId} -> Email: ${email} -> OTP: ${emailOtp}`);
-    console.log(`[Cancellation OTP] Booking: ${bookingId} -> Mobile: ${phone} -> OTP: ${mobileOtp}`);
+    console.log(`[Cancellation OTP] Session created for Booking: ${bookingId}`);
 
     try {
       const { sendOtpEmail } = await import("../services/emailService.js");
@@ -681,10 +680,6 @@ router.post("/:bookingId/send-cancel-otp", protect, async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Cancellation OTPs sent successfully.",
-      debugOtp: {
-        emailOtp,
-        mobileOtp
-      }
     });
   } catch (error) {
     console.error("[Send Cancel OTP Error]:", error);

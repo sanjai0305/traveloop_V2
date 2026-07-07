@@ -1,4 +1,8 @@
+import "dotenv/config";
 import assert from "assert";
+import { db, auth } from "./config/firebase.js";
+import { doc, getDoc } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 
 const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -25,10 +29,18 @@ async function runTests() {
     assert.strictEqual(loginRes.status, 200, "Login credentials check status 200");
     assert.strictEqual(loginData.success, true, "Login success boolean");
     assert.strictEqual(loginData.twoFactorRequired, true, "2FA redirect required flag is true");
-    assert.ok(loginData.debugOtp, "Debug OTP returned in development mode");
-    logPass("Admin credentials matched & 2FA challenge triggered");
-
-    const debugOtp = loginData.debugOtp;
+    
+    // Fetch OTP from Firestore
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+    const otpDocRef = doc(db, "otps", adminEmail.toLowerCase());
+    const otpSnap = await getDoc(otpDocRef);
+    assert.ok(otpSnap.exists(), "OTP document should exist in Firestore");
+    const otpData = otpSnap.data();
+    assert.ok(otpData.debugOtp, "OTP record should contain a debugOtp code");
+    const debugOtp = otpData.debugOtp;
+    logPass("Admin credentials matched & 2FA challenge triggered (fetched OTP from DB)");
 
     // 2. Verify 2FA
     console.log("[Test] Verifying 2FA challenge...");

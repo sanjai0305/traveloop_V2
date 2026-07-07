@@ -608,8 +608,7 @@ router.post("/send-booking-otp", protect, async (req, res) => {
     expiresAt
   });
 
-  console.log(`[Booking OTP Generated] Email: ${email} -> OTP: ${emailOtp}`);
-  console.log(`[Booking OTP Generated] Mobile: ${phone} -> OTP: ${mobileOtp}`);
+  console.log(`[Booking OTP Generated] OTP session created for Email: ${email}`);
 
   try {
     const { sendOtpEmail } = await import("../services/emailService.js");
@@ -621,10 +620,6 @@ router.post("/send-booking-otp", protect, async (req, res) => {
   res.status(200).json({
     success: true,
     message: "OTPs sent successfully to mobile and email.",
-    debugOtp: {
-      emailOtp,
-      mobileOtp
-    }
   });
 });
 

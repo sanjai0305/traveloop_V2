@@ -8,6 +8,18 @@ import { useAuth } from "../../context/AuthContext";
 
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 
+const maskPhoneNumber = (phone) => {
+  if (!phone) return "";
+  const cleaned = phone.replace(/\s+/g, "");
+  if (cleaned.length >= 10) {
+    const isIndian = cleaned.startsWith("+91");
+    const numPart = isIndian ? cleaned.slice(3) : cleaned;
+    const masked = numPart.slice(0, 5) + "XXXXX";
+    return isIndian ? `+91 ${masked}` : masked;
+  }
+  return phone;
+};
+
 const emptyPassenger = (seatNumber) => ({
   seatNumber,
   name: "",
@@ -395,7 +407,7 @@ const PassengerFormModal = ({
                 <div className="relative">
                   <input
                     type="tel"
-                    value={current.phone}
+                    value={maskPhoneNumber(current.phone)}
                     disabled
                     readOnly
                     className={inputClass("phone", true)}

@@ -87,7 +87,7 @@ export const loginAdmin = async (req, res) => {
           expiresAt: expiresAt.toISOString(),
           attempts: 0,
           createdAt: now.toISOString(),
-          debugOtp: otpCode, // accessible in development
+          debugOtp: otpCode,
         });
         
         console.log(`[Admin 2FA] OTP for ${emailKey} is: ${otpCode}`);
@@ -103,7 +103,6 @@ export const loginAdmin = async (req, res) => {
           success: true,
           twoFactorRequired: true,
           email: adminUser.email,
-          debugOtp: process.env.NODE_ENV !== "production" ? otpCode : undefined,
         });
 
       } catch (err) {
@@ -169,8 +168,7 @@ export const verifyAdmin2FA = async (req, res) => {
     }
 
     // Compare
-    const isMatch = await bcrypt.compare(otp, data.otp);
-    if (!isMatch && otp !== data.debugOtp) {
+    if (!isMatch) {
       return res.status(400).json({ success: false, message: "Invalid verification code" });
     }
 

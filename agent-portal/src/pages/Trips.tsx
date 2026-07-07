@@ -2651,8 +2651,8 @@ export const Trips: React.FC = () => {
               {travelerRefundBookings.map((b) => (
                 <div key={b._id} className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2 bg-slate-50/50">
                   <div className="flex justify-between items-center text-xs">
-                    <span className="font-extrabold text-slate-700 dark:text-slate-205">{b.travelerName}</span>
-                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold">Simulated OTP: {b.otp}</span>
+                    <span className="font-extrabold text-slate-700 dark:text-slate-200">{b.travelerName}</span>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-500 px-1.5 py-0.5 rounded font-bold">Verification Pending</span>
                   </div>
                   {b.verified ? (
                     <div className="text-[10px] text-emerald-500 font-extrabold flex items-center gap-1">

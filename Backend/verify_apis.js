@@ -55,8 +55,8 @@ async function runTests() {
     const otpSnap = await getDoc(otpDocRef);
     assert.ok(otpSnap.exists(), "OTP document should exist in Firestore");
     const otpData = otpSnap.data();
-    assert.ok(otpData.debugOtp, "OTP record should contain a debugOtp code");
-    const testOtp = otpData.debugOtp;
+    assert.ok(otpData.otpCode, "OTP record should contain a verification code");
+    const testOtp = otpData.otpCode;
     logPass(`Auth: DB Query OTP code (${testOtp})`);
 
     // C. Verify OTP to get token

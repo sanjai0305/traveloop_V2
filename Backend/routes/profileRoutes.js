@@ -8,8 +8,6 @@ import {
   rewardXp,
   getReferralDashboard,
   claimScratchCard,
-  sendMobileOtp,
-  verifyMobileOtp,
   verifyFirebasePhone,
 } from "../controllers/profileController.js";
 import protect from "../middleware/authMiddleware.js";
@@ -27,12 +25,6 @@ router.delete("/saved-destinations/:name", protect, removeSavedDestination);
 
 // Update profile details
 router.put("/update", protect, updateProfile);
-
-// Send mobile OTP
-router.post("/send-mobile-otp", protect, sendMobileOtp);
-
-// Verify mobile OTP
-router.post("/verify-mobile-otp", protect, verifyMobileOtp);
 
 // Verify Firebase Phone OTP
 router.post("/verify-firebase-phone", protect, verifyFirebasePhone);
