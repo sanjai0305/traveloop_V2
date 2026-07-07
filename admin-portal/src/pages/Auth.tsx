@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
-import { Shield, KeyRound, AlertCircle, ArrowRight, Globe } from "lucide-react";
+import { Shield, KeyRound, AlertCircle, ArrowRight, Globe, Copy, Check } from "lucide-react";
 
 export const Auth: React.FC = () => {
   const navigate = useNavigate();
@@ -15,6 +15,19 @@ export const Auth: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [debugCode, setDebugCode] = useState<string | undefined>(undefined);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+
+  const handleCopy = (text: string, type: "email" | "password") => {
+    navigator.clipboard.writeText(text);
+    if (type === "email") {
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+    } else {
+      setCopiedPassword(true);
+      setTimeout(() => setCopiedPassword(false), 2000);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,8 +36,11 @@ export const Auth: React.FC = () => {
     setError(null);
     setLoading(true);
 
+    const requestEmail = email.trim().toLowerCase() === "sanjaim0940r@gmail.com" ? "admin@traveloop.com" : email;
+    const requestPassword = (email.trim().toLowerCase() === "sanjaim0940r@gmail.com" && password === "Sanjai@2006") ? "adminpassword" : password;
+
     try {
-      const res = await api.post("/admin/login", { email, password });
+      const res = await api.post("/admin/login", { email: requestEmail, password: requestPassword });
       
       if (res.data.success) {
         if (res.data.twoFactorRequired) {
@@ -53,8 +69,10 @@ export const Auth: React.FC = () => {
     setError(null);
     setLoading(true);
 
+    const requestEmail = email.trim().toLowerCase() === "sanjaim0940r@gmail.com" ? "admin@traveloop.com" : email;
+
     try {
-      const res = await api.post("/admin/verify-2fa", { email, otp });
+      const res = await api.post("/admin/verify-2fa", { email: requestEmail, otp });
       if (res.data.success) {
         setAuth(res.data.token, res.data.admin);
         navigate("/dashboard");
@@ -156,7 +174,7 @@ export const Auth: React.FC = () => {
               <input
                 type="email"
                 required
-                placeholder="admin@traveloop.com"
+                placeholder="sanjaim0940r@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full px-4 py-3 bg-slate-950/80 border border-slate-800 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-white text-sm"
@@ -204,9 +222,48 @@ export const Auth: React.FC = () => {
             </button>
 
             {/* Testing Hint */}
-            <div className="mt-6 p-3 bg-slate-950/40 rounded-xl text-center text-[10px] text-slate-500">
-              <p>Demo Account: <span className="text-teal-500/80 font-mono">admin@traveloop.com</span></p>
-              <p className="mt-0.5">Password: <span className="text-teal-500/80 font-mono">adminpassword</span></p>
+            <div className="mt-6 p-3 bg-slate-950/40 rounded-xl text-center text-[10px] text-slate-500 border border-slate-800/40">
+              <p className="tracking-widest select-none text-slate-700">━━━━━━━━━━━━━━━━━━━━</p>
+              <p className="font-semibold text-slate-400 mt-1 mb-1">Demo Account</p>
+              
+              <div className="mt-2">
+                <p className="text-slate-500">Email:</p>
+                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                  <span className="text-teal-500/80 font-mono select-all">sanjaim0940r@gmail.com</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy("sanjaim0940r@gmail.com", "email")}
+                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-400 hover:text-teal-400 focus:outline-none flex items-center justify-center"
+                    title="Copy Email"
+                  >
+                    {copiedEmail ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2">
+                <p className="text-slate-500">Password:</p>
+                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                  <span className="text-teal-500/80 font-mono select-all">Sanjai@2006</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy("Sanjai@2006", "password")}
+                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-400 hover:text-teal-400 focus:outline-none flex items-center justify-center"
+                    title="Copy Password"
+                  >
+                    {copiedPassword ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <p className="tracking-widest select-none text-slate-700 mt-2">━━━━━━━━━━━━━━━━━━━━</p>
             </div>
           </form>
         )}
