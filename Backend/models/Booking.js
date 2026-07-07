@@ -112,6 +112,26 @@ const bookingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    accountEmail: {
+      type: String,
+      default: "",
+    },
+    travelerPhone: {
+      type: String,
+      default: "",
+    },
+    travelerPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    bookingForOthers: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
     travellers: [
       {
         name: { type: String },
@@ -123,6 +143,11 @@ const bookingSchema = new mongoose.Schema(
         contactPhone: { type: String },
         emailVerified: { type: Boolean },
         phoneVerified: { type: Boolean },
+        accountEmail: { type: String },
+        travelerPhone: { type: String },
+        travelerPhoneVerified: { type: Boolean },
+        bookingForOthers: { type: Boolean },
+        verifiedAt: { type: Date },
       }
     ],
     maleCount: {

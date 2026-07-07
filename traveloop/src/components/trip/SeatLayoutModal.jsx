@@ -189,7 +189,127 @@ const SeatLayoutModal = ({
     name: "",
     age: "",
     gender: "Male",
+    bookingForOthers: false,
+    travelerPhone: "",
+    travelerPhoneVerified: false,
+    verifiedAt: null,
   });
+
+  const [drawerOtpSending, setDrawerOtpSending] = useState(false);
+  const [drawerOtpSent, setDrawerOtpSent] = useState(false);
+  const [drawerOtpCode, setDrawerOtpCode] = useState("");
+  const [drawerOtpVerifying, setDrawerOtpVerifying] = useState(false);
+  const [drawerConfirmationResult, setDrawerConfirmationResult] = useState(null);
+  const [drawerOtpTimer, setDrawerOtpTimer] = useState(0);
+  const drawerOtpTimerRef = useRef(null);
+
+  const startDrawerOtpTimer = () => {
+    if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
+    setDrawerOtpTimer(60);
+    drawerOtpTimerRef.current = setInterval(() => {
+      setDrawerOtpTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(drawerOtpTimerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendDrawerOtp = async (phone) => {
+    if (!/^[6-9][0-9]{9}$/.test(phone)) {
+      toast.error("Please enter a valid 10-digit mobile number starting with 6-9");
+      return;
+    }
+    setDrawerOtpSending(true);
+    try {
+      const { RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+      const { auth } = await import("../../services/firebase");
+
+      if (!window.drawerRecaptchaVerifier) {
+        window.drawerRecaptchaVerifier = new RecaptchaVerifier(auth, "passenger-recaptcha-container", {
+          size: "invisible",
+          callback: (response) => {
+            console.log("reCAPTCHA solved");
+          },
+          "expired-callback": () => {
+            console.log("reCAPTCHA expired");
+          }
+        });
+      }
+
+      const formattedPhone = `+91${phone}`;
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.drawerRecaptchaVerifier);
+      setDrawerConfirmationResult(confirmationResult);
+      setDrawerOtpSent(true);
+      startDrawerOtpTimer();
+      toast.success("Verification SMS sent successfully!");
+    } catch (err) {
+      console.error("Firebase SMS send failure:", err);
+      toast.error(err.message || "Failed to send verification SMS.");
+    } finally {
+      setDrawerOtpSending(false);
+    }
+  };
+
+  const handleVerifyDrawerOtp = async (code, phone) => {
+    if (!code || code.length < 6) {
+      toast.error("Please enter a 6-digit OTP code");
+      return;
+    }
+    setDrawerOtpVerifying(true);
+    try {
+      if (!drawerConfirmationResult) {
+        throw new Error("No active phone verification session found.");
+      }
+      const result = await drawerConfirmationResult.confirm(code);
+      const idToken = await result.user.getIdToken();
+
+      // If bookingForOthers is FALSE, we verify and sync the account owner's phone to their profile!
+      if (!formData.bookingForOthers) {
+        const token = localStorage.getItem("token");
+        const res = await fetch(getApiUrl("user/verify-phone"), {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ phone, idToken, isAlternate: false })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Verification sync failed on server.");
+        }
+        // Update user context
+        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+        const mergedUser = { ...cachedUser, ...data.user };
+        localStorage.setItem("user", JSON.stringify(mergedUser));
+        login(mergedUser, token);
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        travelerPhone: phone,
+        travelerPhoneVerified: true,
+        verifiedAt: new Date().toISOString(),
+      }));
+      setDrawerOtpSent(false);
+      setDrawerOtpCode("");
+      toast.success("Mobile number verified successfully!");
+    } catch (err) {
+      console.error("OTP verification failure:", err);
+      toast.error(err.message || "Invalid OTP code. Please try again.");
+    } finally {
+      setDrawerOtpVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (drawerOtpTimerRef.current) clearInterval(drawerOtpTimerRef.current);
+    };
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -322,10 +442,20 @@ const SeatLayoutModal = ({
       initialAge = user.age || "";
       initialGender = user.gender || "Male";
     }
+    
+    const isBookingForOthers = existing.bookingForOthers || false;
+    const isPhoneVerified = existing.travelerPhoneVerified !== undefined 
+      ? existing.travelerPhoneVerified 
+      : (isBookingForOthers ? false : (user?.phoneVerified || user?.primaryVerified || false));
+
     setFormData({
       name: initialName,
       age: initialAge,
       gender: initialGender,
+      bookingForOthers: isBookingForOthers,
+      travelerPhone: existing.travelerPhone || (isBookingForOthers ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || "")),
+      travelerPhoneVerified: isPhoneVerified,
+      verifiedAt: existing.verifiedAt || null,
     });
     setDrawerSeat(seatNum);
   };
@@ -347,6 +477,15 @@ const SeatLayoutModal = ({
       return;
     }
 
+    const isVerified = formData.bookingForOthers
+      ? formData.travelerPhoneVerified
+      : (user?.phoneVerified || user?.primaryVerified || formData.travelerPhoneVerified);
+
+    if (!isVerified) {
+      toast.error("Mobile number verification is mandatory before saving passenger details");
+      return;
+    }
+
     // Save details
     setPassengerDetails((prev) => ({
       ...prev,
@@ -355,6 +494,10 @@ const SeatLayoutModal = ({
         name: formData.name.trim(),
         age: ageNum,
         gender: formData.gender,
+        bookingForOthers: formData.bookingForOthers,
+        travelerPhone: formData.travelerPhone,
+        travelerPhoneVerified: formData.travelerPhoneVerified,
+        verifiedAt: formData.verifiedAt,
       },
     }));
 
@@ -921,7 +1064,7 @@ const SeatLayoutModal = ({
               ) : (
                 <>
                   <Check size={13} />
-                  Confirm Selection & Proceed (₹{fareTotal.toLocaleString("en-IN")})
+                  Confirm Selection & Proceed (₹{new Intl.NumberFormat('en-IN').format(fareTotal)})
                 </>
               )}
             </button>
@@ -1012,6 +1155,191 @@ const SeatLayoutModal = ({
                   </div>
                 </div>
 
+                {/* Booking For Someone Else Toggle */}
+                <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-slate-200">Booking For Someone Else</span>
+                    <span className="text-[9px] text-slate-400">Specify if someone else is travelling</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newVal = !formData.bookingForOthers;
+                      setFormData(prev => ({
+                        ...prev,
+                        bookingForOthers: newVal,
+                        travelerPhone: newVal ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""),
+                        travelerPhoneVerified: newVal ? false : (user?.phoneVerified || user?.primaryVerified || false),
+                      }));
+                      setDrawerOtpSent(false);
+                      setDrawerOtpCode("");
+                    }}
+                    className="relative w-10 h-6 rounded-full transition-colors shrink-0"
+                    style={{ background: formData.bookingForOthers ? "#14B8B5" : "#E2E8F0" }}
+                  >
+                    <div
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all"
+                      style={{ left: formData.bookingForOthers ? "18px" : "2px" }}
+                    />
+                  </button>
+                </div>
+
+                {/* Contact Verification Cards */}
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4.5 space-y-4">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-2 mb-1 flex items-center gap-1.5">
+                    📞 Traveler Contact Details
+                  </p>
+
+                  {!formData.bookingForOthers ? (
+                    /* Booking for Self */
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Email Address</label>
+                        <div className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                          <span>{user?.email || "No email available"}</span>
+                          <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
+                        </div>
+                      </div>
+
+                      {user?.phoneVerified || user?.primaryVerified ? (
+                        /* Scenario 2: Returning traveler (Verified) */
+                        <div>
+                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
+                          <div className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                            <span>{user?.phone || user?.phoneNumber || user?.primaryMobile}</span>
+                            <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Scenario 1: First-time traveler (Unverified) */
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
+                            <input
+                              type="tel"
+                              value={formData.travelerPhone}
+                              onChange={(e) => setFormData({ ...formData, travelerPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                              placeholder="Enter 10-digit number"
+                              disabled={formData.travelerPhoneVerified}
+                              className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                            />
+                          </div>
+
+                          {formData.travelerPhoneVerified ? (
+                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
+                              <span>✓ Mobile Verified</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {!drawerOtpSent ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
+                                  disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
+                                  className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50"
+                                >
+                                  {drawerOtpSending ? "Sending OTP..." : "Verify Mobile Number"}
+                                </button>
+                              ) : (
+                                <div className="space-y-2">
+                                  <input
+                                    type="text"
+                                    maxLength="6"
+                                    value={drawerOtpCode}
+                                    onChange={(e) => setDrawerOtpCode(e.target.value.replace(/\D/g, ""))}
+                                    placeholder="Enter 6-digit OTP"
+                                    className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-955 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVerifyDrawerOtp(drawerOtpCode, formData.travelerPhone)}
+                                      disabled={drawerOtpVerifying || drawerOtpCode.length !== 6}
+                                      className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-all disabled:opacity-50"
+                                    >
+                                      {drawerOtpVerifying ? "Verifying..." : "Verify OTP"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDrawerOtpSent(false)}
+                                      className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-xs font-bold"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Booking for Others */
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Mobile Number</label>
+                        <input
+                          type="tel"
+                          value={formData.travelerPhone}
+                          onChange={(e) => setFormData({ ...formData, travelerPhone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                          placeholder="Enter Passenger Mobile"
+                          disabled={formData.travelerPhoneVerified}
+                          className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                      </div>
+
+                      {formData.travelerPhoneVerified ? (
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
+                          <span>✓ Verified</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {!drawerOtpSent ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
+                              disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
+                              className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50"
+                            >
+                              {drawerOtpSending ? "Sending OTP..." : "Send OTP"}
+                            </button>
+                          ) : (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                maxLength="6"
+                                value={drawerOtpCode}
+                                onChange={(e) => setDrawerOtpCode(e.target.value.replace(/\D/g, ""))}
+                                placeholder="Enter 6-digit OTP"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-805 bg-slate-955 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyDrawerOtp(drawerOtpCode, formData.travelerPhone)}
+                                  disabled={drawerOtpVerifying || drawerOtpCode.length !== 6}
+                                  className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition-all disabled:opacity-50"
+                                >
+                                  {drawerOtpVerifying ? "Verifying..." : "Verify OTP"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDrawerOtpSent(false)}
+                                  className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-xs font-bold"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div id="passenger-recaptcha-container" className="hidden" />
+
                 {/* Fare Summary Breakdown */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4.5 space-y-2.5">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-2 mb-1 flex items-center gap-1.5">
@@ -1020,11 +1348,11 @@ const SeatLayoutModal = ({
                   <div className="space-y-1.5 text-xs text-slate-400 font-semibold">
                     <div className="flex justify-between">
                       <span>Base Ticket price:</span>
-                      <span className="font-extrabold text-white">₹{baseFare.toLocaleString("en-IN")}</span>
+                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(baseFare)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>GST & State taxes (5%):</span>
-                      <span className="font-extrabold text-white">₹{Math.round(baseFare * 0.05).toLocaleString("en-IN")}</span>
+                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(Math.round(baseFare * 0.05))}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Booking Convenience fee:</span>
@@ -1033,7 +1361,7 @@ const SeatLayoutModal = ({
                   </div>
                   <div className="flex justify-between items-center pt-2.5 border-t border-slate-800 mt-2 text-xs font-black">
                     <span className="text-white">Total Amount:</span>
-                    <span className="text-teal-400 text-sm">₹{(baseFare + Math.round(baseFare * 0.05) + 150).toLocaleString("en-IN")}</span>
+                    <span className="text-teal-400 text-sm">₹{new Intl.NumberFormat('en-IN').format(baseFare + Math.round(baseFare * 0.05) + 150)}</span>
                   </div>
                 </div>
 

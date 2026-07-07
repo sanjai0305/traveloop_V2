@@ -1,15 +1,17 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Gift, Check, Coins } from "lucide-react";
+import { X, Gift, Check, Coins, Copy } from "lucide-react";
 import ScratchCardCanvas from "./ScratchCardCanvas";
 import { getApiUrl } from "../../utils/api";
 import { useToast } from "../mobile/MobileToast";
+import CouponDetailsModal from "./CouponDetailsModal";
 
 const ScratchCardModal = ({ isOpen, onClose, card, onClaimed }) => {
   const toast = useToast();
   const [scratched, setScratched] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [claimedData, setClaimedData] = useState(null);
+  const [showCouponDetails, setShowCouponDetails] = useState(false);
 
   if (!isOpen || !card) return null;
 
@@ -141,18 +143,29 @@ const ScratchCardModal = ({ isOpen, onClose, card, onClaimed }) => {
               className="space-y-2"
             >
               {claimedData ? (
-                <button
-                  onClick={onClose}
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10"
-                >
-                  <Check size={14} />
-                  <span>Done</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(claimedData.couponCode);
+                      toast.success("Coupon code copied!");
+                    }}
+                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-md"
+                  >
+                    <Copy size={13} />
+                    <span>Copy Code</span>
+                  </button>
+                  <button
+                    onClick={() => setShowCouponDetails(true)}
+                    className="flex-1 py-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/15"
+                  >
+                    <span>Open Coupon</span>
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={handleClaim}
                   disabled={claiming}
-                  className="w-full py-3 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/15"
+                  className="w-full py-3 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-955 font-black rounded-2xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-teal-500/15"
                 >
                   {claiming ? (
                     <span>Activating...</span>
@@ -167,6 +180,23 @@ const ScratchCardModal = ({ isOpen, onClose, card, onClaimed }) => {
             </motion.div>
           )}
         </motion.div>
+
+        {/* Coupon Details Modal */}
+        {claimedData && (
+          <CouponDetailsModal
+            isOpen={showCouponDetails}
+            onClose={() => {
+              setShowCouponDetails(false);
+              onClose();
+            }}
+            coupon={{
+              couponCode: claimedData.couponCode,
+              discountPercent: parseInt(claimedData.value),
+              expiresAt: new Date(Date.now() + 86400000 * 30),
+              used: false,
+            }}
+          />
+        )}
       </div>
     </AnimatePresence>
   );

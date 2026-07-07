@@ -20,6 +20,7 @@ import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
 import { verifyReferralCode } from "../services/authService";
 import ScratchCardModal from "../components/dashboard/ScratchCardModal";
+import CouponDetailsModal from "../components/dashboard/CouponDetailsModal";
 import { auth } from "../services/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
@@ -393,6 +394,8 @@ const Profile = () => {
   // Scratch card modal state
   const [selectedCard, setSelectedCard]       = useState(null);
   const [showScratchModal, setShowScratchModal] = useState(false);
+  const [selectedProfileCoupon, setSelectedProfileCoupon] = useState(null);
+  const [showCouponModal, setShowCouponModal] = useState(false);
 
 
 
@@ -1119,7 +1122,7 @@ const Profile = () => {
             {/* Discount Earned */}
             <div className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Discount Earned</span>
-              <span className="text-xl font-black text-teal-605 dark:text-teal-400 mt-1">₹{referralStats.discountEarned}</span>
+              <span className="text-xl font-black text-teal-605 dark:text-teal-400 mt-1">₹{new Intl.NumberFormat('en-IN').format(referralStats.discountEarned || 0)}</span>
             </div>
 
             {/* Scratch Cards Earned */}
@@ -1172,69 +1175,66 @@ const Profile = () => {
             </div>
           )}
 
-
           {/* ── MY REWARDS SECTION ── */}
-          {referralStats.scratchCards && referralStats.scratchCards.some(c => c.scratched) && (
+          {referralStats.rewards && referralStats.rewards.length > 0 && (
             <div className="pt-3 border-t border-slate-100 dark:border-slate-855">
               <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2 font-poppins">My Rewards</h4>
               <div className="space-y-2">
                 {(() => {
                   const now = new Date();
-                  return referralStats.scratchCards
-                    .filter(c => c.scratched)
-                    .map((c) => {
-                      const isExpired = c.expiresAt && new Date(c.expiresAt) < now;
-                      let status = "Available";
-                      let statusBg = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400";
-                      
-                      if (c.used) {
-                        status = "Used";
-                        statusBg = "bg-slate-100 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400";
-                      } else if (isExpired) {
-                        status = "Expired";
-                        statusBg = "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400";
-                      }
+                  return referralStats.rewards.map((reward, index) => {
+                    const isExpired = reward.expiresAt && new Date(reward.expiresAt) < now;
+                    let status = "Available";
+                    let statusBg = "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400";
+                    
+                    if (reward.used || reward.status === "USED") {
+                      status = "Used";
+                      statusBg = "bg-slate-100 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400";
+                    } else if (isExpired || reward.status === "EXPIRED") {
+                      status = "Expired";
+                      statusBg = "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400";
+                    }
 
-                      return (
-                        <div
-                          key={c.cardId}
-                          className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col gap-2"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-slate-800 dark:text-white font-mono select-text">
-                              {c.couponCode || "PENDING CLAIM"}
-                            </span>
-                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg}`}>
-                              {status}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
-                            <span>Discount: <span className="text-teal-600 dark:text-teal-400 font-extrabold">{c.rewardValue}</span></span>
-                            <span>Expiry: {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "30 days"}</span>
-                          </div>
-
-                          {c.used && c.usedBookingId && (
-                            <div className="text-[9px] text-slate-400 font-bold mt-0.5 border-t border-slate-100 dark:border-slate-800 pt-1">
-                              Applied Booking: <span className="font-mono text-slate-600 dark:text-slate-300 select-text">{c.usedBookingId}</span>
-                            </div>
-                          )}
-
-                          {status === "Available" && c.couponCode && (
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(c.couponCode);
-                                toast.success("Coupon code copied!");
-                              }}
-                              className="w-full mt-1.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 text-slate-800 dark:text-slate-250 text-[10px] font-extrabold rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                            >
-                              <Copy size={10} />
-                              <span>Copy Coupon Code</span>
-                            </button>
-                          )}
+                    return (
+                      <div
+                        key={reward._id || reward.couponCode || index}
+                        className="p-3 bg-slate-50/50 dark:bg-slate-950/20 border border-slate-100 dark:border-slate-850 rounded-2xl flex flex-col gap-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-slate-800 dark:text-white font-mono select-text">
+                            {reward.couponCode}
+                          </span>
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusBg}`}>
+                            {status}
+                          </span>
                         </div>
-                      );
-                    });
+
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+                          <span>Discount: <span className="text-teal-605 dark:text-teal-400 font-extrabold">{reward.discountPercent}% OFF</span></span>
+                          <span>Expiry: {reward.expiresAt ? new Date(reward.expiresAt).toLocaleDateString() : "30 days"}</span>
+                        </div>
+
+                        {reward.used && (
+                          <div className="text-[9px] text-slate-450 font-bold mt-0.5 border-t border-slate-100 dark:border-slate-800 pt-1 space-y-0.5">
+                            <div>Applied Booking: <span className="font-mono text-slate-600 dark:text-slate-350 select-text">{reward.usedBookingId || "—"}</span></div>
+                            {reward.usedAt && <div>Used On: <span className="text-slate-500 dark:text-slate-400">{new Date(reward.usedAt).toLocaleDateString()}</span></div>}
+                          </div>
+                        )}
+
+                        {status === "Available" && (
+                          <button
+                            onClick={() => {
+                              setSelectedProfileCoupon(reward);
+                              setShowCouponModal(true);
+                            }}
+                            className="w-full mt-1.5 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-955 text-[10px] font-extrabold rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            Open Coupon
+                          </button>
+                        )}
+                      </div>
+                    );
+                  });
                 })()}
               </div>
             </div>
@@ -1402,9 +1402,21 @@ const Profile = () => {
             {profileUser.primaryVerified ? (
               <div className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-slate-200/60 bg-slate-55/40 dark:bg-slate-850/40 text-slate-500 text-sm font-semibold select-none">
                 <span>{profileUser.primaryMobile || profileUser.phone}</span>
-                <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider flex items-center gap-1">
-                  Verified ✔
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-teal-500 uppercase tracking-wider flex items-center gap-1">
+                    Verified ✔
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPersonalForm(f => ({ ...f, primaryMobile: "" }));
+                      setProfileUser(prev => ({ ...prev, primaryVerified: false }));
+                    }}
+                    className="text-xs font-bold text-red-500 hover:underline"
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1838,6 +1850,15 @@ const Profile = () => {
         onClaimed={() => {
           fetchReferralStats();
         }}
+      />
+      {/* Coupon Details Modal Overlay */}
+      <CouponDetailsModal
+        isOpen={showCouponModal}
+        onClose={() => {
+          setShowCouponModal(false);
+          setSelectedProfileCoupon(null);
+        }}
+        coupon={selectedProfileCoupon}
       />
     </MainLayout>
   );

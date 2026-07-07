@@ -274,6 +274,39 @@ const userSchema = new mongoose.Schema(
         },
       }
     ],
+    rewards: [
+      {
+        couponCode: {
+          type: String,
+          required: true,
+        },
+        discountPercent: {
+          type: Number,
+          required: true,
+        },
+        status: {
+          type: String,
+          enum: ["AVAILABLE", "USED", "EXPIRED"],
+          default: "AVAILABLE",
+        },
+        used: {
+          type: Boolean,
+          default: false,
+        },
+        usedBookingId: {
+          type: String,
+          default: "",
+        },
+        usedAt: {
+          type: Date,
+          default: null,
+        },
+        expiresAt: {
+          type: Date,
+          default: null,
+        },
+      }
+    ],
   },
   {
     timestamps: true,

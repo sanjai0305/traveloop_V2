@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, User, Phone, AlertCircle, ChevronLeft, ChevronRight,
   Armchair, ShieldCheck, Lock, Heart, CheckCircle2, Loader2, Bus
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { useToast } from "../mobile/MobileToast";
+import { getApiUrl } from "../../utils/api";
 
 const GENDER_OPTIONS = ["Male", "Female"];
 
@@ -13,6 +15,10 @@ const emptyPassenger = (seatNumber) => ({
   name: "",
   age: "",
   gender: "Male",
+  bookingForOthers: false,
+  travelerPhone: "",
+  travelerPhoneVerified: false,
+  verifiedAt: null,
 });
 
 const PassengerFormModal = ({
@@ -22,7 +28,8 @@ const PassengerFormModal = ({
   onClose,
   onBack,
 }) => {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
+  const toast = useToast();
 
   const getInitialPassenger = (seat, i) => {
     const empty = emptyPassenger(seat);
@@ -32,6 +39,10 @@ const PassengerFormModal = ({
         name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
         gender: user.gender || "Male",
         age: user.age || "",
+        bookingForOthers: false,
+        travelerPhone: user.phone || user.phoneNumber || user.primaryMobile || "",
+        travelerPhoneVerified: !!(user.phoneVerified || user.primaryVerified),
+        verifiedAt: (user.phoneVerified || user.primaryVerified) ? new Date().toISOString() : null,
       };
     }
     return empty;
@@ -44,16 +55,138 @@ const PassengerFormModal = ({
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  const [modalOtpSending, setModalOtpSending] = useState(false);
+  const [modalOtpSent, setModalOtpSent] = useState(false);
+  const [modalOtpCode, setModalOtpCode] = useState("");
+  const [modalOtpVerifying, setModalOtpVerifying] = useState(false);
+  const [modalConfirmationResult, setModalConfirmationResult] = useState(null);
+  const [modalOtpTimer, setModalOtpTimer] = useState(0);
+  const modalOtpTimerRef = useRef(null);
+
+  const startModalOtpTimer = () => {
+    if (modalOtpTimerRef.current) clearInterval(modalOtpTimerRef.current);
+    setModalOtpTimer(60);
+    modalOtpTimerRef.current = setInterval(() => {
+      setModalOtpTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(modalOtpTimerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendModalOtp = async (phone) => {
+    if (!/^[6-9][0-9]{9}$/.test(phone)) {
+      toast.error("Please enter a valid 10-digit mobile number starting with 6-9");
+      return;
+    }
+    setModalOtpSending(true);
+    try {
+      const { RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
+      const { auth } = await import("../../services/firebase");
+
+      if (!window.modalRecaptchaVerifier) {
+        window.modalRecaptchaVerifier = new RecaptchaVerifier(auth, "modal-recaptcha-container", {
+          size: "invisible",
+          callback: (response) => {
+            console.log("reCAPTCHA solved");
+          },
+          "expired-callback": () => {
+            console.log("reCAPTCHA expired");
+          }
+        });
+      }
+
+      const formattedPhone = `+91${phone}`;
+      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.modalRecaptchaVerifier);
+      setModalConfirmationResult(confirmationResult);
+      setModalOtpSent(true);
+      startModalOtpTimer();
+      toast.success("Verification SMS sent successfully!");
+    } catch (err) {
+      console.error("Firebase SMS send failure:", err);
+      toast.error(err.message || "Failed to send verification SMS.");
+    } finally {
+      setModalOtpSending(false);
+    }
+  };
+
+  const handleVerifyModalOtp = async (code, phone) => {
+    if (!code || code.length < 6) {
+      toast.error("Please enter a 6-digit OTP code");
+      return;
+    }
+    setModalOtpVerifying(true);
+    try {
+      if (!modalConfirmationResult) {
+        throw new Error("No active phone verification session found.");
+      }
+      const result = await modalConfirmationResult.confirm(code);
+      const idToken = await result.user.getIdToken();
+
+      // If bookingForOthers is FALSE, we verify and sync the account owner's phone to their profile!
+      if (!current.bookingForOthers) {
+        const token = localStorage.getItem("token");
+        const res = await fetch(getApiUrl("user/verify-phone"), {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ phone, idToken, isAlternate: false })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Verification sync failed on server.");
+        }
+        // Update user context
+        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+        const mergedUser = { ...cachedUser, ...data.user };
+        localStorage.setItem("user", JSON.stringify(mergedUser));
+        login(mergedUser, token);
+      }
+
+      update("travelerPhone", phone);
+      update("travelerPhoneVerified", true);
+      update("verifiedAt", new Date().toISOString());
+
+      setModalOtpSent(false);
+      setModalOtpCode("");
+      toast.success("Mobile number verified successfully!");
+    } catch (err) {
+      console.error("OTP verification failure:", err);
+      toast.error(err.message || "Invalid OTP code. Please try again.");
+    } finally {
+      setModalOtpVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (modalOtpTimerRef.current) clearInterval(modalOtpTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (user) {
       setPassengers(prev =>
         prev.map((p, i) => {
           if (i === 0) {
+            const isBookingForOthers = p.bookingForOthers || false;
+            const isPhoneVerified = p.travelerPhoneVerified !== undefined 
+              ? p.travelerPhoneVerified 
+              : (isBookingForOthers ? false : (user.phoneVerified || user.primaryVerified || false));
             return {
               ...p,
               name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
               gender: p.gender || user.gender || "Male",
               age: p.age || user.age || "",
+              bookingForOthers: isBookingForOthers,
+              travelerPhone: p.travelerPhone || (isBookingForOthers ? "" : (user.phone || user.phoneNumber || user.primaryMobile || "")),
+              travelerPhoneVerified: isPhoneVerified,
+              verifiedAt: p.verifiedAt || ((user.phoneVerified || user.primaryVerified) ? new Date().toISOString() : null),
             };
           }
           return p;
@@ -79,26 +212,6 @@ const PassengerFormModal = ({
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
-  const handleEmergencyOptionChange = (option) => {
-    const primaryPhone = user?.phoneNumber || user?.primaryMobile || user?.phone || "";
-    const alternatePhone = user?.alternateNumber || user?.alternateMobile || "";
-    let val = "";
-    if (option === "primary") val = primaryPhone;
-    else if (option === "alternate") val = alternatePhone;
-    else val = "";
-
-    setPassengers((prev) => {
-      const next = [...prev];
-      next[currentIdx] = {
-        ...next[currentIdx],
-        emergencyOption: option,
-        emergencyContact: val,
-      };
-      return next;
-    });
-    setErrors((prev) => ({ ...prev, emergencyContact: "" }));
-  };
-
   const validateCurrent = () => {
     const errs = {};
     if (!current.name?.trim() || current.name.trim().length < 3) {
@@ -110,6 +223,15 @@ const PassengerFormModal = ({
     }
     if (!current.gender) {
       errs.gender = "Gender is required";
+    }
+
+    const isVerified = current.bookingForOthers
+      ? current.travelerPhoneVerified
+      : (user?.phoneVerified || user?.primaryVerified || current.travelerPhoneVerified);
+
+    if (!isVerified) {
+      toast.error("Mobile number verification is mandatory before proceeding");
+      return false;
     }
 
     setErrors(errs);
@@ -136,10 +258,18 @@ const PassengerFormModal = ({
       age: Number(p.age),
       gender: p.gender,
       seatNumber: p.seatNumber,
+      accountEmail: user?.email || "",
+      travelerPhone: p.travelerPhone || user?.phone || user?.phoneNumber || user?.primaryMobile || "",
+      travelerPhoneVerified: p.travelerPhoneVerified !== undefined ? p.travelerPhoneVerified : (user?.phoneVerified || user?.primaryVerified || false),
+      bookingForOthers: p.bookingForOthers || false,
+      verifiedAt: p.verifiedAt || (user?.phoneVerified || user?.primaryVerified ? new Date().toISOString() : null),
+      // legacy fallback mapping
+      phone: p.travelerPhone || user?.phone || user?.phoneNumber || user?.primaryMobile || "",
+      email: user?.email || "",
       contactEmail: user?.email || "",
-      contactPhone: user?.phone || user?.phoneNumber || user?.primaryMobile || "",
+      contactPhone: p.travelerPhone || user?.phone || user?.phoneNumber || user?.primaryMobile || "",
       emailVerified: true,
-      phoneVerified: true,
+      phoneVerified: p.travelerPhoneVerified !== undefined ? p.travelerPhoneVerified : (user?.phoneVerified || user?.primaryVerified || false),
     }));
     onConfirm(normalized);
   };
@@ -326,6 +456,188 @@ const PassengerFormModal = ({
                 </select>
               </div>
             </div>
+
+            {/* Booking For Someone Else Toggle */}
+            <div className="flex items-center justify-between bg-slate-900 border border-white/5 rounded-2xl px-4 py-3">
+              <div className="flex flex-col">
+                <span className="text-xs font-black text-slate-200">Booking For Someone Else</span>
+                <span className="text-[9px] text-slate-400">Specify if someone else is travelling</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = !current.bookingForOthers;
+                  update("bookingForOthers", newVal);
+                  update("travelerPhone", newVal ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""));
+                  update("travelerPhoneVerified", newVal ? false : (user?.phoneVerified || user?.primaryVerified || false));
+                  setModalOtpSent(false);
+                  setModalOtpCode("");
+                }}
+                className="relative w-10 h-6 rounded-full transition-colors shrink-0"
+                style={{ background: current.bookingForOthers ? "#14B8B5" : "#E2E8F0" }}
+              >
+                <div
+                  className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all"
+                  style={{ left: current.bookingForOthers ? "18px" : "2px" }}
+                />
+              </button>
+            </div>
+
+            {/* Contact Verification Cards */}
+            <div className="bg-slate-900 border border-white/5 rounded-2xl p-4.5 space-y-4">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-white/5 pb-2 mb-1 flex items-center gap-1.5">
+                📞 Traveler Contact Details
+              </p>
+
+              {!current.bookingForOthers ? (
+                /* Booking for Self */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Email Address</label>
+                    <div className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                      <span>{user?.email || "No email available"}</span>
+                      <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
+                    </div>
+                  </div>
+
+                  {user?.phoneVerified || user?.primaryVerified ? (
+                    /* Scenario 2: Returning traveler (Verified) */
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
+                      <div className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
+                        <span>{user?.phone || user?.phoneNumber || user?.primaryMobile}</span>
+                        <span className="text-[9px] font-black text-teal-400 tracking-wider">✓ Verified</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Scenario 1: First-time traveler (Unverified) */
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
+                        <input
+                          type="tel"
+                          value={current.travelerPhone || ""}
+                          onChange={(e) => update("travelerPhone", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                          placeholder="Enter 10-digit number"
+                          disabled={current.travelerPhoneVerified}
+                          className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        />
+                      </div>
+
+                      {current.travelerPhoneVerified ? (
+                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
+                          <span>✓ Mobile Verified</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {!modalOtpSent ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSendModalOtp(current.travelerPhone)}
+                              disabled={modalOtpSending || !current.travelerPhone || current.travelerPhone.length !== 10}
+                              className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-955 font-black text-xs transition-all disabled:opacity-50"
+                            >
+                              {modalOtpSending ? "Sending OTP..." : "Verify Mobile Number"}
+                            </button>
+                          ) : (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                maxLength="6"
+                                value={modalOtpCode}
+                                onChange={(e) => setModalOtpCode(e.target.value.replace(/\D/g, ""))}
+                                placeholder="Enter 6-digit OTP"
+                                className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-950 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyModalOtp(modalOtpCode, current.travelerPhone)}
+                                  disabled={modalOtpVerifying || modalOtpCode.length !== 6}
+                                  className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-955 font-bold text-xs transition-all disabled:opacity-50"
+                                >
+                                  {modalOtpVerifying ? "Verifying..." : "Verify OTP"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setModalOtpSent(false)}
+                                  className="px-3 py-2 rounded-xl border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Booking for Others */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Mobile Number</label>
+                    <input
+                      type="tel"
+                      value={current.travelerPhone || ""}
+                      onChange={(e) => update("travelerPhone", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      placeholder="Enter Passenger Mobile"
+                      disabled={current.travelerPhoneVerified}
+                      className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    />
+                  </div>
+
+                  {current.travelerPhoneVerified ? (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center justify-between">
+                      <span>✓ Verified</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {!modalOtpSent ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSendModalOtp(current.travelerPhone)}
+                          disabled={modalOtpSending || !current.travelerPhone || current.travelerPhone.length !== 10}
+                          className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-955 font-black text-xs transition-all disabled:opacity-50"
+                        >
+                          {modalOtpSending ? "Sending OTP..." : "Send OTP"}
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            maxLength="6"
+                            value={modalOtpCode}
+                            onChange={(e) => setModalOtpCode(e.target.value.replace(/\D/g, ""))}
+                            placeholder="Enter 6-digit OTP"
+                            className="w-full px-4 py-3 rounded-xl border border-white/5 bg-slate-955 text-center font-bold text-xs text-white outline-none focus:border-teal-400"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyModalOtp(modalOtpCode, current.travelerPhone)}
+                              disabled={modalOtpVerifying || modalOtpCode.length !== 6}
+                              className="flex-1 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-955 font-bold text-xs transition-all disabled:opacity-50"
+                            >
+                              {modalOtpVerifying ? "Verifying..." : "Verify OTP"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setModalOtpSent(false)}
+                              className="px-3 py-2 rounded-xl border border-white/5 hover:border-white/10 text-slate-400 text-xs font-bold"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div id="modal-recaptcha-container" className="hidden" />
           </motion.div>
         </AnimatePresence>
 

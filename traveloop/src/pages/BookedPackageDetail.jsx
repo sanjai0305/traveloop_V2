@@ -1910,13 +1910,13 @@ const BookedPackageDetail = () => {
                   <p className="text-white/70 text-xs font-semibold uppercase tracking-wide mb-1">Package Price</p>
                   <div className="flex items-baseline gap-3">
                     <p className="text-3xl font-extrabold">
-                      ₹{((trip.offerPrice || trip.pricePerPerson || 0) * (booking.seats || 1)).toLocaleString()}
+                      ₹{new Intl.NumberFormat('en-IN').format((trip.offerPrice || trip.pricePerPerson || 0) * (booking.seats || 1))}
                     </p>
                     <p className="text-white/60 text-sm">for {booking.seats || 1} traveller{(booking.seats || 1) > 1 ? "s" : ""}</p>
                   </div>
                   {trip.originalPrice > 0 && trip.originalPrice > (trip.offerPrice || 0) && (
                     <div className="flex items-center gap-2 mt-2">
-                      <p className="text-white/50 line-through text-sm">₹{(trip.originalPrice * (booking.seats || 1)).toLocaleString()}</p>
+                      <p className="text-white/50 line-through text-sm">₹{new Intl.NumberFormat('en-IN').format(trip.originalPrice * (booking.seats || 1))}</p>
                       <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-xs font-bold">
                         {trip.discountPercentage || Math.round(((trip.originalPrice - trip.offerPrice) / trip.originalPrice) * 100)}% OFF
                       </span>
@@ -1930,7 +1930,7 @@ const BookedPackageDetail = () => {
                   <div className="flex flex-col gap-2.5">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-600">Per Person</span>
-                      <span className="font-bold text-slate-800">₹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}</span>
+                      <span className="font-bold text-slate-800">₹{new Intl.NumberFormat('en-IN').format(trip.offerPrice || trip.pricePerPerson || 0)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-600">Travellers</span>
@@ -1939,7 +1939,7 @@ const BookedPackageDetail = () => {
                     <div className="border-t border-slate-100 my-1" />
                     <div className="flex justify-between text-base">
                       <span className="font-extrabold text-slate-800">Amount Paid</span>
-                      <span className="font-extrabold text-teal-600">₹{(booking.pricePaid || booking.amount || 0).toLocaleString()}</span>
+                      <span className="font-extrabold text-teal-600">₹{new Intl.NumberFormat('en-IN').format(booking.pricePaid || booking.amount || 0)}</span>
                     </div>
                   </div>
                 </div>
@@ -2839,7 +2839,7 @@ const BookedPackageDetail = () => {
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-650">
                   <span>Additional Amount:</span>
-                  <span className="text-teal-600 text-sm">₹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}</span>
+                  <span className="text-teal-600 text-sm">₹{new Intl.NumberFormat('en-IN').format(trip.offerPrice || trip.pricePerPerson || 0)}</span>
                 </div>
 
                 <button

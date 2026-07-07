@@ -107,6 +107,103 @@ export const TripDetails = () => {
   });
 
   const [selectedCoupon, setSelectedCoupon] = useState("");
+  const [typedCoupon, setTypedCoupon] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState("");
+
+  const handleApplyCoupon = async () => {
+    setCouponError("");
+    if (!typedCoupon.trim()) {
+      setCouponError("Coupon Code is required");
+      return;
+    }
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("payment/validate-coupon"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ couponCode: typedCoupon })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAppliedCoupon({
+          couponCode: data.couponCode,
+          discountPercent: data.discountPercent
+        });
+        setSelectedCoupon(data.couponCode);
+        toast.success("Coupon applied successfully!");
+        
+        // Recalculate price
+        const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
+        const childPrice = Math.round(basePrice * 0.5);
+        const adultsSubtotal = adults * basePrice;
+        const childrenSubtotal = children * childPrice;
+        const subtotal = adultsSubtotal + childrenSubtotal;
+        const tax = Math.round(subtotal * 0.05);
+        const convenienceFee = 150;
+        
+        const discountAmt = Math.round(subtotal * (data.discountPercent / 100));
+        const grandTotal = subtotal - discountAmt + tax + convenienceFee;
+        
+        setBookingDetails(prev => ({
+          ...prev,
+          pricePaid: grandTotal,
+          referralApplied: true,
+          referralCode: data.couponCode,
+          referralDiscountPercent: data.discountPercent,
+          referralDiscountAmount: discountAmt,
+        }));
+      } else {
+        setCouponError(data.message || "Coupon Invalid");
+        toast.error(data.message || "Coupon Invalid");
+      }
+    } catch (err) {
+      setCouponError("Error validating coupon");
+      toast.error("Error validating coupon");
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setTypedCoupon("");
+    setCouponError("");
+    setSelectedCoupon("");
+    
+    // Recalculate price back to default (either referral discount if eligible, or no discount)
+    const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
+    const childPrice = Math.round(basePrice * 0.5);
+    const adultsSubtotal = adults * basePrice;
+    const childrenSubtotal = children * childPrice;
+    const subtotal = adultsSubtotal + childrenSubtotal;
+    const tax = Math.round(subtotal * 0.05);
+    const convenienceFee = 150;
+    
+    let referralDiscountAmount = 0;
+    let referralApplied = false;
+    let referralCode = "";
+    let referralDiscountPercent = 0;
+    
+    if (referralInfo.isEligibleForDiscount) {
+      referralApplied = true;
+      referralCode = referralInfo.referredBy;
+      referralDiscountPercent = referralInfo.referralDiscountPercent;
+      referralDiscountAmount = Math.round(subtotal * (referralDiscountPercent / 100));
+    }
+    
+    const grandTotal = subtotal - referralDiscountAmount + tax + convenienceFee;
+    
+    setBookingDetails(prev => ({
+      ...prev,
+      pricePaid: grandTotal,
+      referralApplied,
+      referralCode,
+      referralDiscountPercent,
+      referralDiscountAmount,
+    }));
+  };
 
   // Derive total seats
   const totalBookingSeats = Number(adults) + Number(children);
@@ -1169,17 +1266,17 @@ export const TripDetails = () => {
           <div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-lg font-black text-teal-600 dark:text-teal-400">
-                â¹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}
+                ₹{new Intl.NumberFormat('en-IN').format(trip.offerPrice || trip.pricePerPerson || 0)}
               </span>
               {trip.originalPrice > 0 && (
                 <span className="text-xs text-slate-400 line-through">
-                  â¹{trip.originalPrice.toLocaleString()}
+                  ₹{new Intl.NumberFormat('en-IN').format(trip.originalPrice)}
                 </span>
               )}
             </div>
             {discountAmount > 0 && (
               <span className="text-[10px] text-emerald-600 font-extrabold uppercase bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-200">
-                Save â¹{discountAmount.toLocaleString()}
+                SAVE ₹{new Intl.NumberFormat('en-IN').format(discountAmount)}
               </span>
             )}
           </div>
@@ -1550,7 +1647,7 @@ export const TripDetails = () => {
                         <div className="py-2">
                           <div className="flex justify-between items-center max-w-sm mx-auto mb-6 px-4 py-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             <span>[ ] Driver's Cabin</span>
-                            <span>Entry Door ðª</span>
+                            <span>Entry Door 🚪</span>
                           </div>
 
                           <div className="grid grid-cols-5 gap-2.5 max-w-sm mx-auto bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-150 dark:border-slate-850 shadow-inner">
@@ -1623,104 +1720,135 @@ export const TripDetails = () => {
                             <div className="space-y-1.5 pb-3 border-b border-slate-200 dark:border-slate-800">
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Offer Price (Per Seat):</span>
-                                <span className="font-extrabold text-slate-800 dark:text-white">â¹{bookingDetails.basePrice.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-800 dark:text-white">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.basePrice)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Adults Subtotal:</span>
                                 <span className="font-extrabold text-slate-850 dark:text-white">
-                                  {bookingDetails.adults} Ã â¹{bookingDetails.basePrice.toLocaleString()} = â¹{bookingDetails.adultsSubtotal.toLocaleString()}
+                                  {bookingDetails.adults} × ₹{new Intl.NumberFormat('en-IN').format(bookingDetails.basePrice)} = ₹{new Intl.NumberFormat('en-IN').format(bookingDetails.adultsSubtotal)}
                                 </span>
                               </div>
                               {bookingDetails.children > 0 && (
                                 <div className="flex justify-between">
                                   <span className="text-slate-400">Children Subtotal (50% Off):</span>
                                   <span className="font-extrabold text-slate-850 dark:text-white">
-                                    {bookingDetails.children} Ã â¹{bookingDetails.childPrice.toLocaleString()} = â¹{bookingDetails.childrenSubtotal.toLocaleString()}
-                                    {bookingDetails.children} × ₹{bookingDetails.childPrice.toLocaleString()} = ₹{bookingDetails.childrenSubtotal.toLocaleString()}
+                                    {bookingDetails.children} × ₹{new Intl.NumberFormat('en-IN').format(bookingDetails.childPrice)} = ₹{new Intl.NumberFormat('en-IN').format(bookingDetails.childrenSubtotal)}
                                   </span>
                                 </div>
                               )}
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Tax & GST (5%):</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.tax.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.tax)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Convenience fee:</span>
-                                <span className="font-extrabold text-slate-850 dark:text-white">₹{bookingDetails.convenienceFee.toLocaleString()}</span>
+                                <span className="font-extrabold text-slate-850 dark:text-white">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.convenienceFee)}</span>
                               </div>
                               {bookingDetails.referralApplied && (
-                                <>
-                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold border-t border-slate-100 dark:border-slate-800 pt-2">
-                                    <span>Referral Coupon:</span>
-                                    <span>{bookingDetails.referralCode}</span>
-                                  </div>
-                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
-                                    <span>Referral Discount:</span>
-                                    <span>{bookingDetails.referralDiscountPercent}%</span>
-                                  </div>
-                                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
-                                    <span>Saved:</span>
-                                    <span>-₹{bookingDetails.referralDiscountAmount.toLocaleString()}</span>
-                                  </div>
-                                </>
-                              )}
+                                 <>
+                                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold border-t border-slate-100 dark:border-slate-800 pt-2">
+                                     <span>Referral Coupon:</span>
+                                     <span>{bookingDetails.referralCode}</span>
+                                   </div>
+                                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                                     <span>Referral Discount:</span>
+                                     <span>{bookingDetails.referralDiscountPercent}%</span>
+                                   </div>
+                                   <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold">
+                                     <span>Saved:</span>
+                                     <span>-₹{new Intl.NumberFormat('en-IN').format(bookingDetails.referralDiscountAmount)}</span>
+                                   </div>
+                                 </>
+                               )}
+                             </div>
+
+                             {/* Redeem Coupon */}
+                             <div className="space-y-2 pb-3 border-b border-slate-200 dark:border-slate-850">
+                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Redeem Coupon</label>
+                               <div className="flex gap-2">
+                                 <input
+                                   type="text"
+                                   placeholder="Enter Coupon Code (e.g. TLP5-SANJAI-8271)"
+                                   value={typedCoupon}
+                                   onChange={(e) => setTypedCoupon(e.target.value.toUpperCase())}
+                                   disabled={!!appliedCoupon}
+                                   className="flex-1 px-3 py-2 rounded-xl border border-slate-250 dark:border-slate-800 bg-white dark:bg-slate-905 text-xs font-bold text-slate-700 dark:text-white outline-none focus:border-teal-400 disabled:opacity-60"
+                                 />
+                                 {appliedCoupon ? (
+                                   <button
+                                     type="button"
+                                     onClick={handleRemoveCoupon}
+                                     className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-[10px] uppercase transition-colors"
+                                   >
+                                     Remove
+                                   </button>
+                                 ) : (
+                                   <button
+                                     type="button"
+                                     onClick={handleApplyCoupon}
+                                     disabled={!typedCoupon.trim()}
+                                     className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-[10px] uppercase transition-colors disabled:opacity-50"
+                                   >
+                                     Apply
+                                   </button>
+                                 )}
+                               </div>
+                               {couponError && (
+                                 <p className="text-[10px] font-bold text-rose-500">{couponError}</p>
+                               )}
+                               {appliedCoupon && (
+                                 <div className="text-[10px] font-black text-emerald-500 flex items-center gap-1">
+                                   <span>Coupon: {appliedCoupon.couponCode} Applied</span>
+                                 </div>
+                               )}
+                             </div>
+
+                             {appliedCoupon ? (
+                               <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800 mt-2">
+                                 <div className="flex justify-between text-xs">
+                                   <span className="text-slate-455">Original Price:</span>
+                                   <span className="font-extrabold text-slate-800 dark:text-white">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.subtotal + bookingDetails.tax + bookingDetails.convenienceFee)}</span>
+                                 </div>
+                                 <div className="flex justify-between text-xs text-emerald-500 font-bold">
+                                   <span>Discount:</span>
+                                   <span>-₹{new Intl.NumberFormat('en-IN').format(bookingDetails.referralDiscountAmount)}</span>
+                                 </div>
+                                 <div className="flex justify-between items-center pt-1.5 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                   <span className="font-black text-slate-800 dark:text-slate-355">Final Price:</span>
+                                   <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.pricePaid)}</span>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="flex justify-between items-center pt-2">
+                                 <span className="font-black text-slate-800 dark:text-slate-300">Grand Total Amount:</span>
+                                 <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{new Intl.NumberFormat('en-IN').format(bookingDetails.pricePaid)}</span>
+                               </div>
+                             )}
+
+                             {bookingDetails.referralApplied && (
+                               <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 text-emerald-650 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-900/30 text-center text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse mt-2">
+                                 Referral Benefit Applied
+                               </div>
+                             )}
                             </div>
-
-                            {/* Coupon Code Selector */}
-                            {referralInfo.scratchCards && referralInfo.scratchCards.some(c => c.claimed && !c.used && c.couponCode) && (
-                              <div className="space-y-1 pb-3 border-b border-slate-200 dark:border-slate-850">
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase">Apply Coupon Reward</label>
-                                <select
-                                  value={selectedCoupon}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setSelectedCoupon(val);
-                                    recalculatePrice(val);
-                                  }}
-                                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-905 text-xs font-bold text-slate-700 dark:text-white outline-none focus:border-teal-400"
-                                >
-                                  <option value="">-- Apply Coupon (Optional) --</option>
-                                  {referralInfo.scratchCards
-                                    .filter(c => c.claimed && !c.used && c.couponCode)
-                                    .map((c) => (
-                                      <option key={c.couponCode} value={c.couponCode}>
-                                        {c.couponCode} ({c.rewardValue} - {c.cardType})
-                                      </option>
-                                    ))}
-                                </select>
+                          </div>
+                        )}
+                          {bookingStage === "payment" && (
+                            <div className="py-8 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
+                              <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center text-teal-500 relative">
+                                <div className="w-12 h-12 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
                               </div>
-                            )}
-
-                            <div className="flex justify-between items-center">
-                              <span className="font-black text-slate-800 dark:text-slate-300">Grand Total Amount:</span>
-                              <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{bookingDetails.pricePaid.toLocaleString()}</span>
+                              <div>
+                                <h4 className="text-sm font-extrabold text-slate-880 dark:text-white animate-pulse">Connecting payment gateway...</h4>
+                                <p className="text-[10px] text-slate-400 font-semibold mt-1">Please do not refresh or hit the back button.</p>
+                              </div>
                             </div>
-
-                            {bookingDetails.referralApplied && (
-                              <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 text-emerald-650 dark:text-emerald-400 border border-emerald-100/50 dark:border-emerald-900/30 text-center text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse mt-2">
-                                <span>✔</span> Referral Benefit Applied
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {bookingStage === "payment" && (
-                        <div className="py-8 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
-                          <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center text-teal-500 relative">
-                            <div className="w-12 h-12 border-3 border-teal-500 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-extrabold text-slate-880 dark:text-white animate-pulse">Connecting payment gateway...</h4>
-                            <p className="text-[10px] text-slate-400 font-semibold mt-1">Please do not refresh or hit the back button.</p>
-                          </div>
-                        </div>
-                      )}
+                          )}
 
                       {bookingStage === "success" && (
                         <div className="py-4 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
                           <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-emerald-950/20 text-emerald-500 flex items-center justify-center text-2xl border border-emerald-250">
-                            ð
+                            🎉
                           </div>
                           <div>
                             <h3 className="text-base font-black text-emerald-600 dark:text-emerald-400">Booking Confirmed!</h3>
@@ -1731,7 +1859,7 @@ export const TripDetails = () => {
                             <p className="flex justify-between"><span>Journey:</span><span className="font-extrabold text-slate-700 dark:text-white">{trip.title}</span></p>
                             <p className="flex justify-between"><span>Primary contact:</span><span className="font-extrabold text-slate-700 dark:text-white">{bookingDetails?.travellers?.[0]?.name}</span></p>
                             <p className="flex justify-between"><span>Reserved seats:</span><span className="font-extrabold text-slate-700 dark:text-white">{bookingDetails?.selectedSeats?.join(", ")}</span></p>
-                            <p className="flex justify-between"><span>Paid amount:</span><span className="font-black text-teal-650 dark:text-teal-400">â¹{bookingDetails?.pricePaid?.toLocaleString()}</span></p>
+                            <p className="flex justify-between"><span>Paid amount:</span><span className="font-black text-teal-650 dark:text-teal-400">₹{bookingDetails?.pricePaid?.toLocaleString()}</span></p>
                           </div>
                         </div>
                       )}
@@ -1739,7 +1867,7 @@ export const TripDetails = () => {
                       {bookingStage === "failure" && (
                         <div className="py-8 flex flex-col items-center justify-center text-center gap-4 animate-fade-in">
                           <div className="w-16 h-16 rounded-full bg-rose-50 dark:bg-rose-950/20 text-rose-500 flex items-center justify-center text-2xl border border-rose-250">
-                            â
+                            ✖
                           </div>
                           <div>
                             <h3 className="text-base font-black text-rose-650 dark:text-rose-450">Payment Verification Failed</h3>
@@ -1790,7 +1918,7 @@ export const TripDetails = () => {
                           </div>
                           <div className="flex justify-between items-center text-xs">
                             <span className="font-black text-slate-800 dark:text-slate-400">Grand Total:</span>
-                            <span className="font-black text-base text-teal-600 dark:text-teal-400">â¹{bookingDetails?.pricePaid?.toLocaleString()}</span>
+                            <span className="font-black text-base text-teal-600 dark:text-teal-400">₹{bookingDetails?.pricePaid?.toLocaleString()}</span>
                           </div>
                           <div className="flex gap-3">
                             <button

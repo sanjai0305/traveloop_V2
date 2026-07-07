@@ -199,7 +199,7 @@ const PublishedTripCard = ({ trip, onClick }) => {
         </span>
         {discountAmount > 0 && (
           <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[9px] font-extrabold uppercase tracking-wider">
-            Save ₹{discountAmount.toLocaleString()}
+            SAVE ₹{new Intl.NumberFormat('en-IN').format(discountAmount)}
           </span>
         )}
       </div>
@@ -242,11 +242,11 @@ const PublishedTripCard = ({ trip, onClick }) => {
           <div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-sm font-extrabold text-slate-850 dark:text-white">
-                ₹{(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString()}
+                ₹{new Intl.NumberFormat('en-IN').format(trip.offerPrice || trip.pricePerPerson || 0)}
               </span>
               {trip.originalPrice > 0 && (
                 <span className="text-[10px] text-slate-400 line-through">
-                  ₹{trip.originalPrice.toLocaleString()}
+                  ₹{new Intl.NumberFormat('en-IN').format(trip.originalPrice)}
                 </span>
               )}
             </div>

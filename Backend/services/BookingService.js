@@ -233,12 +233,17 @@ export class BookingService {
       name: t.name,
       age: Number(t.age || 0),
       gender: normalizeGender(t.gender),
-      phone: t.phone || t.contactPhone || "",
-      email: t.email || t.contactEmail || "",
-      contactEmail: t.contactEmail || "",
-      contactPhone: t.contactPhone || "",
+      phone: t.phone || t.travelerPhone || t.contactPhone || "",
+      email: t.email || t.accountEmail || t.contactEmail || "",
+      contactEmail: t.contactEmail || t.accountEmail || "",
+      contactPhone: t.contactPhone || t.travelerPhone || "",
       emailVerified: t.emailVerified !== undefined ? t.emailVerified : true,
       phoneVerified: t.phoneVerified !== undefined ? t.phoneVerified : true,
+      accountEmail: t.accountEmail || "",
+      travelerPhone: t.travelerPhone || "",
+      travelerPhoneVerified: t.travelerPhoneVerified !== undefined ? t.travelerPhoneVerified : false,
+      bookingForOthers: t.bookingForOthers !== undefined ? t.bookingForOthers : false,
+      verifiedAt: t.verifiedAt || null,
     }));
 
     const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -261,41 +266,59 @@ export class BookingService {
     // Resolve Coupon if passed
     if (couponCode && couponCode.trim()) {
       if (userObj) {
+        // Find in userObj.rewards
+        const reward = userObj.rewards ? userObj.rewards.find(r => 
+          r.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
+          r.status === "AVAILABLE" &&
+          !r.used &&
+          (!r.expiresAt || new Date(r.expiresAt) > new Date())
+        ) : null;
+
         // Find matching scratch card coupon
-        const couponCard = userObj.scratchCards.find(c => 
+        const couponCard = userObj.scratchCards ? userObj.scratchCards.find(c => 
           c.couponCode && 
           c.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
           c.claimed && 
           !c.used &&
           (!c.expiresAt || new Date(c.expiresAt) > new Date())
-        );
+        ) : null;
 
-        if (couponCard) {
+        if (reward || couponCard) {
           isReferralApplied = true;
           appliedReferralCode = couponCode.trim();
           const subtotal = (trip.offerPrice || trip.pricePerPerson || 0) * totalTravellers;
           
-          if (couponCard.rewardType === "percentage_discount") {
-            const pct = parseInt(couponCard.rewardValue);
-            discountAmount = Math.round(subtotal * (pct / 100));
-          } else if (couponCard.rewardType === "flat_discount") {
-            const flatAmt = parseInt(couponCard.rewardValue.replace(/[^0-9]/g, ""));
-            discountAmount = Math.min(subtotal, flatAmt);
-          } else if (couponCard.rewardType === "free_upgrade") {
-            discountAmount = 150;
+          let pct = 0;
+          if (reward) {
+            pct = reward.discountPercent;
+          } else if (couponCard && couponCard.rewardType === "percentage_discount") {
+            pct = parseInt(couponCard.rewardValue);
           }
           
+          discountAmount = Math.round(subtotal * (pct / 100));
           originalPrice = totalAmount + discountAmount;
           
-          // Mark the scratch card coupon as used!
-          couponCard.used = true;
-          couponCard.couponUsed = true;
-          couponCard.usedBookingId = bookingId;
+          // Mark as used in rewards
+          if (reward) {
+            reward.used = true;
+            reward.status = "USED";
+            reward.usedBookingId = bookingId;
+            reward.usedAt = new Date();
+          }
+
+          // Mark as used in scratchCards for backward compatibility
+          if (couponCard) {
+            couponCard.used = true;
+            couponCard.couponUsed = true;
+            couponCard.usedBookingId = bookingId;
+            couponCard.usedAt = new Date();
+          }
           
           // If this is the active coupon in user fields, mark it used
           if (userObj.couponCode && userObj.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase()) {
             userObj.couponStatus = "Used";
           }
+          
           await userObj.save();
         }
       }
@@ -351,6 +374,11 @@ export class BookingService {
       contactPhone: contactPhone || travelersNormalized[0]?.contactPhone || travelersNormalized[0]?.phone || contactNumber || userObj?.phone || userObj?.phoneNumber || userObj?.primaryMobile || "",
       emailVerified: emailVerified !== undefined ? emailVerified : true,
       phoneVerified: phoneVerified !== undefined ? phoneVerified : true,
+      accountEmail: accountEmail || travelersNormalized[0]?.accountEmail || userObj?.email || "",
+      travelerPhone: travelerPhone || travelersNormalized[0]?.travelerPhone || contactPhone || "",
+      travelerPhoneVerified: travelerPhoneVerified !== undefined ? travelerPhoneVerified : (travelersNormalized[0]?.travelerPhoneVerified || false),
+      bookingForOthers: bookingForOthers !== undefined ? bookingForOthers : (travelersNormalized[0]?.bookingForOthers || false),
+      verifiedAt: verifiedAt || travelersNormalized[0]?.verifiedAt || null,
     });
 
     if (isReferralApplied) {

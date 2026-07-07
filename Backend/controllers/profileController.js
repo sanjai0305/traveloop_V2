@@ -399,7 +399,8 @@ export const getReferralDashboard = async (req, res) => {
       scratchCards,
       scratchCardsEarned,
       rewardsClaimed,
-      couponsAvailable
+      couponsAvailable,
+      rewards: user.rewards || [],
     });
   } catch (error) {
     console.error("getReferralDashboard error:", error);

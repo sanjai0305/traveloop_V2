@@ -8,66 +8,60 @@ class ReferralService {
   /**
    * Generates a new Scratch Card document for a user
    */
-  async generateScratchCard(userId, cardType = null) {
+  async generateScratchCard(userIdOrUser, cardType = null) {
     try {
+      let user = userIdOrUser;
+      let shouldSave = false;
+      if (typeof userIdOrUser === "string" || userIdOrUser instanceof mongoose.Types.ObjectId) {
+        user = await User.findById(userIdOrUser);
+        shouldSave = true;
+      }
+      if (!user) return null;
+
       const scratchEnabledSetting = await SystemSetting.findOne({ key: "referral_scratch_rewards_enabled" });
       const scratchEnabled = scratchEnabledSetting ? scratchEnabledSetting.value === true : true;
       if (!scratchEnabled) return null;
 
-      const minSetting = await SystemSetting.findOne({ key: "referral_min_reward" });
-      const maxSetting = await SystemSetting.findOne({ key: "referral_max_reward" });
-      const minReward = minSetting ? Number(minSetting.value) : 5;
-      const maxReward = maxSetting ? Number(maxSetting.value) : 30;
+      // Users always receive exactly what admin configured. No randomization.
+      const discountSetting = await SystemSetting.findOne({ key: "referral_discount_percentage" });
+      const pct = discountSetting ? Number(discountSetting.value) : 5;
 
-      const bSetting = await SystemSetting.findOne({ key: "referral_prob_bronze" });
-      const sSetting = await SystemSetting.findOne({ key: "referral_prob_silver" });
-      const gSetting = await SystemSetting.findOne({ key: "referral_prob_gold" });
-      const dSetting = await SystemSetting.findOne({ key: "referral_prob_diamond" });
+      let calculatedCardType = "Bronze";
+      if (pct === 5) calculatedCardType = "Bronze";
+      else if (pct === 10) calculatedCardType = "Silver";
+      else if (pct === 15) calculatedCardType = "Gold";
+      else if (pct >= 20) calculatedCardType = "Diamond";
 
-      const probB = bSetting ? Number(bSetting.value) : 50;
-      const probS = sSetting ? Number(sSetting.value) : 25;
-      const probG = gSetting ? Number(gSetting.value) : 15;
-      const probD = dSetting ? Number(dSetting.value) : 10;
+      const cleanName = (user.firstName || "USER").toUpperCase().replace(/[^a-zA-Z]/g, "");
+      const couponCode = `TLP${pct}-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const expiresAt = new Date(Date.now() + 86400000 * 30); // 30 days expiry
 
-      if (!cardType) {
-        const rand = Math.random() * 100;
-        if (rand < probB) cardType = "Bronze";
-        else if (rand < probB + probS) cardType = "Silver";
-        else if (rand < probB + probS + probG) cardType = "Gold";
-        else cardType = "Diamond";
+      // Add to user.rewards array
+      user.rewards = user.rewards || [];
+      const rewardObj = {
+        couponCode,
+        discountPercent: pct,
+        status: "AVAILABLE",
+        used: false,
+        expiresAt,
+      };
+      user.rewards.push(rewardObj);
+
+      if (shouldSave) {
+        await user.save();
       }
 
-      // Traveloop referral rewards must only be percentage discounts (5%, 10%, 15%, 20%, 25%, 30%)
-      const rewardType = "percentage_discount";
-
-      let pct = 10;
-      if (cardType === "Bronze") pct = 5;
-      else if (cardType === "Silver") pct = 10;
-      else if (cardType === "Gold") pct = 15;
-      else if (cardType === "Diamond") pct = 20;
-
-      // Respect admin configurations for min/max
-      pct = Math.max(minReward, Math.min(maxReward, pct));
-      
-      // Ensure the percentage is one of the allowed values: 5, 10, 15, 20, 25, 30.
-      // If it doesn't align exactly, round to nearest 5 within bounds.
-      pct = Math.round(pct / 5) * 5;
-      pct = Math.max(5, Math.min(30, pct));
-
-      const rewardValue = `${pct}% OFF`;
-
       const cardId = `SC-${Math.floor(100000 + Math.random() * 900000)}`;
-      const expiresAt = new Date(Date.now() + 86400000 * 30); // 30 days expiry
 
       return {
         cardId,
-        cardType,
-        rewardType,
-        rewardValue,
+        cardType: calculatedCardType,
+        rewardType: "percentage_discount",
+        rewardValue: `${pct}% OFF`,
         scratched: false,
         claimed: false,
         used: false,
-        couponCode: "",
+        couponCode,
         expiresAt,
       };
     } catch (err) {
@@ -91,26 +85,34 @@ class ReferralService {
     scratchCard.claimed = true;
     scratchCard.claimedAt = new Date();
 
-    const cleanName = user.firstName.toUpperCase().replace(/[^a-zA-Z]/g, "");
-
-    let claimResult = { type: scratchCard.rewardType, value: scratchCard.rewardValue };
-
-    // Format coupon code: e.g., TLP15-SANJAI-9821
+    const couponCode = scratchCard.couponCode;
     const pct = parseInt(scratchCard.rewardValue);
-    const formattedPct = String(pct).padStart(2, "0"); // TLP05, TLP10, TLP15 etc.
-    const codePrefix = `TLP${formattedPct}`;
 
-    const couponCode = `${codePrefix}-${cleanName}-${Math.floor(1000 + Math.random() * 9000)}`;
-    scratchCard.couponCode = couponCode;
+    // Make sure the coupon is marked as AVAILABLE in user.rewards
+    user.rewards = user.rewards || [];
+    let reward = user.rewards.find(r => r.couponCode === couponCode);
+    if (!reward) {
+      reward = {
+        couponCode,
+        discountPercent: pct,
+        status: "AVAILABLE",
+        used: false,
+        expiresAt: scratchCard.expiresAt || new Date(Date.now() + 86400000 * 30),
+      };
+      user.rewards.push(reward);
+    } else {
+      reward.status = "AVAILABLE";
+      reward.used = false;
+    }
 
-    // Update main user coupon fields
+    // Update main user coupon fields for backward compatibility
     user.couponCode = couponCode;
     user.couponPercentage = pct;
     user.couponStatus = "Unused";
     user.rewardClaimed = true;
     user.rewardExpiry = scratchCard.expiresAt;
 
-    claimResult.couponCode = couponCode;
+    let claimResult = { type: scratchCard.rewardType, value: scratchCard.rewardValue, couponCode };
 
     // Send Invitee Notification
     try {

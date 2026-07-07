@@ -78,15 +78,25 @@ router.post("/create-order", protect, async (req, res) => {
 
     if (couponCode && couponCode.trim()) {
       if (userObj) {
-        const couponCard = userObj.scratchCards.find(c => 
+        const reward = userObj.rewards ? userObj.rewards.find(r => 
+          r.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
+          r.status === "AVAILABLE" &&
+          !r.used &&
+          (!r.expiresAt || new Date(r.expiresAt) > new Date())
+        ) : null;
+
+        const couponCard = userObj.scratchCards ? userObj.scratchCards.find(c => 
           c.couponCode && 
           c.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase() &&
           c.claimed && 
           !c.used &&
           (!c.expiresAt || new Date(c.expiresAt) > new Date())
-        );
+        ) : null;
 
-        if (couponCard) {
+        if (reward) {
+          isCouponApplied = true;
+          discount = Math.round(amount * (reward.discountPercent / 100));
+        } else if (couponCard) {
           isCouponApplied = true;
           if (couponCard.rewardType === "percentage_discount") {
             const pct = parseInt(couponCard.rewardValue);
@@ -440,6 +450,7 @@ router.post("/verify", protect, async (req, res) => {
         contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
         emailVerified: true,
         phoneVerified: true,
+        couponCode: bookingPayload.couponCode || "",
       });
       booking = result.booking;
       await confirmPassengerSeats(booking, bookingPayload.travellers, trip._id, userId, req.app.get("io"));
@@ -757,6 +768,70 @@ router.post("/agent/verify-slot-purchase", protectAgent, async (req, res) => {
   } catch (error) {
     console.error("Verify slot purchase error:", error);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/payment/validate-coupon
+// @desc    Validate a coupon code
+// @access  Private (Traveler)
+router.post("/validate-coupon", protect, async (req, res) => {
+  const { couponCode } = req.body;
+  if (!couponCode || !couponCode.trim()) {
+    return res.status(400).json({ success: false, message: "Coupon code is required" });
+  }
+
+  try {
+    const userObj = await User.findById(req.user.id || req.user._id);
+    if (!userObj) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Check rewards array first
+    const reward = userObj.rewards ? userObj.rewards.find(r => r.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase()) : null;
+    
+    // Check fallback scratchCards
+    const scratchCard = userObj.scratchCards ? userObj.scratchCards.find(c => c.couponCode && c.couponCode.trim().toUpperCase() === couponCode.trim().toUpperCase()) : null;
+
+    if (!reward && !scratchCard) {
+      // Check if belongs to someone else
+      const otherUser = await User.findOne({
+        $or: [
+          { "rewards.couponCode": couponCode.trim() },
+          { "scratchCards.couponCode": couponCode.trim() }
+        ]
+      });
+      if (otherUser) {
+        return res.status(400).json({ success: false, message: "Coupon Invalid" });
+      }
+      return res.status(400).json({ success: false, message: "Coupon Not Found" });
+    }
+
+    const isUsed = (reward && reward.used) || (scratchCard && scratchCard.used);
+    const expiresAt = (reward && reward.expiresAt) || (scratchCard && scratchCard.expiresAt);
+    const discountPercent = reward ? reward.discountPercent : (scratchCard ? parseInt(scratchCard.rewardValue) : 0);
+
+    if (isUsed) {
+      return res.status(400).json({ success: false, message: "Coupon Already Used" });
+    }
+
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+      return res.status(400).json({ success: false, message: "Coupon Expired" });
+    }
+
+    const status = reward ? reward.status : (scratchCard && scratchCard.claimed ? "AVAILABLE" : "UNCLAIMED");
+    if (reward && status !== "AVAILABLE") {
+      return res.status(400).json({ success: false, message: "Coupon Invalid" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      couponCode: (reward ? reward.couponCode : scratchCard.couponCode),
+      discountPercent,
+      expiresAt,
+    });
+  } catch (error) {
+    console.error("Validate coupon error:", error);
+    res.status(500).json({ success: false, message: "Server error validating coupon" });
   }
 });
 

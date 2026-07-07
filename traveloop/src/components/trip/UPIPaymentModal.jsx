@@ -334,7 +334,7 @@ const UPIPaymentModal = ({
           <div className="bg-slate-900 border border-slate-850 rounded-2xl p-4 mt-5 shrink-0">
             <div className="flex justify-between items-center pb-2.5 border-b border-slate-800 mb-2.5">
               <span className="text-[10px] font-black text-slate-455 uppercase tracking-widest">Grand Total</span>
-              <span className="text-xl font-black text-teal-450">₹{amount.toLocaleString("en-IN")}</span>
+              <span className="text-xl font-black text-teal-450">₹{new Intl.NumberFormat('en-IN').format(amount)}</span>
             </div>
             <div className="flex items-center gap-1.5 text-[9px] font-extrabold text-slate-555 uppercase tracking-wider">
               <Lock size={10} className="text-emerald-500" /> Secure SSL Connection
@@ -576,7 +576,7 @@ const UPIPaymentModal = ({
           <div className="p-5 border-t border-slate-850 bg-slate-950/50 backdrop-blur-md flex items-center justify-between shrink-0">
             <div>
               <p className="text-[9px] text-slate-505 uppercase font-black tracking-widest">Total Amount</p>
-              <p className="text-base font-black text-teal-405">₹{amount.toLocaleString("en-IN")}</p>
+              <p className="text-base font-black text-teal-405">₹{new Intl.NumberFormat('en-IN').format(amount)}</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -593,7 +593,7 @@ const UPIPaymentModal = ({
                 className="px-6 py-3 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-955 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-teal-500/10 transition-all flex items-center gap-1.5"
               >
                 {confirming ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />}
-                {confirming ? "Processing..." : `Pay ₹${amount.toLocaleString("en-IN")}`}
+                {confirming ? "Processing..." : `Pay ₹${new Intl.NumberFormat('en-IN').format(amount)}`}
               </button>
             </div>
           </div>
