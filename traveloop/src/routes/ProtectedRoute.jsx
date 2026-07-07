@@ -29,7 +29,8 @@ const ProtectedRoute = ({ children, isTermsPage = false }) => {
   }
 
   // Redirect to Legal Consent if user has not accepted terms & privacy or verified phone
-  if (user && (!user.acceptedTerms || !user.privacyAccepted || !user.phoneVerified) && !isTermsPage) {
+  const isConsentPath = window.location.pathname === "/legal-consent" || isTermsPage;
+  if (user && (!user.acceptedTerms || !user.privacyAccepted || !user.phoneVerified) && !isConsentPath) {
     console.log("[ProtectedRoute] Redirecting to /legal-consent:", {
       acceptedTerms: user.acceptedTerms,
       privacyAccepted: user.privacyAccepted,

@@ -64,7 +64,7 @@ export const Auth: React.FC = () => {
           const resData = response.data;
           setAuth(resData.token, resData.agent);
           
-          const needsConsent = !resData.agent?.acceptedTerms;
+          const needsConsent = !resData.agent?.acceptedTerms || !resData.agent?.privacyAccepted;
           const needsPhoneVerification = !resData.agent?.mobileVerified;
 
           if (needsConsent || needsPhoneVerification) {

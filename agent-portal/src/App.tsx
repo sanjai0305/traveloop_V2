@@ -52,7 +52,6 @@ export const App: React.FC = () => {
           {/* ── Public auth routes ── */}
           <Route path="/login" element={<Auth />} />
           <Route path="/signup" element={<Auth />} />
-          <Route path="/legal-consent" element={<LegalConsent />} />
 
           {/* ── Protected app routes ── */}
           <Route

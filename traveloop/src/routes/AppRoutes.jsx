@@ -87,7 +87,11 @@ const AppRoutes = () => {
           {/* LEGAL CONSENT */}
           <Route
             path="/legal-consent"
-            element={<LegalConsent />}
+            element={
+              <ProtectedRoute>
+                <LegalConsent />
+              </ProtectedRoute>
+            }
           />
 
           {/* DASHBOARD */}

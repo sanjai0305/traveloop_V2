@@ -13,7 +13,7 @@ import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 const LegalConsent = () => {
   const navigate = useNavigate();
-  const { user, updateUser, isAuthenticated, loading } = useAuth();
+  const { user, updateUser, isAuthenticated, loading, userRefreshed } = useAuth();
   const toast = useToast();
   
   const [step, setStep] = useState("consent"); // "consent" | "phone"
@@ -33,10 +33,10 @@ const LegalConsent = () => {
   }, [phoneNumber]);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!loading && userRefreshed && !isAuthenticated) {
       navigate("/", { replace: true });
     }
-  }, [isAuthenticated, loading, navigate]);
+  }, [isAuthenticated, loading, userRefreshed, navigate]);
 
   useEffect(() => {
     if (user?.phoneNumber || user?.phone) {

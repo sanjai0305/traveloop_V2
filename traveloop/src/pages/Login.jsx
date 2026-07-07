@@ -14,13 +14,13 @@ import ServerStatusIndicator from "../components/common/ServerStatusIndicator";
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
 const Login = () => {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, userRefreshed } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      const needsConsent = !!user && !user.acceptedTerms;
-      const needsPhoneVerification = !!user && !user.phoneVerified;
+    if (!loading && userRefreshed && isAuthenticated) {
+      const needsConsent = !user?.acceptedTerms || !user?.privacyAccepted;
+      const needsPhoneVerification = !user?.phoneVerified;
 
       if (needsConsent || needsPhoneVerification) {
         navigate("/legal-consent", { replace: true });
@@ -28,7 +28,7 @@ const Login = () => {
         navigate("/dashboard", { replace: true });
       }
     }
-  }, [isAuthenticated, loading, user, navigate]);
+  }, [isAuthenticated, loading, userRefreshed, user, navigate]);
 
   if (loading) {
     return <PageSkeletonLoader />;

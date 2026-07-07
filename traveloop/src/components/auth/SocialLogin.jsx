@@ -58,7 +58,7 @@ const SocialLogin = () => {
       login(data.user, data.token);
       console.log("[GoogleAuth Audit] Login successful.");
 
-      const needsConsent = !data?.user?.acceptedTerms;
+      const needsConsent = !data?.user?.acceptedTerms || !data?.user?.privacyAccepted;
       const needsPhoneVerification = !data?.user?.phoneVerified;
 
       if (needsConsent || needsPhoneVerification) {
