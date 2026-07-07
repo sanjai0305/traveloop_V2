@@ -636,6 +636,129 @@ router.post("/verify-email-otp", protectAgent, async (req, res) => {
   }
 });
 
+/* ──────────────────────────────────────────────────────────────────────────
+   DRIVER VERIFICATION ENDPOINTS (used during trip creation Step 6)
+   ────────────────────────────────────────────────────────────────────────── */
+
+// In-memory store for driver email OTPs (keyed by agentId:driverEmail)
+// These are ephemeral 5-minute OTPs — no persistence needed
+const driverEmailOtpStore = new Map();
+
+// @route   POST /api/agent/send-driver-email-otp
+// @desc    Send OTP to the driver's email address (for trip creation verification)
+router.post("/send-driver-email-otp", protectAgent, async (req, res) => {
+  try {
+    const { driverEmail, driverName } = req.body;
+
+    if (!driverEmail) {
+      return res.status(400).json({ success: false, message: "Driver email is required" });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(driverEmail)) {
+      return res.status(400).json({ success: false, message: "Invalid driver email format" });
+    }
+
+    const storeKey = `${req.agent._id}:${driverEmail.toLowerCase()}`;
+
+    // Resend cooldown check (60 seconds)
+    const existing = driverEmailOtpStore.get(storeKey);
+    if (existing && existing.resendAvailableAt > Date.now()) {
+      const remainingSec = Math.ceil((existing.resendAvailableAt - Date.now()) / 1000);
+      return res.status(429).json({
+        success: false,
+        message: `Please wait ${remainingSec}s before resending`,
+        remainingSeconds: remainingSec,
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000;       // 5 minutes
+    const resendAvailableAt = Date.now() + 60 * 1000;   // 60 seconds cooldown
+
+    driverEmailOtpStore.set(storeKey, {
+      otp,
+      expiresAt,
+      resendAvailableAt,
+      attempts: 0,
+    });
+
+    console.log(`[Driver Email OTP] Sending OTP to driver ${driverEmail}: ${otp}`);
+
+    try {
+      await sendOtpEmail(driverEmail, driverName || "Driver", otp);
+    } catch (mailErr) {
+      console.warn("[Driver Email OTP] Email send failed, OTP logged above:", mailErr.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `OTP sent to ${driverEmail}`,
+      otp: process.env.NODE_ENV !== "production" ? otp : undefined,
+    });
+  } catch (error) {
+    console.error("[Driver Email OTP] Send error:", error);
+    res.status(500).json({ success: false, message: "Failed to send driver email OTP" });
+  }
+});
+
+// @route   POST /api/agent/verify-driver-email-otp
+// @desc    Verify driver email OTP (for trip creation step 6)
+router.post("/verify-driver-email-otp", protectAgent, async (req, res) => {
+  try {
+    const { driverEmail, otp } = req.body;
+
+    if (!driverEmail || !otp) {
+      return res.status(400).json({ success: false, message: "Driver email and OTP are required" });
+    }
+
+    const storeKey = `${req.agent._id}:${driverEmail.toLowerCase()}`;
+    const record = driverEmailOtpStore.get(storeKey);
+
+    if (!record) {
+      return res.status(400).json({ success: false, message: "OTP not found. Please request a new one." });
+    }
+
+    if (record.attempts >= 3) {
+      driverEmailOtpStore.delete(storeKey);
+      return res.status(400).json({ success: false, message: "Maximum attempts reached. Please request a new OTP." });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      driverEmailOtpStore.delete(storeKey);
+      return res.status(400).json({ success: false, message: "OTP expired. Please request a new one." });
+    }
+
+    if (record.otp !== otp.toString()) {
+      record.attempts += 1;
+      driverEmailOtpStore.set(storeKey, record);
+      const remaining = 3 - record.attempts;
+      return res.status(400).json({
+        success: false,
+        message: `Invalid OTP. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,
+        attemptsRemaining: remaining,
+      });
+    }
+
+    // ── OTP valid — clean up store and return success ──
+    driverEmailOtpStore.delete(storeKey);
+
+    const verifiedAt = new Date();
+    console.log(`[Driver Email OTP] Verified for driver ${driverEmail} by agent ${req.agent._id}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Driver email verified successfully",
+      driverEmailVerified: true,
+      driverEmailVerifiedAt: verifiedAt,
+    });
+  } catch (error) {
+    console.error("[Driver Email OTP] Verify error:", error);
+    res.status(500).json({ success: false, message: "Failed to verify driver email OTP" });
+  }
+});
+
 // @route   POST /api/agent/send-mobile-otp
 // @desc    Send mobile verification OTP (managed via Firebase Client SDK)
 router.post("/send-mobile-otp", protectAgent, async (req, res) => {
@@ -906,6 +1029,24 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
     });
   }
 
+
+  // ── Driver Verification Gate ──────────────────────────────────────────────
+  // Both driver mobile (Firebase) and email OTP must be verified before trip creation.
+  if (!req.body.driverMobileVerified) {
+    return res.status(400).json({
+      success: false,
+      reason: "DRIVER_MOBILE_NOT_VERIFIED",
+      message: "Driver mobile verification required. Please verify the driver's phone number via OTP.",
+    });
+  }
+
+  if (!req.body.driverEmailVerified) {
+    return res.status(400).json({
+      success: false,
+      reason: "DRIVER_EMAIL_NOT_VERIFIED",
+      message: "Driver email verification required. Please verify the driver's email via OTP.",
+    });
+  }
 
   // ── Required field check with detailed missingFields response ────
   // Note: description is NOT required — it is auto-generated from title/tagline/itinerary.

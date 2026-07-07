@@ -162,6 +162,22 @@ const agentTripSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    driverMobileVerified: {
+      type: Boolean,
+      default: false,
+    },
+    driverEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    driverMobileVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    driverEmailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
     emergencyContact: {
       type: String,
       default: "",

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { auth as firebaseAuth } from "../../../traveloop/src/services/firebase";
 import {
   Compass,
   Users,
@@ -36,6 +38,10 @@ import {
   ChevronUp,
   ChevronDown,
   Copy,
+  ShieldCheck,
+  Phone,
+  Mail,
+  Loader2,
 } from "lucide-react";
 import { GlassCard, Button, Input, ImageUploadBox, Modal } from "../components/ui";
 import { getMyTrips, createTrip, updateTrip, deleteTrip, saveDraft, publishTrip, getMasterData, createMasterEntry, getAgentSlots } from "../services/tripService";
@@ -246,6 +252,27 @@ export const Trips: React.FC = () => {
   const [dateOtpModalOpen, setDateOtpModalOpen] = useState(false);
   const [dateOtpCode, setDateOtpCode] = useState("");
   const [dateOtpError, setDateOtpError] = useState("");
+
+  // ── Driver Verification States (Step 6) ────────────────────────────────────
+  const [driverMobileVerified, setDriverMobileVerified] = useState(false);
+  const [driverMobileVerifiedAt, setDriverMobileVerifiedAt] = useState<Date | null>(null);
+  const [driverEmailVerified, setDriverEmailVerified] = useState(false);
+  const [driverEmailVerifiedAt, setDriverEmailVerifiedAt] = useState<Date | null>(null);
+  // Mobile OTP (Firebase)
+  const [mobileOtpSent, setMobileOtpSent] = useState(false);
+  const [mobileOtpInput, setMobileOtpInput] = useState("");
+  const [mobileOtpLoading, setMobileOtpLoading] = useState(false);
+  const [mobileOtpError, setMobileOtpError] = useState("");
+  const [mobileResendCooldown, setMobileResendCooldown] = useState(0);
+  // Email OTP
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpInput, setEmailOtpInput] = useState("");
+  const [emailOtpLoading, setEmailOtpLoading] = useState(false);
+  const [emailOtpError, setEmailOtpError] = useState("");
+  const [emailResendCooldown, setEmailResendCooldown] = useState(0);
+  // Refs
+  const recaptchaVerifierRef = useRef<any>(null);
+  const confirmationResultRef = useRef<any>(null);
 
   // Deletion refund OTP wizard states
   const [deleteWizardOpen, setDeleteWizardOpen] = useState(false);
@@ -463,6 +490,179 @@ export const Trips: React.FC = () => {
     }
   }, [watchStartDate, watchEndDate, setValue, replaceItinerary]);
 
+  // ── Reset driver verification when phone or email changes ─────────────────
+  const watchDriverPhone = watch("driverPhone");
+  const watchDriverGmail = watch("driverGmail");
+
+  useEffect(() => {
+    setDriverMobileVerified(false);
+    setDriverMobileVerifiedAt(null);
+    setMobileOtpSent(false);
+    setMobileOtpInput("");
+    setMobileOtpError("");
+    confirmationResultRef.current = null;
+  }, [watchDriverPhone]);
+
+  useEffect(() => {
+    setDriverEmailVerified(false);
+    setDriverEmailVerifiedAt(null);
+    setEmailOtpSent(false);
+    setEmailOtpInput("");
+    setEmailOtpError("");
+  }, [watchDriverGmail]);
+
+  // ── Mobile cooldown timer ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (mobileResendCooldown <= 0) return;
+    const timer = setTimeout(() => setMobileResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [mobileResendCooldown]);
+
+  // ── Email cooldown timer ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (emailResendCooldown <= 0) return;
+    const timer = setTimeout(() => setEmailResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [emailResendCooldown]);
+
+  // ── Driver Verification Handlers ───────────────────────────────────────────
+  const sendDriverMobileOtp = async () => {
+    const phone = watch("driverPhone");
+    if (!phone || !/^[0-9]{10}$/.test(phone)) {
+      setMobileOtpError("Please enter a valid 10-digit driver mobile number first");
+      return;
+    }
+    setMobileOtpError("");
+    setMobileOtpLoading(true);
+    try {
+      // Clean up previous verifier
+      if (recaptchaVerifierRef.current) {
+        try { recaptchaVerifierRef.current.clear(); } catch (_) {}
+        recaptchaVerifierRef.current = null;
+      }
+      recaptchaVerifierRef.current = new RecaptchaVerifier(
+        firebaseAuth,
+        "driver-recaptcha-container",
+        {
+          size: "invisible",
+          callback: () => console.log("[Driver reCAPTCHA] Solved"),
+          "expired-callback": () => console.log("[Driver reCAPTCHA] Expired"),
+        }
+      );
+      const formattedPhone = `+91${phone}`;
+      const confirmationResult = await signInWithPhoneNumber(
+        firebaseAuth,
+        formattedPhone,
+        recaptchaVerifierRef.current
+      );
+      confirmationResultRef.current = confirmationResult;
+      setMobileOtpSent(true);
+      setMobileResendCooldown(60);
+    } catch (err: any) {
+      console.error("[Driver Mobile OTP] Firebase error:", err);
+      setMobileOtpError(err.message || "Failed to send OTP. Please try again.");
+      recaptchaVerifierRef.current = null;
+    } finally {
+      setMobileOtpLoading(false);
+    }
+  };
+
+  const verifyDriverMobileOtp = async () => {
+    if (!mobileOtpInput || mobileOtpInput.length !== 6) {
+      setMobileOtpError("Please enter the 6-digit OTP");
+      return;
+    }
+    if (!confirmationResultRef.current) {
+      setMobileOtpError("No active OTP session. Please send OTP again.");
+      return;
+    }
+    setMobileOtpError("");
+    setMobileOtpLoading(true);
+    try {
+      await confirmationResultRef.current.confirm(mobileOtpInput);
+      const now = new Date();
+      setDriverMobileVerified(true);
+      setDriverMobileVerifiedAt(now);
+      setMobileOtpError("");
+    } catch (err: any) {
+      console.error("[Driver Mobile OTP] Verify error:", err);
+      setMobileOtpError("Invalid OTP code. Please try again.");
+    } finally {
+      setMobileOtpLoading(false);
+    }
+  };
+
+  const sendDriverEmailOtp = async () => {
+    const email = watch("driverGmail");
+    const name = watch("driverName");
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailOtpError("Please enter a valid driver email address first");
+      return;
+    }
+    setEmailOtpError("");
+    setEmailOtpLoading(true);
+    try {
+      const res = await api.post("/agent/send-driver-email-otp", { driverEmail: email, driverName: name });
+      if (res.data?.success) {
+        setEmailOtpSent(true);
+        setEmailResendCooldown(60);
+      } else {
+        setEmailOtpError(res.data?.message || "Failed to send OTP");
+      }
+    } catch (err: any) {
+      if (err.response?.status === 429) {
+        const sec = err.response?.data?.remainingSeconds || 60;
+        setEmailResendCooldown(sec);
+        setEmailOtpError(`Please wait ${sec}s before resending`);
+      } else {
+        setEmailOtpError(err.response?.data?.message || "Failed to send OTP");
+      }
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
+  const verifyDriverEmailOtp = async () => {
+    const email = watch("driverGmail");
+    if (!emailOtpInput || emailOtpInput.length !== 6) {
+      setEmailOtpError("Please enter the 6-digit OTP");
+      return;
+    }
+    setEmailOtpError("");
+    setEmailOtpLoading(true);
+    try {
+      const res = await api.post("/agent/verify-driver-email-otp", {
+        driverEmail: email,
+        otp: emailOtpInput,
+      });
+      if (res.data?.success) {
+        setDriverEmailVerified(true);
+        setDriverEmailVerifiedAt(new Date(res.data.driverEmailVerifiedAt));
+        setEmailOtpError("");
+      } else {
+        setEmailOtpError(res.data?.message || "Verification failed");
+      }
+    } catch (err: any) {
+      setEmailOtpError(err.response?.data?.message || "Invalid OTP. Please try again.");
+    } finally {
+      setEmailOtpLoading(false);
+    }
+  };
+
+  const resetDriverVerification = () => {
+    setDriverMobileVerified(false);
+    setDriverMobileVerifiedAt(null);
+    setDriverEmailVerified(false);
+    setDriverEmailVerifiedAt(null);
+    setMobileOtpSent(false);
+    setMobileOtpInput("");
+    setMobileOtpError("");
+    setEmailOtpSent(false);
+    setEmailOtpInput("");
+    setEmailOtpError("");
+    confirmationResultRef.current = null;
+  };
+
   const openCreateMode = () => {
     if (!isProfileCompleted) {
       alert("Please complete profile verification first");
@@ -473,6 +673,7 @@ export const Trips: React.FC = () => {
       return;
     }
     reset();
+    resetDriverVerification();
     setEditingTripId(null);
     setEditorOpen(true);
     setActiveTab(1);
@@ -488,6 +689,7 @@ export const Trips: React.FC = () => {
       originCity: trip.originCity || "",
       gstPercentage: trip.gstPercentage || 5,
     });
+    resetDriverVerification();
     setEditingTripId(trip._id);
     setEditorOpen(true);
     setActiveTab(1);
@@ -498,6 +700,7 @@ export const Trips: React.FC = () => {
     setEditingTripId(null);
     setMissingFieldsAlert([]);
     setSubmitError(null);
+    resetDriverVerification();
   };
 
   // Helper to compile payload satisfying backend expectations
@@ -517,6 +720,11 @@ export const Trips: React.FC = () => {
       emergencyContact: formData.driverPhone || "9988776655",
       busType: formData.vehicleType || "Bus",
       status: isDraft ? "draft" : "published",
+      // Driver verification flags
+      driverMobileVerified,
+      driverEmailVerified,
+      driverMobileVerifiedAt: driverMobileVerifiedAt?.toISOString() || null,
+      driverEmailVerifiedAt: driverEmailVerifiedAt?.toISOString() || null,
       itinerary: (formData.itinerary || []).map(item => ({
         ...item,
         description: item.notes || "Sightseeing/Travel",
@@ -930,6 +1138,19 @@ export const Trips: React.FC = () => {
       return;
     } else if (activeTab === 6) {
       fieldsToValidate = ["driverName", "driverPhone", "driverLicenseNumber", "busNumber"];
+      const isValid = await trigger(fieldsToValidate as any);
+      if (!isValid) return;
+      // Both driver contacts must be verified before proceeding
+      if (!driverMobileVerified) {
+        setMobileOtpError("Please verify the driver's mobile number before continuing.");
+        return;
+      }
+      if (!driverEmailVerified) {
+        setEmailOtpError("Please verify the driver's email address before continuing.");
+        return;
+      }
+      setActiveTab(prev => Math.min(10, prev + 1));
+      return;
     } else if (activeTab === 8) {
       fieldsToValidate = ["originalPrice", "offerPrice", "totalSeats"];
     }
@@ -1820,6 +2041,156 @@ export const Trips: React.FC = () => {
                       <Input label="Driver Name *" {...register("driverName", { required: "Driver Name required" })} error={errors.driverName?.message} />
                       <Input label="Driver Phone *" maxLength={10} {...register("driverPhone", { required: "Driver Phone required" })} error={errors.driverPhone?.message} />
                     </div>
+
+                    {/* ── Driver Verification Section ─────────────────────────────────── */}
+                    <div id="driver-recaptcha-container" />
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ShieldCheck className="w-4 h-4 text-teal-500" />
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Driver Verification Required
+                        </span>
+                      </div>
+
+                      {/* Mobile OTP */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Driver Mobile</span>
+                          {driverMobileVerified && (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 ml-auto">
+                              <CheckCircle className="w-3.5 h-3.5" /> Verified
+                            </span>
+                          )}
+                        </div>
+
+                        {!driverMobileVerified ? (
+                          <>
+                            <div className="flex gap-2">
+                              <div className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-medium">
+                                {watch("driverPhone") ? `+91 ${watch("driverPhone")}` : <span className="text-slate-400">Enter driver phone above first</span>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={sendDriverMobileOtp}
+                                disabled={mobileOtpLoading || mobileResendCooldown > 0 || !watch("driverPhone")}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap flex items-center gap-1.5"
+                              >
+                                {mobileOtpLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                {mobileResendCooldown > 0 ? `Resend in ${mobileResendCooldown}s` : mobileOtpSent ? "Resend OTP" : "Send OTP"}
+                              </button>
+                            </div>
+
+                            {mobileOtpSent && (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  maxLength={6}
+                                  placeholder="Enter 6-digit OTP"
+                                  value={mobileOtpInput}
+                                  onChange={(e) => setMobileOtpInput(e.target.value.replace(/\D/g, ""))}
+                                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 outline-none focus:border-teal-500 tracking-widest font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={verifyDriverMobileOtp}
+                                  disabled={mobileOtpLoading || mobileOtpInput.length !== 6}
+                                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                                >
+                                  {mobileOtpLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                  Verify
+                                </button>
+                              </div>
+                            )}
+
+                            {mobileOtpError && (
+                              <p className="text-xs font-semibold text-rose-500 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" /> {mobileOtpError}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                            +91 {watch("driverPhone")} ✅ Mobile Verified
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Email OTP */}
+                      <div className="space-y-2 border-t border-slate-200 dark:border-slate-700 pt-3">
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Driver Email</span>
+                          {driverEmailVerified && (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 ml-auto">
+                              <CheckCircle className="w-3.5 h-3.5" /> Verified
+                            </span>
+                          )}
+                        </div>
+
+                        {!driverEmailVerified ? (
+                          <>
+                            <div className="flex gap-2">
+                              <div className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-medium truncate">
+                                {watch("driverGmail") || <span className="text-slate-400">Enter driver Gmail above first</span>}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={sendDriverEmailOtp}
+                                disabled={emailOtpLoading || emailResendCooldown > 0 || !watch("driverGmail")}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap flex items-center gap-1.5"
+                              >
+                                {emailOtpLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                {emailResendCooldown > 0 ? `Resend in ${emailResendCooldown}s` : emailOtpSent ? "Resend OTP" : "Send OTP"}
+                              </button>
+                            </div>
+
+                            {emailOtpSent && (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  maxLength={6}
+                                  placeholder="Enter 6-digit OTP"
+                                  value={emailOtpInput}
+                                  onChange={(e) => setEmailOtpInput(e.target.value.replace(/\D/g, ""))}
+                                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 outline-none focus:border-teal-500 tracking-widest font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={verifyDriverEmailOtp}
+                                  disabled={emailOtpLoading || emailOtpInput.length !== 6}
+                                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                                >
+                                  {emailOtpLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                  Verify
+                                </button>
+                              </div>
+                            )}
+
+                            {emailOtpError && (
+                              <p className="text-xs font-semibold text-rose-500 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" /> {emailOtpError}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                            {watch("driverGmail")} ✅ Email Verified
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gate message */}
+                      {(!driverMobileVerified || !driverEmailVerified) && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1.5 pt-1">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          Verify both driver contacts to enable Continue
+                        </p>
+                      )}
+                    </div>
+                    {/* ── End Driver Verification ─────────────────────────────────────── */}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <Input label="Driver Gmail" type="email" {...register("driverGmail")} />
