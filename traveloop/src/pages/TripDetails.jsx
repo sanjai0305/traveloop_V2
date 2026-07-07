@@ -259,14 +259,20 @@ export const TripDetails = () => {
   };
 
   // Called when SeatLayoutModal confirms seat selection
-  const handleSeatsConfirmed = (seats) => {
+  const handleSeatsConfirmed = (seats, passengerList) => {
     setSelectedSeatsList(seats);
-    setBookingStage("passenger_form");
+    if (passengerList && passengerList.length > 0) {
+      setPassengers(passengerList);
+      handlePassengersConfirmed(passengerList, seats);
+    } else {
+      setBookingStage("passenger_form");
+    }
   };
 
   // Called when PassengerFormModal submits all passenger data
-  const handlePassengersConfirmed = async (passengerList) => {
+  const handlePassengersConfirmed = async (passengerList, seatsOverride) => {
     setPassengers(passengerList);
+    const activeSeats = seatsOverride || selectedSeats;
 
     // Calculate amounts
     const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
@@ -287,7 +293,7 @@ export const TripDetails = () => {
           tripId: trip._id,
           travellers: passengerList,
           seats: passengerList.length,
-          seatNumbers: selectedSeats,
+          seatNumbers: activeSeats,
           totalAmount: total,
           maleCount,
           femaleCount,

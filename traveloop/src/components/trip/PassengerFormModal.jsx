@@ -6,9 +6,6 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
-const GENDER_OPTIONS = ["Male", "Female", "Other"];
-
-const maskPhoneNumber = (phone) => {
 const GENDER_OPTIONS = ["Male", "Female"];
 
 const emptyPassenger = (seatNumber) => ({
@@ -327,6 +324,7 @@ const PassengerFormModal = ({
                     </option>
                   ))}
                 </select>
+              </div>
             </div>
           </motion.div>
         </AnimatePresence>

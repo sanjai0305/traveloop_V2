@@ -142,8 +142,8 @@ const SeatCell = ({ seat, isSelected, onClick, disabled, passengerInfo }) => {
                 {passengerInfo ? (
                   <>
                     <div>👤 {passengerInfo.name}</div>
-                    <div>✉️ {passengerInfo.email}</div>
                     <div>🎂 {passengerInfo.age} yrs · {passengerInfo.gender}</div>
+                    {passengerInfo.email && <div>✉️ {passengerInfo.email}</div>}
                     {passengerInfo.phone && <div>📞 {passengerInfo.phone}</div>}
                   </>
                 ) : (
