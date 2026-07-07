@@ -63,16 +63,7 @@ export const Auth: React.FC = () => {
           }
           const resData = response.data;
           setAuth(resData.token, resData.agent);
-          
-          const needsConsent = !resData.agent?.acceptedTerms || !resData.agent?.privacyAccepted;
-          const needsPhoneVerification = !resData.agent?.mobileVerified;
-
-          if (needsConsent || needsPhoneVerification) {
-            console.log("[Auth Page] Onboarding incomplete. Redirecting to legal consent.");
-            navigate("/legal-consent", { replace: true });
-          } else {
-            handleAuthSuccess();
-          }
+          handleAuthSuccess();
         } else {
           console.log("[Google Auth] No pending redirect result.");
         }

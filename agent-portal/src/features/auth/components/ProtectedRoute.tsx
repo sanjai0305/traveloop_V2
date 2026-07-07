@@ -39,28 +39,47 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   const agent = useAuthStore.getState().agent;
-  const kycStatus = agent?.kycStatus || "PENDING";
   
-  // 1. If profile is not complete, send them to the profile completion wizard (which handles Step 1 - 6)
-  if (
-    kycStatus !== "KYC_COMPLETED" &&
-    kycStatus !== "APPROVED" &&
-    location.pathname !== "/complete-profile"
-  ) {
-    console.log(`[ProtectedRoute] KYC incomplete (${kycStatus}) — redirecting to /complete-profile`);
-    return <Navigate to="/complete-profile" replace />;
+  if (!agent) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 2. If kycStatus is complete, but they somehow still need consent or phone, send them to /legal-consent
-  const needsConsent = agent && (!agent.acceptedTerms || !agent.privacyAccepted);
-  const needsPhone = agent && !agent.mobileVerified;
+  const getKycStep = (agent: any) => {
+    const hasGst = agent.gstNo || agent.gstNumber;
+    const hasLogo = agent.companyLogo || agent.logo;
+    const hasPhoto = agent.agentPhoto || agent.profileImage;
+    const profileDone = !!(agent.displayName && agent.dob && agent.mobile && agent.state && agent.country && agent.companyName && hasGst && hasLogo && hasPhoto);
 
-  if ((needsConsent || needsPhone) && location.pathname !== "/legal-consent") {
-    console.log("[ProtectedRoute] Agent needs legal/phone verification, redirecting to /legal-consent");
-    return <Navigate to="/legal-consent" replace />;
+    if (!profileDone) {
+      return 1;
+    }
+    if (agent.kycStatus !== "EMAIL_VERIFIED" && agent.kycStatus !== "MOBILE_VERIFIED" && agent.kycStatus !== "KYC_COMPLETED" && agent.kycStatus !== "APPROVED" && !agent.emailVerified) {
+      return 4;
+    }
+    if (!agent.acceptedTerms || !agent.privacyAccepted) {
+      return 5;
+    }
+    if (!agent.mobileVerified) {
+      return 6;
+    }
+    return 7; // Completed!
+  };
+
+  const kycStep = getKycStep(agent);
+
+  if (location.pathname !== "/complete-profile") {
+    if (kycStep < 7) {
+      console.log(`[ProtectedRoute] KYC incomplete (step ${kycStep}) — redirecting to /complete-profile`);
+      return <Navigate to="/complete-profile" replace />;
+    }
+  } else {
+    if (kycStep === 7) {
+      console.log("[ProtectedRoute] KYC completed — redirecting to /dashboard");
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
-  // Authenticated → always render children
+  // Authenticated and correct path → render children
   return <>{children}</>;
 };
 

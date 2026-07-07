@@ -58,13 +58,33 @@ export const CompleteProfile: React.FC = () => {
       setCompanyLogo(agent.companyLogo || agent.logo || "");
       setAgentPhoto(agent.agentPhoto || agent.profileImage || "");
 
+      // Check URL query parameters for step first
+      const params = new URLSearchParams(window.location.search);
+      const urlStep = params.get("step");
+      if (urlStep) {
+        const parsedStep = parseInt(urlStep, 10);
+        if (parsedStep >= 1 && parsedStep <= 6) {
+          setStep(parsedStep);
+          return;
+        }
+      }
+
       // Determine starting step based on onboarding status
-      if (agent.acceptedTerms && agent.privacyAccepted) {
-        setStep(6);
-      } else if (agent.kycStatus === "EMAIL_VERIFIED") {
+      const hasGst = agent.gstNo || agent.gstNumber;
+      const hasLogo = agent.companyLogo || agent.logo;
+      const hasPhoto = agent.agentPhoto || agent.profileImage;
+      const profileDone = !!(agent.displayName && agent.dob && agent.mobile && agent.state && agent.country && agent.companyName && hasGst && hasLogo && hasPhoto);
+
+      if (!profileDone) {
+        setStep(1);
+      } else if (agent.kycStatus !== "EMAIL_VERIFIED" && agent.kycStatus !== "MOBILE_VERIFIED" && agent.kycStatus !== "KYC_COMPLETED" && agent.kycStatus !== "APPROVED" && !agent.emailVerified) {
+        setStep(4);
+      } else if (!agent.acceptedTerms || !agent.privacyAccepted) {
         setStep(5);
-      } else if (agent.kycStatus === "MOBILE_VERIFIED") {
-        setStep(5); 
+      } else if (!agent.mobileVerified) {
+        setStep(6);
+      } else {
+        setStep(6); // Default fallback
       }
     }
   }, [agent]);

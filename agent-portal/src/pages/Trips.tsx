@@ -762,12 +762,6 @@ export const Trips: React.FC = () => {
     mutationFn: createTrip,
     onSuccess: (resData) => {
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      closeEditor();
-      if (resData?.trip) {
-        setPublishModalTrip(resData.trip);
-        setShowPublishModal(true);
-        setPublishConfirmInput("");
-      }
     },
     onError: (err: any) => {
       setSubmitError(err.response?.data?.message || "Failed to create trip");
@@ -777,13 +771,7 @@ export const Trips: React.FC = () => {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => updateTrip(id, data),
     onSuccess: (resData: any) => {
-      if (resData && resData.success === false && resData.code === "OTP_REQUIRED") {
-        setDateOtpModalOpen(true);
-        return;
-      }
       queryClient.invalidateQueries({ queryKey: ["my-trips"] });
-      closeEditor();
-      alert("Trip updated successfully");
     },
     onError: (err: any) => {
       setSubmitError(err.response?.data?.message || "Failed to update trip");
@@ -957,62 +945,21 @@ export const Trips: React.FC = () => {
     setSubmitError(null);
     setMissingFieldsAlert([]);
 
-    // ── Publish Validations ──
-    const duration = formData.duration || "";
-    const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
-    const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
-    
-    const hasDurationMismatch = formData.itinerary.length !== expectedDays;
-    const hasMissingItineraryDay = formData.itinerary.length === 0;
-    const hasMissingHotel = !formData.hotels || formData.hotels.length === 0;
-    const hasMissingDestination = !formData.destinations || formData.destinations.length === 0;
-    const hasEmptyPlaces = formData.itinerary.some(day => !day.placesCovered || day.placesCovered.length === 0);
-    const hasEmptyActivities = formData.itinerary.some(day => !day.activities || day.activities.length === 0);
-    
-    const hasIncompleteDay = formData.itinerary.some(day => 
-      !day.startLocation?.trim() ||
-      !day.destination?.trim() ||
-      !day.departureTime?.trim() ||
-      !day.arrivalTime?.trim() ||
-      !day.duration?.trim() ||
-      !day.nightStay?.trim() ||
-      !day.hotelName?.trim() ||
-      !day.notes?.trim()
-    );
-
-    if (
-      hasDurationMismatch ||
-      hasMissingItineraryDay ||
-      hasMissingHotel ||
-      hasMissingDestination ||
-      hasEmptyPlaces ||
-      hasEmptyActivities ||
-      hasIncompleteDay
-    ) {
-      alert("Please complete all itinerary days.");
-      setSubmitError("Please complete all itinerary days.");
-      return;
-    }
-
-    // ── Hard Validations ──
+    // ── 1. Validate Required Fields & Dates ──
     const missing: string[] = [];
+    if (!formData.title) missing.push("Trip Name is required");
     if (!formData.coverImages || formData.coverImages.length === 0) missing.push("Main Destination Banner is required");
     if (!formData.pickupLocation) missing.push("Pickup Location is required");
     if (!validateGoogleMapsUrl(formData.pickupMapsLink)) missing.push("Valid Pickup Google Maps URL is required");
     if (!formData.dropPoint) missing.push("Drop Point is required");
     if (!validateGoogleMapsUrl(formData.dropMapsLink)) missing.push("Valid Drop Google Maps URL is required");
-    if (formData.totalSeats <= 0) missing.push("Seat Capacity must be greater than 0");
-    if (formData.offerPrice > formData.originalPrice) missing.push("Offer Price cannot exceed Original Price");
 
-    // Dates check
     const start = new Date(formData.startDate);
     const end = new Date(formData.endDate);
     if (start > end) missing.push("Departure date cannot be after Return date");
 
-    if (formData.deadlineEnabled) {
-      if (!formData.deadlineDate) {
-        missing.push("Deadline date is required when enabled");
-      }
+    if (formData.deadlineEnabled && !formData.deadlineDate) {
+      missing.push("Deadline date is required when enabled");
     }
 
     if (missing.length > 0) {
@@ -1074,11 +1021,71 @@ export const Trips: React.FC = () => {
       return;
     }
 
+    // ── 2. Validate Itinerary ──
+    const duration = formData.duration || "";
+    const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
+    const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
+
+    const itinerary = (formData.itinerary || []).map((day: any) => ({
+      ...day,
+      title: day.title || (day.startLocation && day.destination ? `Day ${day.day}: ${day.startLocation} to ${day.destination}` : "")
+    }));
+
+    const itineraryComplete =
+      Array.isArray(itinerary) &&
+      itinerary.length === expectedDays &&
+      itinerary.every(day =>
+        day &&
+        day.title &&
+        day.activities &&
+        day.activities.length > 0
+      );
+
+    if (!itineraryComplete) {
+      alert("Please complete all itinerary days.");
+      setSubmitError("Please complete all itinerary days.");
+      return;
+    }
+
+    // ── 3. Validate Pricing ──
+    const pricingMissing: string[] = [];
+    if (formData.totalSeats <= 0) pricingMissing.push("Seat Capacity must be greater than 0");
+    if (formData.offerPrice > formData.originalPrice) pricingMissing.push("Offer Price cannot exceed Original Price");
+
+    if (pricingMissing.length > 0) {
+      setMissingFieldsAlert(pricingMissing);
+      setActiveTab(8);
+      return;
+    }
+
+    // ── 4. Create Trip ──
     const payload = getPayload(formData, false);
     if (editingTripId) {
-      updateMutation.mutate({ id: editingTripId, data: payload });
+      updateMutation.mutate({ id: editingTripId, data: payload }, {
+        onSuccess: (resData: any) => {
+          if (resData && resData.success === false && resData.code === "OTP_REQUIRED") {
+            setDateOtpModalOpen(true);
+            return;
+          }
+          closeEditor();
+          if (resData?.trip) {
+            setPublishModalTrip(resData.trip);
+            setShowPublishModal(true);
+            setPublishConfirmInput("");
+          }
+        }
+      });
     } else {
-      createMutation.mutate(payload);
+      createMutation.mutate(payload, {
+        onSuccess: (resData) => {
+          closeEditor();
+          if (resData?.trip) {
+            setPublishModalTrip(resData.trip);
+            setShowPublishModal(true);
+            setPublishConfirmInput("");
+          }
+        }
+      });
     }
   };
 
@@ -1117,38 +1124,29 @@ export const Trips: React.FC = () => {
       setActiveTab(prev => Math.min(10, prev + 1));
       return;
     } else if (activeTab === 4) {
-      const duration = watch("duration");
+      const duration = getValues("duration") || "";
       const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
       const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
       
-      if (watchItinerary.length !== expectedDays) {
+      const rawItinerary = getValues("itinerary") || [];
+      const itinerary = rawItinerary.map((day: any) => ({
+        ...day,
+        title: day.title || (day.startLocation && day.destination ? `Day ${day.day}: ${day.startLocation} to ${day.destination}` : "")
+      }));
+
+      const itineraryComplete =
+        Array.isArray(itinerary) &&
+        itinerary.length === expectedDays &&
+        itinerary.every(day =>
+          day &&
+          day.title &&
+          day.activities &&
+          day.activities.length > 0
+        );
+
+      if (!itineraryComplete) {
         alert("Please complete all itinerary days.");
         return;
-      }
-      
-      const isValid = await trigger("itinerary");
-      if (!isValid) {
-        alert("Please complete all itinerary days.");
-        return;
-      }
-      
-      // Ensure all fields are filled manually or trigger validates it
-      for (let i = 0; i < expectedDays; i++) {
-        const day = watchItinerary[i];
-        const incomplete = !day?.startLocation?.trim() ||
-                           !day?.destination?.trim() ||
-                           !day?.departureTime?.trim() ||
-                           !day?.arrivalTime?.trim() ||
-                           !day?.duration?.trim() ||
-                           !day?.nightStay?.trim() ||
-                           !day?.hotelName?.trim() ||
-                           !day?.notes?.trim() ||
-                           !day?.placesCovered || day.placesCovered.length === 0 ||
-                           !day?.activities || day.activities.length === 0;
-        if (incomplete) {
-          alert("Please complete all itinerary days.");
-          return;
-        }
       }
       
       setActiveTab(prev => Math.min(10, prev + 1));
@@ -2655,9 +2653,19 @@ export const Trips: React.FC = () => {
                       onClick={() => {
                         const payload = getPayload(watch(), true);
                         if (editingTripId) {
-                          updateMutation.mutate({ id: editingTripId, data: payload });
+                          updateMutation.mutate({ id: editingTripId, data: payload }, {
+                            onSuccess: () => {
+                              closeEditor();
+                              alert("Draft updated successfully");
+                            }
+                          });
                         } else {
-                          createMutation.mutate(payload);
+                          createMutation.mutate(payload, {
+                            onSuccess: () => {
+                              closeEditor();
+                              alert("Draft saved successfully");
+                            }
+                          });
                         }
                       }}
                       loading={createMutation.isPending || updateMutation.isPending}
