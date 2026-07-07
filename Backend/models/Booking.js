@@ -96,6 +96,22 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    contactEmail: {
+      type: String,
+      default: "",
+    },
+    contactPhone: {
+      type: String,
+      default: "",
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneVerified: {
+      type: Boolean,
+      default: false,
+    },
     travellers: [
       {
         name: { type: String },
@@ -103,6 +119,10 @@ const bookingSchema = new mongoose.Schema(
         gender: { type: String },
         phone: { type: String },
         email: { type: String },
+        contactEmail: { type: String },
+        contactPhone: { type: String },
+        emailVerified: { type: Boolean },
+        phoneVerified: { type: Boolean },
       }
     ],
     maleCount: {

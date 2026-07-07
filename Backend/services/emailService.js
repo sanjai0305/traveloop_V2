@@ -810,7 +810,7 @@ export const sendEmailVerificationOtp = async (to, firstName, otpCode) => {
   });
 };
 
-export const sendDriverOtpEmail = async (to, name, otpCode) => {
+export const sendDriverOtpEmail = async (to, otpCode) => {
   if (isBlockedEmail(to)) {
     console.warn(`[Email Service] Outgoing Driver OTP email blocked for: ${to}`);
     return;
@@ -827,15 +827,11 @@ export const sendDriverOtpEmail = async (to, name, otpCode) => {
       </div>
 
       <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 30px; text-align: center; margin-bottom: 24px;">
-        <h2 style="color: #FFFFFF; margin: 0 0 16px 0; font-size: 18px; font-weight: 800; text-align: center;">Driver Account Verification</h2>
-        <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Hello ${name ? name.toUpperCase() : "DRIVER"},</p>
-        <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Use the code below to verify your driver account.</p>
-        
+        <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Driver Verification OTP: ${otpCode}</p>
         <div style="background: linear-gradient(135deg, rgba(20,184,181,0.15) 0%, rgba(6,182,212,0.05) 100%); border: 1px dashed rgba(20,184,181,0.4); border-radius: 16px; padding: 20px; display: inline-block; margin: 10px auto;">
           <span style="color: #14B8B5; font-size: 36px; font-weight: 900; letter-spacing: 6px; font-family: monospace;">${otpCode}</span>
         </div>
-        
-        <p style="color: #E2E8F0; font-size: 13px; margin-top: 24px; font-weight: 600;">This OTP expires in 5 minutes.</p>
+        <p style="color: #E2E8F0; font-size: 13px; margin-top: 24px; font-weight: 600;">Expires in 10 minutes.</p>
       </div>
 
       <div style="text-align: center; font-size: 11px; color: #64748B; line-height: 1.6;">
@@ -849,17 +845,78 @@ export const sendDriverOtpEmail = async (to, name, otpCode) => {
   const mailOptions = {
     from: `"Traveloop Security" <${senderEmail}>`,
     to,
-    subject: "Traveloop Driver Verification Code",
+    subject: "Driver Contact Verification",
     html,
   };
 
   try {
     const info = await transporter.sendMail(mailOptions);
     console.log("[Email Service] Email sent successfully");
-    console.log("[Email Service] Complete sendMail Response Object:", JSON.stringify(info, null, 2));
     return info;
   } catch (err) {
     console.error("[Email Service] transporter.sendMail threw error:", err.message, err);
+    throw err;
+  }
+};
+
+export const sendAdminOtpEmail = async (to, otpCode) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing Admin OTP email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">🛡️</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Admin Verification</h2>
+    <p>Your Admin Verification Code is <strong>${otpCode}</strong>. Expires in 10 minutes.</p>
+  `);
+
+  const mailOptions = {
+    from: `"Traveloop Admin Security" <${senderEmail}>`,
+    to,
+    subject: "Traveloop Admin Verification Code",
+    html,
+  };
+
+  try {
+    return await transporter.sendMail(mailOptions);
+  } catch (err) {
+    console.error("[Email Service] sendAdminOtpEmail error:", err.message);
+    throw err;
+  }
+};
+
+export const sendTravelerOtpEmail = async (to, otpCode) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing Traveler OTP email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
+
+  const html = EMAIL_TEMPLATE_WRAPPER(`
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span style="font-size: 48px;">✈️</span>
+    </div>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Account Verification</h2>
+    <p>Your verification code is <strong>${otpCode}</strong>. Valid for 10 minutes.</p>
+  `);
+
+  const mailOptions = {
+    from: `"Traveloop Verification" <${senderEmail}>`,
+    to,
+    subject: "Verify Your Traveloop Account",
+    html,
+  };
+
+  try {
+    return await transporter.sendMail(mailOptions);
+  } catch (err) {
+    console.error("[Email Service] sendTravelerOtpEmail error:", err.message);
     throw err;
   }
 };

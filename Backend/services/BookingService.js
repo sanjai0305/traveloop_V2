@@ -176,6 +176,10 @@ export class BookingService {
       pickupLocation = "",
       contactNumber = "",
       couponCode = "",
+      contactEmail = "",
+      contactPhone = "",
+      emailVerified = true,
+      phoneVerified = true,
     } = payload;
 
     if (!tripId) {
@@ -229,8 +233,12 @@ export class BookingService {
       name: t.name,
       age: Number(t.age || 0),
       gender: normalizeGender(t.gender),
-      phone: t.phone || "",
-      email: t.email || "",
+      phone: t.phone || t.contactPhone || "",
+      email: t.email || t.contactEmail || "",
+      contactEmail: t.contactEmail || "",
+      contactPhone: t.contactPhone || "",
+      emailVerified: t.emailVerified !== undefined ? t.emailVerified : true,
+      phoneVerified: t.phoneVerified !== undefined ? t.phoneVerified : true,
     }));
 
     const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -321,7 +329,7 @@ export class BookingService {
       assignedSeat: seatNumbers[0] || "",
       travelerName: travelersNormalized[0]?.name || "",
       gender: normalizeGender(travelersNormalized[0]?.gender || ""),
-      contactNumber: travelersNormalized[0]?.phone || contactNumber || "",
+      contactNumber: contactPhone || travelersNormalized[0]?.contactPhone || travelersNormalized[0]?.phone || contactNumber || userObj?.phone || userObj?.phoneNumber || userObj?.primaryMobile || "",
       age: travelersNormalized[0]?.age || 0,
       travellers: travelersNormalized,
       maleCount: Number(maleCount || 0),
@@ -339,6 +347,10 @@ export class BookingService {
       referralDiscountPercent: (couponCode && isReferralApplied) ? 0 : (isReferralApplied ? referralDiscountPercent : 0),
       referralDiscountAmount: discountAmount,
       originalPrice: originalPrice,
+      contactEmail: contactEmail || travelersNormalized[0]?.contactEmail || travelersNormalized[0]?.email || userObj?.email || "",
+      contactPhone: contactPhone || travelersNormalized[0]?.contactPhone || travelersNormalized[0]?.phone || contactNumber || userObj?.phone || userObj?.phoneNumber || userObj?.primaryMobile || "",
+      emailVerified: emailVerified !== undefined ? emailVerified : true,
+      phoneVerified: phoneVerified !== undefined ? phoneVerified : true,
     });
 
     if (isReferralApplied) {

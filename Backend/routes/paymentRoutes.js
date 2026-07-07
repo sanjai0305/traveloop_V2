@@ -435,7 +435,11 @@ router.post("/verify", protect, async (req, res) => {
         adults: bookingPayload.adults,
         children: bookingPayload.children,
         pickupLocation: bookingPayload.pickupLocation,
-        contactNumber: bookingPayload.travellers?.[0]?.phone || req.user.phone || req.user.email,
+        contactNumber: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
+        contactEmail: req.user.email || "",
+        contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
+        emailVerified: true,
+        phoneVerified: true,
       });
       booking = result.booking;
       await confirmPassengerSeats(booking, bookingPayload.travellers, trip._id, userId, req.app.get("io"));
@@ -611,8 +615,8 @@ router.post("/send-booking-otp", protect, async (req, res) => {
   console.log(`[Booking OTP Generated] OTP session created for Email: ${email}`);
 
   try {
-    const { sendOtpEmail } = await import("../services/emailService.js");
-    await sendOtpEmail(email, emailOtp);
+    const { sendTravelerOtpEmail } = await import("../services/emailService.js");
+    await sendTravelerOtpEmail(email, emailOtp);
   } catch (emailErr) {
     console.error("Failed to send booking OTP email:", emailErr);
   }

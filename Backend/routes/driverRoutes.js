@@ -6,7 +6,7 @@ import protectDriver from "../middleware/driverAuthMiddleware.js";
 import Driver from "../models/Driver.js";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
-import { sendOtpEmail } from "../services/emailService.js";
+import { sendDriverOtpEmail } from "../services/emailService.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
 const router = express.Router();
@@ -51,7 +51,7 @@ router.post("/auth/send-otp", async (req, res) => {
     });
 
     try {
-      await sendOtpEmail(driver.email, driver.name, otp);
+      await sendDriverOtpEmail(driver.email, otp);
       console.log("Driver OTP Generated:", otp);
       return res.json({ success: true, message: "OTP sent successfully" });
     } catch (emailErr) {

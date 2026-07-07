@@ -9,26 +9,13 @@ import { useAuth } from "../../context/AuthContext";
 const GENDER_OPTIONS = ["Male", "Female", "Other"];
 
 const maskPhoneNumber = (phone) => {
-  if (!phone) return "";
-  const cleaned = phone.replace(/\s+/g, "");
-  if (cleaned.length >= 10) {
-    const isIndian = cleaned.startsWith("+91");
-    const numPart = isIndian ? cleaned.slice(3) : cleaned;
-    const masked = numPart.slice(0, 5) + "XXXXX";
-    return isIndian ? `+91 ${masked}` : masked;
-  }
-  return phone;
-};
+const GENDER_OPTIONS = ["Male", "Female"];
 
 const emptyPassenger = (seatNumber) => ({
   seatNumber,
   name: "",
   age: "",
   gender: "Male",
-  phone: "",
-  email: "",
-  emergencyContact: "",
-  emergencyOption: "custom",
 });
 
 const PassengerFormModal = ({
@@ -43,25 +30,11 @@ const PassengerFormModal = ({
   const getInitialPassenger = (seat, i) => {
     const empty = emptyPassenger(seat);
     if (i === 0 && user) {
-      const primaryPhone = user.phoneNumber || user.primaryMobile || user.phone || "";
-      const alternatePhone = user.alternateNumber || user.alternateMobile || "";
-      let defaultEmergencyOpt = "custom";
-      let defaultEmergencyVal = user.emergencyContact || "";
-
-      if (primaryPhone) {
-        defaultEmergencyOpt = "primary";
-        defaultEmergencyVal = primaryPhone;
-      }
-
       return {
         ...empty,
         name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-        email: user.email || "",
-        phone: primaryPhone,
         gender: user.gender || "Male",
         age: user.age || "",
-        emergencyOption: defaultEmergencyOpt,
-        emergencyContact: defaultEmergencyVal,
       };
     }
     return empty;
@@ -79,22 +52,11 @@ const PassengerFormModal = ({
       setPassengers(prev =>
         prev.map((p, i) => {
           if (i === 0) {
-            const primaryPhone = user.phoneNumber || user.primaryMobile || user.phone || "";
-            const alternatePhone = user.alternateNumber || user.alternateMobile || "";
-            const emergencyOpt = p.emergencyOption === "custom" && !p.emergencyContact ? (primaryPhone ? "primary" : "custom") : p.emergencyOption;
-            let emergencyVal = p.emergencyContact;
-            if (emergencyOpt === "primary") emergencyVal = primaryPhone;
-            if (emergencyOpt === "alternate") emergencyVal = alternatePhone;
-
             return {
               ...p,
               name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-              email: user.email || "",
-              phone: primaryPhone,
               gender: p.gender || user.gender || "Male",
               age: p.age || user.age || "",
-              emergencyOption: emergencyOpt,
-              emergencyContact: emergencyVal,
             };
           }
           return p;
@@ -142,20 +104,16 @@ const PassengerFormModal = ({
 
   const validateCurrent = () => {
     const errs = {};
-    if (!current.name?.trim()) errs.name = "Passenger name is required";
-    if (!current.age || Number(current.age) < 1 || Number(current.age) > 120)
-      errs.age = "Valid age (1–120) is required";
-    if (!current.gender) errs.gender = "Gender is required";
-
-    if (!currentIdx === 0) {
-      if (!current.phone?.trim() || !/^\d{10}$/.test(current.phone.trim()))
-        errs.phone = "Valid 10-digit phone number is required";
-      if (!current.email?.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(current.email.trim()))
-        errs.email = "Valid email address is required";
+    if (!current.name?.trim() || current.name.trim().length < 3) {
+      errs.name = "Passenger name must be at least 3 characters";
     }
-
-    if (!current.emergencyContact?.trim() || !/^\d{10}$/.test(current.emergencyContact.trim()))
-      errs.emergencyContact = "Valid 10-digit emergency contact is required";
+    const ageNum = Number(current.age);
+    if (!current.age || isNaN(ageNum) || ageNum < 1 || ageNum > 100) {
+      errs.age = "Valid age (1–100) is required";
+    }
+    if (!current.gender) {
+      errs.gender = "Gender is required";
+    }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -176,8 +134,15 @@ const PassengerFormModal = ({
     if (!validateCurrent()) return;
     setSubmitting(true);
     const normalized = passengers.map((p) => ({
-      ...p,
+      name: p.name,
+      passengerName: p.name,
       age: Number(p.age),
+      gender: p.gender,
+      seatNumber: p.seatNumber,
+      contactEmail: user?.email || "",
+      contactPhone: user?.phone || user?.phoneNumber || user?.primaryMobile || "",
+      emailVerified: true,
+      phoneVerified: true,
     }));
     onConfirm(normalized);
   };
@@ -293,10 +258,6 @@ const PassengerFormModal = ({
               <span className="text-xs font-black text-teal-300">
                 Seat {current.seatNumber} Assigned
               </span>
-              <span className="ml-auto flex items-center gap-1 text-[10px] font-black text-teal-400">
-                <ShieldCheck size={12} />
-                Verified ✓
-              </span>
             </div>
 
             {/* Name */}
@@ -366,116 +327,6 @@ const PassengerFormModal = ({
                     </option>
                   ))}
                 </select>
-              </div>
-            </div>
-
-            {/* Email (Pre-filled readonly for primary) */}
-            {isPrimary ? (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide">
-                    Email Address
-                  </label>
-                  <span className="text-[9px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-0.5 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full">
-                    Verified ✓
-                  </span>
-                </div>
-                <div className="relative">
-                  <input
-                    type="email"
-                    value={current.email}
-                    disabled
-                    readOnly
-                    className={inputClass("email", true)}
-                  />
-                  <Lock size={12} className="absolute right-3.5 top-3.5 text-slate-500" />
-                </div>
-              </div>
-            ) : null}
-
-            {/* Primary Mobile (Pre-filled readonly for primary) */}
-            {isPrimary ? (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide">
-                    Primary Mobile Number
-                  </label>
-                  <span className="text-[9px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-0.5 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full">
-                    Verified ✓
-                  </span>
-                </div>
-                <div className="relative">
-                  <input
-                    type="tel"
-                    value={maskPhoneNumber(current.phone)}
-                    disabled
-                    readOnly
-                    className={inputClass("phone", true)}
-                  />
-                  <Lock size={12} className="absolute right-3.5 top-3.5 text-slate-500" />
-                </div>
-              </div>
-            ) : null}
-
-            {/* Emergency Contact */}
-            <div className="space-y-2.5">
-              <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wide flex items-center gap-1">
-                <Heart size={10} className="text-rose-400" /> Emergency Contact *
-              </label>
-
-              {/* Selector Tabs */}
-              <div className="flex gap-1 bg-slate-950/80 p-1 rounded-xl border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => handleEmergencyOptionChange("primary")}
-                  className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                    current.emergencyOption === "primary"
-                      ? "bg-teal-500 text-slate-950"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Primary
-                </button>
-                {user?.alternateNumber || user?.alternateMobile ? (
-                  <button
-                    type="button"
-                    onClick={() => handleEmergencyOptionChange("alternate")}
-                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                      current.emergencyOption === "alternate"
-                        ? "bg-teal-500 text-slate-950"
-                        : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    Alternate
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => handleEmergencyOptionChange("custom")}
-                  className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${
-                    current.emergencyOption === "custom"
-                      ? "bg-teal-500 text-slate-950"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  Custom
-                </button>
-              </div>
-
-              {/* Input field */}
-              <input
-                type="tel"
-                value={current.emergencyContact}
-                onChange={(e) => update("emergencyContact", e.target.value.replace(/\D/g, "").slice(0, 10))}
-                disabled={current.emergencyOption !== "custom"}
-                placeholder="Emergency contact number"
-                className={inputClass("emergencyContact", current.emergencyOption !== "custom")}
-              />
-              {errors.emergencyContact && (
-                <p className="text-[10px] text-rose-400 font-semibold mt-1 flex items-center gap-1">
-                  <AlertCircle size={10} /> {errors.emergencyContact}
-                </p>
-              )}
             </div>
           </motion.div>
         </AnimatePresence>

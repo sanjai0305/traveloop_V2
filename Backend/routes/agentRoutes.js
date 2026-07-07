@@ -14,7 +14,7 @@ import AgentReferral from "../models/AgentReferral.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
 import checkAgentKYC from "../middleware/kycMiddleware.js";
 import DriverOtp from "../models/DriverOtp.js";
-import { sendOtpEmail, sendDriverOtpEmail } from "../services/emailService.js";
+import { sendOtpEmail, sendDriverOtpEmail, sendAdminOtpEmail, sendTravelerOtpEmail } from "../services/emailService.js";
 import bcrypt from "bcryptjs";
 import uploadMiddleware from "../middleware/uploadMiddleware.js";
 import UploadService from "../services/uploadService.js";
@@ -584,7 +584,7 @@ router.post("/send-email-otp", protectAgent, async (req, res) => {
     console.log(`[KYC Email OTP] Generated OTP for ${email}: ${otp}`);
 
     try {
-      await sendOtpEmail(email, agent.displayName || "Agent", otp);
+      await sendAdminOtpEmail(email, otp);
     } catch (err) {
       console.warn("[KYC Email OTP] Nodemailer failed, falling back to log:", err.message);
     }
@@ -698,7 +698,7 @@ router.post("/send-driver-email-otp", protectAgent, async (req, res) => {
 
     // Send email using sendOtpEmail
     try {
-      const info = await sendOtpEmail(targetEmail, otp, driverName);
+      const info = await sendDriverOtpEmail(targetEmail, otp);
       console.log(`[Driver Email OTP] Email sent. Message ID: ${info?.messageId || "N/A"}`);
     } catch (mailErr) {
       console.error("[Driver Email OTP] Failed to send email via SMTP:", mailErr.message, mailErr);
@@ -1446,7 +1446,7 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
               { otp: otpCode, expiresAt: new Date(Date.now() + 10 * 60 * 1000), resendAvailableAt: new Date() },
               { upsert: true, new: true }
             );
-            await sendOtpEmail(req.agent.email, req.agent.displayName || "Agent", otpCode);
+            await sendAdminOtpEmail(req.agent.email, otpCode);
 
             return res.status(200).json({
               success: false,
@@ -1924,7 +1924,7 @@ router.delete(["/trip/:id", "/trips/:id"], protectAgent, async (req, res) => {
             { otp: otpCode, expiresAt: new Date(Date.now() + 10 * 60 * 1000), resendAvailableAt: new Date() },
             { upsert: true, new: true }
           );
-          await sendOtpEmail(req.agent.email, req.agent.displayName || "Agent", otpCode);
+          await sendAdminOtpEmail(req.agent.email, otpCode);
 
           return res.status(200).json({
             success: false,
@@ -2970,7 +2970,7 @@ router.post("/trips/:id/start-refund", protectAgent, checkAgentKYC, async (req, 
     }
 
     const User = (await import("../models/User.js")).default;
-    const { sendOtpEmail } = await import("../services/emailService.js");
+    const { sendTravelerOtpEmail } = await import("../services/emailService.js");
 
     for (const b of bookings) {
       b.refundStatus = "Pending";
@@ -2983,7 +2983,7 @@ router.post("/trips/:id/start-refund", protectAgent, checkAgentKYC, async (req, 
       try {
         const travelerUser = await User.findById(b.userId);
         if (travelerUser && travelerUser.email) {
-          await sendOtpEmail(travelerUser.email, travelerUser.firstName || "Traveler", travelerOtp);
+          await sendTravelerOtpEmail(travelerUser.email, travelerOtp);
           console.log(`[Refund OTP] Sent OTP to traveler email: ${travelerUser.email}`);
         }
       } catch (err) {

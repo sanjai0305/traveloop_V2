@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
-import { sendWelcomeEmail, sendOtpEmail } from "../services/emailService.js";
+import { sendWelcomeEmail, sendTravelerOtpEmail } from "../services/emailService.js";
 import { doc, setDoc, getDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import { db, auth as firebaseAuth } from "../config/firebase.js";
 import { createUserWithEmailAndPassword, signInAnonymously } from "firebase/auth";
@@ -136,7 +136,7 @@ export const sendOtp = async (req, res) => {
 
     // Send email using SMTP Nodemailer
     try {
-      await sendOtpEmail(emailKey, otpCode);
+      await sendTravelerOtpEmail(emailKey, otpCode);
     } catch (mailErr) {
       console.error("Nodemailer OTP sending failed:", mailErr);
       return res.status(500).json({

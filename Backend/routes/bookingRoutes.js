@@ -230,7 +230,11 @@ router.post("/", protect, async (req, res) => {
       adults,
       children,
       pickupLocation,
-      contactNumber: travellers[0]?.phone || req.user.phone || req.user.email,
+      contactNumber: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
+      contactEmail: req.user.email || "",
+      contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
+      emailVerified: true,
+      phoneVerified: true,
     });
 
     res.status(201).json({
@@ -671,8 +675,8 @@ router.post("/:bookingId/send-cancel-otp", protect, async (req, res) => {
     console.log(`[Cancellation OTP] Session created for Booking: ${bookingId}`);
 
     try {
-      const { sendOtpEmail } = await import("../services/emailService.js");
-      await sendOtpEmail(email, emailOtp);
+      const { sendTravelerOtpEmail } = await import("../services/emailService.js");
+      await sendTravelerOtpEmail(email, emailOtp);
     } catch (emailErr) {
       console.error("Failed to send cancellation OTP email:", emailErr);
     }

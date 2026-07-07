@@ -18,6 +18,7 @@ import {
 import { io as socketIO } from "socket.io-client";
 import { getApiUrl, getSocketUrl } from "../../utils/api";
 import { useToast } from "../mobile/MobileToast";
+import { useAuth } from "../../context/AuthContext";
 
 // ─── SEAT STATUS COLOURS & STYLES ───────────────────────────────────────────
 
@@ -171,6 +172,7 @@ const SeatLayoutModal = ({
   onClose,
 }) => {
   const toast = useToast();
+  const { user } = useAuth();
   const [seats, setSeats] = useState([]);
   const [counters, setCounters] = useState({ available: 0, male: 0, female: 0, reserved: 0 });
   const [layout, setLayout] = useState({ rows: [], seatsPerRow: 4 });
@@ -187,9 +189,6 @@ const SeatLayoutModal = ({
     name: "",
     age: "",
     gender: "Male",
-    phone: "",
-    email: "",
-    emergencyContact: "",
   });
 
   const [loading, setLoading] = useState(true);
@@ -314,13 +313,19 @@ const SeatLayoutModal = ({
 
   const openPassengerDrawer = (seatNum) => {
     const existing = passengerDetails[seatNum] || {};
+    // Prefill first passenger with user profile if empty
+    let initialName = existing.name || "";
+    let initialAge = existing.age || "";
+    let initialGender = existing.gender || "Male";
+    if (!initialName && selected.indexOf(seatNum) === 0 && user) {
+      initialName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+      initialAge = user.age || "";
+      initialGender = user.gender || "Male";
+    }
     setFormData({
-      name: existing.name || "",
-      age: existing.age || "",
-      gender: existing.gender || "Male",
-      phone: existing.phone || "",
-      email: existing.email || "",
-      emergencyContact: existing.emergencyContact || "",
+      name: initialName,
+      age: initialAge,
+      gender: initialGender,
     });
     setDrawerSeat(seatNum);
   };
@@ -328,24 +333,17 @@ const SeatLayoutModal = ({
   // ── Save Passenger Form Details ─────────────────────────────────────────────
   const handleSavePassenger = (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      toast.error("Passenger Name is required");
+    if (!formData.name.trim() || formData.name.trim().length < 3) {
+      toast.error("Passenger Name must be at least 3 characters");
       return;
     }
-    if (!formData.age) {
-      toast.error("Passenger Age is required");
+    const ageNum = Number(formData.age);
+    if (!formData.age || isNaN(ageNum) || ageNum < 1 || ageNum > 100) {
+      toast.error("Passenger Age must be between 1 and 100");
       return;
     }
-    if (!formData.phone.trim()) {
-      toast.error("Passenger Phone is required");
-      return;
-    }
-    if (!formData.email.trim()) {
-      toast.error("Passenger Email is required");
-      return;
-    }
-    if (!formData.emergencyContact.trim()) {
-      toast.error("Emergency Contact is required");
+    if (!formData.gender) {
+      toast.error("Gender is required");
       return;
     }
 
@@ -354,7 +352,9 @@ const SeatLayoutModal = ({
       ...prev,
       [drawerSeat]: {
         seatNumber: drawerSeat,
-        ...formData,
+        name: formData.name.trim(),
+        age: ageNum,
+        gender: formData.gender,
       },
     }));
 
@@ -518,14 +518,22 @@ const SeatLayoutModal = ({
       return;
     }
 
-    const passengersList = selected.map((seatNum) => ({
-      ...passengerDetails[seatNum],
-      seatNumber: seatNum,
-    }));
+    const passengersList = selected.map((seatNum) => {
+      const p = passengerDetails[seatNum] || {};
+      return {
+        name: p.name,
+        passengerName: p.name,
+        age: Number(p.age),
+        gender: p.gender,
+        seatNumber: seatNum,
+        contactEmail: user?.email || "",
+        contactPhone: user?.phone || user?.phoneNumber || user?.primaryMobile || "",
+        emailVerified: true,
+        phoneVerified: true,
+      };
+    });
 
-    // Switch to OTP step screen overlay
-    setShowOtpVerification(true);
-    handleSendOtp(passengersList);
+    onConfirm(selected, passengersList);
   };
 
   // ── Fare calculations ──────────────────────────────────────────────────────
@@ -999,45 +1007,8 @@ const SeatLayoutModal = ({
                       >
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
-                        <option value="Other">Other</option>
                       </select>
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Phone Number</label>
-                    <input
-                      type="tel"
-                      required
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="Contact Mobile Number"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="Enter Email Address"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 focus:shadow-[0_0_12px_rgba(20,184,166,0.15)] transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Emergency Contact</label>
-                    <input
-                      type="tel"
-                      required
-                      value={formData.emergencyContact}
-                      onChange={(e) => setFormData({ ...formData, emergencyContact: e.target.value })}
-                      placeholder="Emergency Mobile Number"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-855 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                    />
                   </div>
                 </div>
 

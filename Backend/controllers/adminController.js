@@ -18,7 +18,7 @@ import jwt from "jsonwebtoken";
 import { doc, setDoc, getDoc, deleteDoc } from "firebase/firestore";
 import { db, auth as firebaseAuth } from "../config/firebase.js";
 import { signInAnonymously } from "firebase/auth";
-import { sendOtpEmail } from "../services/emailService.js";
+import { sendAdminOtpEmail } from "../services/emailService.js";
 
 // Helper to generate JWT Token
 const generateToken = (id) => {
@@ -105,7 +105,7 @@ export const loginAdmin = async (req, res) => {
 
         // Try sending email
         try {
-          await sendOtpEmail(emailKey, adminUser.name, otpCode);
+          await sendAdminOtpEmail(emailKey, otpCode);
         } catch (mailError) {
           console.warn("[Admin 2FA] Failed to send email, logging to console instead:", mailError.message);
         }
