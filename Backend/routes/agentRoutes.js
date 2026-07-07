@@ -12,8 +12,9 @@ import Driver from "../models/Driver.js";
 import AgentSettings from "../models/AgentSettings.js";
 import AgentReferral from "../models/AgentReferral.js";
 import protectAgent, { fallbackAgents } from "../middleware/agentAuthMiddleware.js";
-import { checkAgentKYC } from "../middleware/kycMiddleware.js";
-import { sendOtpEmail } from "../services/emailService.js";
+import DriverOtp from "../models/DriverOtp.js";
+import { sendOtpEmail, sendDriverOtpEmail } from "../services/emailService.js";
+import bcrypt from "bcryptjs";
 import uploadMiddleware from "../middleware/uploadMiddleware.js";
 import UploadService from "../services/uploadService.js";
 
@@ -640,10 +641,6 @@ router.post("/verify-email-otp", protectAgent, async (req, res) => {
    DRIVER VERIFICATION ENDPOINTS (used during trip creation Step 6)
    ────────────────────────────────────────────────────────────────────────── */
 
-// In-memory store for driver email OTPs (keyed by agentId:driverEmail)
-// These are ephemeral 5-minute OTPs — no persistence needed
-const driverEmailOtpStore = new Map();
-
 // @route   POST /api/agent/send-driver-email-otp
 // @desc    Send OTP to the driver's email address (for trip creation verification)
 router.post("/send-driver-email-otp", protectAgent, async (req, res) => {
@@ -660,41 +657,59 @@ router.post("/send-driver-email-otp", protectAgent, async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid driver email format" });
     }
 
-    const storeKey = `${req.agent._id}:${driverEmail.toLowerCase()}`;
+    const targetEmail = driverEmail.toLowerCase();
 
-    // Resend cooldown check (60 seconds)
-    const existing = driverEmailOtpStore.get(storeKey);
-    if (existing && existing.resendAvailableAt > Date.now()) {
-      const remainingSec = Math.ceil((existing.resendAvailableAt - Date.now()) / 1000);
-      return res.status(429).json({
-        success: false,
-        message: `Please wait ${remainingSec}s before resending`,
-        remainingSeconds: remainingSec,
-      });
+    // Resend cooldown check (30 seconds)
+    const existing = await DriverOtp.findOne({ email: targetEmail });
+    if (existing) {
+      const timePassed = Date.now() - new Date(existing.createdAt).getTime();
+      if (timePassed < 30 * 1000) {
+        const remainingSec = Math.ceil((30 * 1000 - timePassed) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${remainingSec}s before resending`,
+          remainingSeconds: remainingSec,
+        });
+      }
     }
 
+    // Generate random 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000;       // 5 minutes
-    const resendAvailableAt = Date.now() + 60 * 1000;   // 60 seconds cooldown
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes validity
 
-    driverEmailOtpStore.set(storeKey, {
-      otp,
+    // Delete any old OTP document for this driver email
+    await DriverOtp.deleteOne({ email: targetEmail });
+
+    // Hash OTP securely
+    const salt = await bcrypt.genSalt(10);
+    const otpHash = await bcrypt.hash(otp, salt);
+
+    // Save to database
+    await DriverOtp.create({
+      email: targetEmail,
+      otpHash,
       expiresAt,
-      resendAvailableAt,
       attempts: 0,
+      verified: false,
     });
 
-    console.log(`[Driver Email OTP] Sending OTP to driver ${driverEmail}: ${otp}`);
+    console.log(`[Driver Email OTP] Hashed OTP generated for ${targetEmail} (Debug Raw OTP: ${otp})`);
 
+    // Send email using sendOtpEmail
     try {
-      await sendOtpEmail(driverEmail, driverName || "Driver", otp);
+      const info = await sendOtpEmail(targetEmail, otp, driverName);
+      console.log(`[Driver Email OTP] Email sent. Message ID: ${info?.messageId || "N/A"}`);
     } catch (mailErr) {
-      console.warn("[Driver Email OTP] Email send failed, OTP logged above:", mailErr.message);
+      console.error("[Driver Email OTP] Failed to send email via SMTP:", mailErr.message, mailErr);
+      return res.status(500).json({
+        success: false,
+        message: `Failed to deliver verification email: ${mailErr.message}`,
+      });
     }
 
     res.status(200).json({
       success: true,
-      message: `OTP sent to ${driverEmail}`,
+      message: "OTP sent successfully",
       otp: process.env.NODE_ENV !== "production" ? otp : undefined,
     });
   } catch (error) {
@@ -713,27 +728,33 @@ router.post("/verify-driver-email-otp", protectAgent, async (req, res) => {
       return res.status(400).json({ success: false, message: "Driver email and OTP are required" });
     }
 
-    const storeKey = `${req.agent._id}:${driverEmail.toLowerCase()}`;
-    const record = driverEmailOtpStore.get(storeKey);
+    const targetEmail = driverEmail.toLowerCase();
+    const otpDoc = await DriverOtp.findOne({ email: targetEmail });
 
-    if (!record) {
+    if (!otpDoc) {
       return res.status(400).json({ success: false, message: "OTP not found. Please request a new one." });
     }
 
-    if (record.attempts >= 3) {
-      driverEmailOtpStore.delete(storeKey);
-      return res.status(400).json({ success: false, message: "Maximum attempts reached. Please request a new OTP." });
-    }
-
-    if (Date.now() > record.expiresAt) {
-      driverEmailOtpStore.delete(storeKey);
+    if (Date.now() > otpDoc.expiresAt) {
+      await DriverOtp.deleteOne({ email: targetEmail });
       return res.status(400).json({ success: false, message: "OTP expired. Please request a new one." });
     }
 
-    if (record.otp !== otp.toString()) {
-      record.attempts += 1;
-      driverEmailOtpStore.set(storeKey, record);
-      const remaining = 3 - record.attempts;
+    if (otpDoc.attempts >= 5) {
+      await DriverOtp.deleteOne({ email: targetEmail });
+      return res.status(400).json({ success: false, message: "Maximum attempts reached. Please request a new OTP." });
+    }
+
+    // Verify bcrypt hash
+    const isMatch = await bcrypt.compare(otp.toString(), otpDoc.otpHash);
+    if (!isMatch) {
+      otpDoc.attempts += 1;
+      if (otpDoc.attempts >= 5) {
+        await DriverOtp.deleteOne({ email: targetEmail });
+        return res.status(400).json({ success: false, message: "Maximum attempts reached. Please request a new OTP." });
+      }
+      await otpDoc.save();
+      const remaining = 5 - otpDoc.attempts;
       return res.status(400).json({
         success: false,
         message: `Invalid OTP. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,
@@ -741,11 +762,12 @@ router.post("/verify-driver-email-otp", protectAgent, async (req, res) => {
       });
     }
 
-    // ── OTP valid — clean up store and return success ──
-    driverEmailOtpStore.delete(storeKey);
+    // OTP matches, mark verified
+    otpDoc.verified = true;
+    await otpDoc.save();
 
     const verifiedAt = new Date();
-    console.log(`[Driver Email OTP] Verified for driver ${driverEmail} by agent ${req.agent._id}`);
+    console.log(`[Driver Email OTP] Verified successfully for ${targetEmail}`);
 
     res.status(200).json({
       success: true,
@@ -1046,6 +1068,17 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
       reason: "DRIVER_EMAIL_NOT_VERIFIED",
       message: "Driver email verification required. Please verify the driver's email via OTP.",
     });
+  }
+
+  if (req.body.driverGmail) {
+    const otpDoc = await DriverOtp.findOne({ email: req.body.driverGmail.toLowerCase() });
+    if (!otpDoc || !otpDoc.verified) {
+      return res.status(400).json({
+        success: false,
+        reason: "DRIVER_EMAIL_NOT_VERIFIED",
+        message: "Driver email verification mismatch. Please verify again.",
+      });
+    }
   }
 
   // ── Required field check with detailed missingFields response ────
@@ -1353,6 +1386,29 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
 
       if (ownerId.toString() !== req.agent._id.toString()) {
         return res.status(403).json({ success: false, message: "Unauthorized edit request" });
+      }
+
+      // Validate driver verification on update
+      const driverEmailChanged = req.body.driverGmail && req.body.driverGmail.toLowerCase() !== (trip.driverGmail || "").toLowerCase();
+      if (driverEmailChanged || !trip.driverEmailVerified) {
+        if (req.body.driverGmail) {
+          if (!req.body.driverEmailVerified) {
+            return res.status(400).json({ success: false, message: "Driver email verification required" });
+          }
+          const otpDoc = await DriverOtp.findOne({ email: req.body.driverGmail.toLowerCase() });
+          if (!otpDoc || !otpDoc.verified) {
+            return res.status(400).json({ success: false, message: "Driver email verification mismatch. Please verify again." });
+          }
+        }
+      }
+
+      const driverPhoneChanged = req.body.driverPhone && req.body.driverPhone !== trip.driverPhone;
+      if (driverPhoneChanged || !trip.driverMobileVerified) {
+        if (req.body.driverPhone) {
+          if (!req.body.driverMobileVerified) {
+            return res.status(400).json({ success: false, message: "Driver mobile verification required" });
+          }
+        }
       }
 
       // 1. Check bookings count/capacity lock rules

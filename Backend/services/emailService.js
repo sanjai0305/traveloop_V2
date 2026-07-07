@@ -25,6 +25,37 @@ const sendMailWithRetry = async (transporter, mailOptions, retries = 3) => {
 };
 
 const createTransporter = async () => {
+  // Try SMTP first (production-grade)
+  const gmailUser = process.env.GMAIL_USER || process.env.GOOGLE_SENDER_EMAIL || process.env.EMAIL_FROM;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS;
+
+  if (gmailUser && gmailPass) {
+    console.log("[Email Service] Attempting SMTP authentication with GMAIL_USER:", gmailUser);
+    try {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        debug: true,
+        logger: true,
+        auth: {
+          user: gmailUser,
+          pass: gmailPass,
+        },
+      });
+
+      console.log("[Email Service] Verifying SMTP connection...");
+      await transporter.verify();
+      console.log("[Email Service] SMTP connection verified successfully! Ready to send emails.");
+      return transporter;
+    } catch (smtpErr) {
+      console.error("[Email Service] SMTP transporter verification failed:", smtpErr.message, smtpErr);
+      // fallback to OAuth2
+    }
+  }
+
+  // Fallback to OAuth2
   const user = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
   const clientId = process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
@@ -36,15 +67,13 @@ const createTransporter = async () => {
     return {
       sendMail: async (options) => {
         console.log(`[Email Service Mock] Email sent to: ${options.to}\nSubject: ${options.subject}`);
-        return { messageId: "mock-id", response: "250 OK" };
+        return { messageId: "mock-id", response: "250 OK", accepted: [options.to], rejected: [] };
       }
     };
   }
 
-  // 1. Initialize OAuth2
   console.log("[Email Service] OAuth2 initialized");
 
-  // Create OAuth2 client and obtain access token using googleapis
   const { google } = await import("googleapis");
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
@@ -54,8 +83,10 @@ const createTransporter = async () => {
     const accessToken = accessTokenRes.token;
     console.log("[Email Service] Access token generated");
 
-    return nodemailer.createTransport({
+    const transporter = nodemailer.createTransport({
       service: "gmail",
+      debug: true,
+      logger: true,
       auth: {
         type: "OAuth2",
         user,
@@ -65,12 +96,17 @@ const createTransporter = async () => {
         accessToken,
       },
     });
+
+    console.log("[Email Service] Verifying OAuth2 transporter connection...");
+    await transporter.verify();
+    console.log("[Email Service] OAuth2 transporter verified successfully!");
+    return transporter;
   } catch (error) {
-    console.error("[Email Service] Failed to retrieve access token:", error.message, "Falling back to Mock Transporter.");
+    console.error("[Email Service] Failed to retrieve access token or verify OAuth2:", error.message, "Falling back to Mock Transporter.");
     return {
       sendMail: async (options) => {
         console.log(`[Email Service Mock] Email sent to: ${options.to}\nSubject: ${options.subject}`);
-        return { messageId: "mock-id", response: "250 OK" };
+        return { messageId: "mock-id", response: "250 OK", accepted: [options.to], rejected: [] };
       }
     };
   }
@@ -99,56 +135,112 @@ export const sendOtpEmail = async (to, firstName, otpCode) => {
     return;
   }
   const transporter = await createTransporter();
-  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
 
-  const html = EMAIL_TEMPLATE_WRAPPER(`
-    <div style="text-align: center; margin-bottom: 24px;">
-      <span style="font-size: 48px;">✈️</span>
-    </div>
-    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Verify Your Email Address</h2>
-    <p>Hi ${firstName || "Traveler"},</p>
-    <p>Thank you for choosing <strong>Traveloop</strong>! To complete your registration and begin planning your next adventures, please use the following one-time verification code:</p>
-    
-    <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #f1f5f9;">
-      <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; display: block; margin-bottom: 8px;">One-Time Verification Code</span>
-      <h3 style="margin: 0; color: ${BRAND_COLOR}; font-size: 36px; font-weight: 800; letter-spacing: 6px;">${otpCode}</h3>
-      <span style="color: #94a3b8; font-size: 12px; display: block; margin-top: 12px;">This code is valid for <strong>5 minutes</strong>.</span>
-    </div>
+  // Flexible parameter detection (handles (to, firstName, otpCode) and (to, otpCode, firstName))
+  let name = firstName || "Traveler";
+  let otp = otpCode || "";
 
-    <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; color: #64748b;">
-      <tr>
-        <td style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc;">
-          <strong>Security Notice:</strong> The Traveloop team will never ask for your password or this verification code via phone, chat, or email. If you did not request this code, please ignore this email.
-        </td>
-      </tr>
-    </table>
+  if (firstName && /^\d{6}$/.test(firstName.toString())) {
+    otp = firstName.toString();
+    name = otpCode || "Driver";
+  }
 
-    <p style="margin-top: 24px;">Let's get your bags packed and journey started!</p>
-    <p>Warmly,<br><strong>The Traveloop Team</strong></p>
-  `);
+  // Detect if this is a driver OTP verification
+  const isDriver = name.toLowerCase() !== "traveler" && name.toLowerCase() !== "agent";
 
-  console.log("[Email Service] Sending OTP email to:", to, "from:", senderEmail);
+  let subject = "Verify Your Traveloop Account ✈️";
+  let html = "";
+
+  if (isDriver) {
+    subject = "Traveloop Driver Verification Code";
+    html = `
+      <div style="background-color: #05111E; padding: 40px 20px; font-family: 'Poppins', 'Inter', sans-serif; color: #FFFFFF; max-width: 500px; margin: 0 auto; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <div style="font-size: 40px; margin-bottom: 10px;">🚗</div>
+          <h1 style="color: #14B8B5; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Traveloop</h1>
+          <p style="color: #94A3B8; margin: 4px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Driver Verification</p>
+        </div>
+
+        <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 30px; text-align: center; margin-bottom: 24px;">
+          <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Hello ${name.toUpperCase()},</p>
+          <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Your verification code is:</p>
+          
+          <div style="background: linear-gradient(135deg, rgba(20,184,181,0.15) 0%, rgba(6,182,212,0.05) 100%); border: 1px dashed rgba(20,184,181,0.4); border-radius: 16px; padding: 20px; display: inline-block; margin: 10px auto;">
+            <span style="color: #14B8B5; font-size: 36px; font-weight: 900; letter-spacing: 6px; font-family: monospace;">${otp}</span>
+          </div>
+          
+          <p style="color: #E2E8F0; font-size: 13px; margin-top: 24px; font-weight: 600;">This code expires in 5 minutes.</p>
+        </div>
+
+        <div style="text-align: center; font-size: 11px; color: #64748B; line-height: 1.6;">
+          <p style="margin: 0; font-weight: bold; color: #94A3B8;">Traveloop Security Team</p>
+        </div>
+      </div>
+    `;
+  } else {
+    html = EMAIL_TEMPLATE_WRAPPER(`
+      <div style="text-align: center; margin-bottom: 24px;">
+        <span style="font-size: 48px;">✈️</span>
+      </div>
+      <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Verify Your Email Address</h2>
+      <p>Hi ${name},</p>
+      <p>Thank you for choosing <strong>Traveloop</strong>! To complete your registration and begin planning your next adventures, please use the following one-time verification code:</p>
+      
+      <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0; border: 1px solid #f1f5f9;">
+        <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; display: block; margin-bottom: 8px;">One-Time Verification Code</span>
+        <h3 style="margin: 0; color: ${BRAND_COLOR}; font-size: 36px; font-weight: 800; letter-spacing: 6px;">${otp}</h3>
+        <span style="color: #94a3b8; font-size: 12px; display: block; margin-top: 12px;">This code is valid for <strong>5 minutes</strong>.</span>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; color: #64748b;">
+        <tr>
+          <td style="padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #f8fafc;">
+            <strong>Security Notice:</strong> The Traveloop team will never ask for your password or this verification code via phone, chat, or email. If you did not request this code, please ignore this email.
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin-top: 24px;">Let's get your bags packed and journey started!</p>
+      <p>Warmly,<br><strong>The Traveloop Team</strong></p>
+    `);
+  }
+
+  if (isDriver) {
+    console.log("Driver OTP Generated:", otp);
+    console.log("Driver OTP Email:", to);
+  } else {
+    console.log("[Email Service] Sending OTP email to:", to, "from:", senderEmail);
+  }
+
   const mailOptions = {
-    from: `"Traveloop" <${senderEmail}>`,
+    from: `"Traveloop Security" <${senderEmail}>`,
     to,
-    subject: "Verify Your Traveloop Account ✈️",
+    subject,
     html,
   };
-  console.log("[Email Service] final sendMail options:", {
-    from: mailOptions.from,
-    to: mailOptions.to,
-    subject: mailOptions.subject
-  });
+
   try {
     const info = await sendMailWithRetry(transporter, mailOptions);
-    console.log("[Email Service] Email sent successfully");
-    console.log("[Email Service] Complete sendMail Response Object:", JSON.stringify(info, null, 2));
-    console.log("[Email Service] messageId:", info.messageId);
-    console.log("[Email Service] accepted:", info.accepted);
-    console.log("[Email Service] rejected:", info.rejected);
-    console.log("[Email Service] response:", info.response);
+    if (isDriver) {
+      const acceptedRecipients = info.accepted;
+      const rejectedRecipients = info.rejected;
+      console.log("Email Sent Successfully");
+      console.log(info.messageId);
+      console.log(acceptedRecipients);
+      console.log(rejectedRecipients);
+    } else {
+      console.log("[Email Service] Email sent successfully");
+      console.log("[Email Service] messageId:", info.messageId);
+    }
+    return info;
   } catch (err) {
-    console.error("[Email Service] transporter.sendMail threw error:", err.message, err);
+    if (isDriver) {
+      const smtpError = err.message;
+      console.log(smtpError);
+    } else {
+      console.error("[Email Service] sendMail error:", err.message);
+    }
     throw err;
   }
 };
@@ -716,4 +808,58 @@ export const sendEmailVerificationOtp = async (to, firstName, otpCode) => {
     subject: `Traveloop Verification Code • ${otpCode}`,
     html,
   });
+};
+
+export const sendDriverOtpEmail = async (to, name, otpCode) => {
+  if (isBlockedEmail(to)) {
+    console.warn(`[Email Service] Outgoing Driver OTP email blocked for: ${to}`);
+    return;
+  }
+  const transporter = await createTransporter();
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
+
+  const html = `
+    <div style="background-color: #05111E; padding: 40px 20px; font-family: 'Poppins', 'Inter', sans-serif; color: #FFFFFF; max-width: 500px; margin: 0 auto; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div style="text-align: center; margin-bottom: 30px;">
+        <div style="font-size: 40px; margin-bottom: 10px;">🚗</div>
+        <h1 style="color: #14B8B5; margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Traveloop</h1>
+        <p style="color: #94A3B8; margin: 4px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Driver Verification</p>
+      </div>
+
+      <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 30px; text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #FFFFFF; margin: 0 0 16px 0; font-size: 18px; font-weight: 800; text-align: center;">Driver Account Verification</h2>
+        <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Hello ${name ? name.toUpperCase() : "DRIVER"},</p>
+        <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; text-align: left;">Use the code below to verify your driver account.</p>
+        
+        <div style="background: linear-gradient(135deg, rgba(20,184,181,0.15) 0%, rgba(6,182,212,0.05) 100%); border: 1px dashed rgba(20,184,181,0.4); border-radius: 16px; padding: 20px; display: inline-block; margin: 10px auto;">
+          <span style="color: #14B8B5; font-size: 36px; font-weight: 900; letter-spacing: 6px; font-family: monospace;">${otpCode}</span>
+        </div>
+        
+        <p style="color: #E2E8F0; font-size: 13px; margin-top: 24px; font-weight: 600;">This OTP expires in 5 minutes.</p>
+      </div>
+
+      <div style="text-align: center; font-size: 11px; color: #64748B; line-height: 1.6;">
+        <p style="margin: 0 0 8px 0;">If you didn't request this code, ignore this message.</p>
+        <p style="margin: 0; font-weight: bold; color: #94A3B8;">Traveloop Security Team</p>
+      </div>
+    </div>
+  `;
+
+  console.log("[Email Service] Sending Driver OTP email to:", to, "from:", senderEmail);
+  const mailOptions = {
+    from: `"Traveloop Security" <${senderEmail}>`,
+    to,
+    subject: "Traveloop Driver Verification Code",
+    html,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log("[Email Service] Email sent successfully");
+    console.log("[Email Service] Complete sendMail Response Object:", JSON.stringify(info, null, 2));
+    return info;
+  } catch (err) {
+    console.error("[Email Service] transporter.sendMail threw error:", err.message, err);
+    throw err;
+  }
 };

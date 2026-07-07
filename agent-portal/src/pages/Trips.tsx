@@ -270,6 +270,9 @@ export const Trips: React.FC = () => {
   const [emailOtpLoading, setEmailOtpLoading] = useState(false);
   const [emailOtpError, setEmailOtpError] = useState("");
   const [emailResendCooldown, setEmailResendCooldown] = useState(0);
+  // Initial driver info to prevent reset when editing
+  const [initialDriverPhone, setInitialDriverPhone] = useState("");
+  const [initialDriverEmail, setInitialDriverEmail] = useState("");
   // Refs
   const recaptchaVerifierRef = useRef<any>(null);
   const confirmationResultRef = useRef<any>(null);
@@ -495,21 +498,25 @@ export const Trips: React.FC = () => {
   const watchDriverGmail = watch("driverGmail");
 
   useEffect(() => {
-    setDriverMobileVerified(false);
-    setDriverMobileVerifiedAt(null);
-    setMobileOtpSent(false);
-    setMobileOtpInput("");
-    setMobileOtpError("");
-    confirmationResultRef.current = null;
-  }, [watchDriverPhone]);
+    if (watchDriverPhone !== initialDriverPhone) {
+      setDriverMobileVerified(false);
+      setDriverMobileVerifiedAt(null);
+      setMobileOtpSent(false);
+      setMobileOtpInput("");
+      setMobileOtpError("");
+      confirmationResultRef.current = null;
+    }
+  }, [watchDriverPhone, initialDriverPhone]);
 
   useEffect(() => {
-    setDriverEmailVerified(false);
-    setDriverEmailVerifiedAt(null);
-    setEmailOtpSent(false);
-    setEmailOtpInput("");
-    setEmailOtpError("");
-  }, [watchDriverGmail]);
+    if (watchDriverGmail !== initialDriverEmail) {
+      setDriverEmailVerified(false);
+      setDriverEmailVerifiedAt(null);
+      setEmailOtpSent(false);
+      setEmailOtpInput("");
+      setEmailOtpError("");
+    }
+  }, [watchDriverGmail, initialDriverEmail]);
 
   // ── Mobile cooldown timer ──────────────────────────────────────────────────
   useEffect(() => {
@@ -605,17 +612,20 @@ export const Trips: React.FC = () => {
       const res = await api.post("/agent/send-driver-email-otp", { driverEmail: email, driverName: name });
       if (res.data?.success) {
         setEmailOtpSent(true);
-        setEmailResendCooldown(60);
+        setEmailResendCooldown(30);
+        alert("OTP sent successfully");
       } else {
         setEmailOtpError(res.data?.message || "Failed to send OTP");
+        alert("Unable to send OTP");
       }
     } catch (err: any) {
       if (err.response?.status === 429) {
-        const sec = err.response?.data?.remainingSeconds || 60;
+        const sec = err.response?.data?.remainingSeconds || 30;
         setEmailResendCooldown(sec);
         setEmailOtpError(`Please wait ${sec}s before resending`);
       } else {
         setEmailOtpError(err.response?.data?.message || "Failed to send OTP");
+        alert("Unable to send OTP");
       }
     } finally {
       setEmailOtpLoading(false);
@@ -661,6 +671,8 @@ export const Trips: React.FC = () => {
     setEmailOtpInput("");
     setEmailOtpError("");
     confirmationResultRef.current = null;
+    setInitialDriverPhone("");
+    setInitialDriverEmail("");
   };
 
   const openCreateMode = () => {
@@ -689,7 +701,12 @@ export const Trips: React.FC = () => {
       originCity: trip.originCity || "",
       gstPercentage: trip.gstPercentage || 5,
     });
-    resetDriverVerification();
+    setInitialDriverPhone(trip.driverPhone || "");
+    setInitialDriverEmail(trip.driverGmail || "");
+    setDriverMobileVerified(!!trip.driverMobileVerified);
+    setDriverMobileVerifiedAt(trip.driverMobileVerifiedAt ? new Date(trip.driverMobileVerifiedAt) : null);
+    setDriverEmailVerified(!!trip.driverEmailVerified);
+    setDriverEmailVerifiedAt(trip.driverEmailVerifiedAt ? new Date(trip.driverEmailVerifiedAt) : null);
     setEditingTripId(trip._id);
     setEditorOpen(true);
     setActiveTab(1);
@@ -2142,7 +2159,7 @@ export const Trips: React.FC = () => {
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap flex items-center gap-1.5"
                               >
                                 {emailOtpLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                                {emailResendCooldown > 0 ? `Resend in ${emailResendCooldown}s` : emailOtpSent ? "Resend OTP" : "Send OTP"}
+                                {emailOtpLoading ? "Sending OTP..." : emailResendCooldown > 0 ? `Resend in ${emailResendCooldown}s` : emailOtpSent ? "Resend OTP" : "Send OTP"}
                               </button>
                             </div>
 
@@ -2177,7 +2194,7 @@ export const Trips: React.FC = () => {
                           </>
                         ) : (
                           <div className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                            {watch("driverGmail")} ✅ Email Verified
+                            {watch("driverGmail")} ✅ Driver Email Verified
                           </div>
                         )}
                       </div>
