@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from "react";
+// src/pages/CompleteProfile.tsx
+// Profile Completion & Verification Wizard (6-step) - Agent Portal
+
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, Sparkles, Building2, ShieldCheck, ArrowRight, ArrowLeft, Loader2, Mail, Phone, MapPin, User, CheckCircle } from "lucide-react";
+import { Compass, Sparkles, Building2, ShieldCheck, ArrowRight, ArrowLeft, Loader2, Mail, Phone, MapPin, User, CheckCircle, Shield } from "lucide-react";
 import { GlassCard, Button, Input } from "../components/ui";
 import { ImageUploadBox } from "../components/ui";
 import { OTPInput } from "../features/auth/components/OTPInput";
@@ -29,13 +32,18 @@ export const CompleteProfile: React.FC = () => {
   const [companyLogo, setCompanyLogo] = useState("");
   const [agentPhoto, setAgentPhoto] = useState("");
 
+  // Legal Consent Checkboxes
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+
   // OTP Verification States
   const [emailOtp, setEmailOtp] = useState("");
   const [mobileOtp, setMobileOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpSentMobile, setOtpSentMobile] = useState(false);
   const [emailOtpCode, setEmailOtpCode] = useState(""); // For debugging in non-prod
-  const [mobileOtpCode, setMobileOtpCode] = useState(""); // For debugging/simulated OTP
+
+  const canSubmit = termsAccepted && privacyAccepted;
 
   // Initialize fields if agent data exists
   useEffect(() => {
@@ -50,11 +58,13 @@ export const CompleteProfile: React.FC = () => {
       setCompanyLogo(agent.companyLogo || agent.logo || "");
       setAgentPhoto(agent.agentPhoto || agent.profileImage || "");
 
-      // Determine starting step based on KYC status
-      if (agent.kycStatus === "EMAIL_VERIFIED") {
+      // Determine starting step based on onboarding status
+      if (agent.acceptedTerms && agent.privacyAccepted) {
+        setStep(6);
+      } else if (agent.kycStatus === "EMAIL_VERIFIED") {
         setStep(5);
       } else if (agent.kycStatus === "MOBILE_VERIFIED") {
-        setStep(5); // verified mobile but not complete
+        setStep(5); 
       }
     }
   }, [agent]);
@@ -81,7 +91,7 @@ export const CompleteProfile: React.FC = () => {
       if (!companyLogo) return setErrorMsg("Company Logo is required");
       if (!agentPhoto) return setErrorMsg("Agent Photo is required");
 
-      // Save step 1-3 details to backend before proceeding to OTPs
+      // Save step 1-3 details to backend before proceeding
       setLoading(true);
       try {
         const response = await api.post("/agent/profile/create", {
@@ -127,7 +137,7 @@ export const CompleteProfile: React.FC = () => {
         setOtpSent(true);
         setSuccessMsg("Verification OTP sent to your registered Gmail address");
         if (response.data.otp) {
-          setEmailOtpCode(response.data.otp); // Save debug OTP
+          setEmailOtpCode(response.data.otp);
         }
       } else {
         setErrorMsg(response.data?.message || "Failed to send email OTP");
@@ -163,7 +173,41 @@ export const CompleteProfile: React.FC = () => {
     }
   };
 
-  // ── Step 5: Mobile OTP Actions ─────────────────────────────────────────────
+  // ── Step 5: Legal Consent Actions ──────────────────────────────────────────
+  const handleAcceptTerms = async () => {
+    if (!canSubmit) return;
+    setLoading(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    try {
+      const response = await api.post("/legal/accept", {
+        userId: agent?._id,
+        acceptedTerms: true,
+        acceptedAt: new Date().toISOString(),
+        termsVersion: "2026-07",
+      });
+
+      if (response.data?.success) {
+        const updatedAgent = response.data.agent;
+        if (updatedAgent) {
+          updateAgent(updatedAgent);
+        }
+        setSuccessMsg("Legal consent saved successfully.");
+        setTimeout(() => {
+          setSuccessMsg("");
+          setStep(6);
+        }, 1500);
+      } else {
+        setErrorMsg(response.data?.message || "Failed to save legal consent");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || "Error submitting legal consent");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Step 6: Mobile OTP Actions ─────────────────────────────────────────────
   const sendMobileOtp = async () => {
     if (!/^[6-9][0-9]{9}$/.test(mobile)) {
       setErrorMsg("Please enter a valid 10-digit mobile number starting with 6-9");
@@ -173,17 +217,24 @@ export const CompleteProfile: React.FC = () => {
     setSuccessMsg("");
     setLoading(true);
     try {
-      if (!(window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-          size: "invisible",
-          callback: () => {
-            console.log("reCAPTCHA solved");
-          },
-          "expired-callback": () => {
-            console.log("reCAPTCHA expired");
-          }
-        });
+      if ((window as any).recaptchaVerifier) {
+        try {
+          (window as any).recaptchaVerifier.clear();
+        } catch (e) {
+          console.warn("[Recaptcha] Error clearing recaptcha verifier:", e);
+        }
+        (window as any).recaptchaVerifier = null;
       }
+
+      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible",
+        callback: () => {
+          console.log("reCAPTCHA solved");
+        },
+        "expired-callback": () => {
+          console.log("reCAPTCHA expired");
+        }
+      });
 
       const formattedPhone = `+91${mobile}`;
       const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, (window as any).recaptchaVerifier);
@@ -210,7 +261,7 @@ export const CompleteProfile: React.FC = () => {
       const result = await (window as any).confirmationResult.confirm(mobileOtp);
       const idToken = await result.user.getIdToken();
 
-      const response = await api.post("/agent/verify-mobile-otp", { idToken, phone: mobile });
+      const response = await api.post("/agent/verify-mobile-otp", { idToken, phone: `+91${mobile}` });
       if (response.data?.success) {
         updateAgent(response.data.agent);
         setSuccessMsg("Mobile verified successfully! KYC profile is now completed.");
@@ -234,11 +285,12 @@ export const CompleteProfile: React.FC = () => {
     "Address Details",
     "Company Details",
     "Email OTP Verification",
+    "Legal Consent",
     "Mobile OTP Verification"
   ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 auth-bg">
+    <div className="min-h-screen flex items-center justify-center p-6 auth-bg bg-[#070a13]">
       <div className="w-full max-w-2xl animate-fade-in-up">
         
         {/* Title */}
@@ -260,10 +312,10 @@ export const CompleteProfile: React.FC = () => {
           {/* Progress bar */}
           <div className="flex justify-between items-center mb-8 border-b border-slate-100 dark:border-slate-800 pb-4">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-              Step {step} of 5: {stepTitles[step - 1]}
+              Step {step} of 6: {stepTitles[step - 1]}
             </h3>
             <div className="flex gap-1">
-              {[1, 2, 3, 4, 5].map((s) => (
+              {[1, 2, 3, 4, 5, 6].map((s) => (
                 <div
                   key={s}
                   className={`h-1.5 rounded-full transition-all duration-300 ${
@@ -409,7 +461,7 @@ export const CompleteProfile: React.FC = () => {
               <div className="space-y-6 text-center animate-page">
                 <div className="p-4 bg-primary/5 rounded-2xl flex flex-col items-center justify-center text-center">
                   <Mail className="w-10 h-10 text-primary mb-2" />
-                  <p className="text-xs font-semibold text-slate-650 dark:text-slate-350 max-w-sm">
+                  <p className="text-xs font-semibold text-slate-655 dark:text-slate-350 max-w-sm">
                     Verify registered email: <strong className="text-slate-800 dark:text-slate-200">{agent.email}</strong>
                   </p>
                 </div>
@@ -449,12 +501,100 @@ export const CompleteProfile: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 5: Mobile OTP Verification */}
+            {/* STEP 5: Legal Consent */}
             {step === 5 && (
+              <div className="space-y-6 animate-page text-center">
+                <div className="p-4 bg-primary/5 rounded-2xl flex flex-col items-center justify-center text-center">
+                  <Shield className="w-10 h-10 text-primary mb-2 animate-pulse" />
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+                    Legal Documents & Agreement
+                  </h3>
+                  <p className="text-xs font-semibold text-slate-650 dark:text-slate-350 max-w-sm mt-1">
+                    Before activating your Agent account, please review and accept the legal documents.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                  {/* Terms Card */}
+                  <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 p-4 rounded-xl">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Terms & Conditions</h4>
+                    <p className="text-[11px] text-slate-400 mb-3">Review the TravelLoop Agent usage and guidelines.</p>
+                    <a
+                      href="/legal-site/index.html?doc=terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+                    >
+                      Read Terms & Conditions
+                      <ArrowRight className="w-3.5 h-3.5 text-primary" />
+                    </a>
+                  </div>
+
+                  {/* Privacy Card */}
+                  <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 p-4 rounded-xl">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Privacy Policy</h4>
+                    <p className="text-[11px] text-slate-400 mb-3">Learn how we protect and process business data.</p>
+                    <a
+                      href="/legal-site/index.html?doc=privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+                    >
+                      Read Privacy Policy
+                      <ArrowRight className="w-3.5 h-3.5 text-primary" />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Acceptance Checkboxes */}
+                <div className="space-y-3 text-left pt-2">
+                  <label className="flex items-center gap-3.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
+                      className="rounded border-slate-300 text-primary focus:ring-primary w-4 h-4"
+                    />
+                    <span className="text-xs text-slate-650 dark:text-slate-350">
+                      I have read and agree to the <strong className="text-slate-850 dark:text-slate-200">Terms & Conditions</strong>.
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-3.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={privacyAccepted}
+                      onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                      className="rounded border-slate-300 text-primary focus:ring-primary w-4 h-4"
+                    />
+                    <span className="text-xs text-slate-650 dark:text-slate-350">
+                      I have read and agree to the <strong className="text-slate-850 dark:text-slate-200">Privacy Policy</strong>.
+                    </span>
+                  </label>
+                </div>
+
+                <div className="flex gap-4 mt-6">
+                  <Button variant="outline" onClick={handleBack} className="flex-1">
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleAcceptTerms}
+                    disabled={!canSubmit || loading}
+                    loading={loading}
+                    className="flex-[2]"
+                  >
+                    Continue to Mobile Verification
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 6: Mobile OTP Verification */}
+            {step === 6 && (
               <div className="space-y-6 text-center animate-page">
                 <div className="p-4 bg-primary/5 rounded-2xl flex flex-col items-center justify-center text-center">
                   <Phone className="w-10 h-10 text-primary mb-2" />
-                  <p className="text-xs font-semibold text-slate-650 dark:text-slate-350 max-w-sm">
+                  <p className="text-xs font-semibold text-slate-655 dark:text-slate-350 max-w-sm">
                     Verify mobile number: <strong className="text-slate-800 dark:text-slate-200">+91 {mobile}</strong>
                   </p>
                 </div>
@@ -466,8 +606,6 @@ export const CompleteProfile: React.FC = () => {
                 ) : (
                   <div className="space-y-4">
                     <OTPInput value={mobileOtp} onChange={setMobileOtp} length={6} />
-
-                    {/* Simulated OTP display removed */}
 
                     <div className="flex gap-4 mt-6">
                       <Button variant="outline" onClick={() => setOtpSentMobile(false)} className="flex-1" disabled={loading}>
@@ -487,7 +625,7 @@ export const CompleteProfile: React.FC = () => {
                     </button>
                   </div>
                 )}
-                <div id="recaptcha-container"></div>
+                <div id="recaptcha-container" className="mt-2 flex justify-center"></div>
               </div>
             )}
 
