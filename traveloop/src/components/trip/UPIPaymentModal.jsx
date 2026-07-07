@@ -264,6 +264,7 @@ const UPIPaymentModal = ({
             clearInterval(timerRef.current);
             setPhase("success");
             toast.success("Payment verified! Booking confirmed ✓");
+            console.log("Payment Success");
             setTimeout(() => onSuccess(bookingRef || resolvedBookingId), 1600);
           } else {
             setError(verifyData.message || "Payment verification failed. Please contact support.");
@@ -291,6 +292,8 @@ const UPIPaymentModal = ({
         setPhase("failed");
         toast.error(`Payment failed: ${desc}`);
       });
+      console.log("Launching Razorpay");
+      console.log("Payment Started");
       rzp.open();
       // Reset to ready while popup is open (user can cancel)
       setPhase("ready");

@@ -380,6 +380,7 @@ export const TripDetails = () => {
       setPassengers(passengerList);
       setPassengerSaved(true);
       setPassengerCompleted(true);
+      console.log("Passenger Saved");
       // Pass seats explicitly to avoid React state-lag (selectedSeats may still be [])
       handlePassengersConfirmed(passengerList, seats);
     } else {
@@ -494,6 +495,7 @@ export const TripDetails = () => {
       }
 
       console.log("[BookingFlow] Booking draft created:", { bookingRef, bookingMongoId });
+      console.log("Booking Draft Created");
 
       const bookingObj = {
         bookingId: bookingRef,

@@ -533,8 +533,8 @@ const SeatLayoutModal = ({
     }
 
     // Save details
-    setPassengerDetails((prev) => ({
-      ...prev,
+    const updatedDetails = {
+      ...passengerDetails,
       [drawerSeat]: {
         seatNumber: drawerSeat,
         name: formData.name.trim(),
@@ -545,10 +545,19 @@ const SeatLayoutModal = ({
         travelerPhoneVerified: formData.travelerPhoneVerified,
         verifiedAt: formData.verifiedAt,
       },
-    }));
+    };
 
+    setPassengerDetails(updatedDetails);
     setDrawerSeat(null);
     toast.success(`Details for Seat ${drawerSeat} saved!`);
+    console.log("Passenger Saved", updatedDetails[drawerSeat]);
+
+    // Check if details for all selected seats are completed
+    const allSeatsAssigned = selected.every((seatNumber) => updatedDetails[seatNumber]);
+    if (allSeatsAssigned && selected.length === requiredSeats) {
+      console.log("[SeatLayoutModal] Passenger Saved. All selected seats assigned details. Auto-triggering confirmation.");
+      handleConfirm(selected, updatedDetails);
+    }
   };
 
   // ── OTP Delivery & Timer Helpers ──────────────────────────────────────────
@@ -662,8 +671,11 @@ const SeatLayoutModal = ({
   }, []);
 
   // ── Confirm Booking & Seat Reservation ─────────────────────────────────────
-  const handleConfirm = async () => {
-    const missing = selected.filter((seatNum) => !passengerDetails[seatNum]);
+  const handleConfirm = async (selectedOverride, detailsOverride) => {
+    const activeSelected = selectedOverride || selected;
+    const activeDetails = detailsOverride || passengerDetails;
+
+    const missing = activeSelected.filter((seatNum) => !activeDetails[seatNum]);
     if (missing.length > 0) {
       toast.error(`Please fill passenger details for seat(s): ${missing.join(", ")}`);
       openPassengerDrawer(missing[0]);
@@ -674,7 +686,7 @@ const SeatLayoutModal = ({
     const token = localStorage.getItem("token");
     const failedSeats = [];
 
-    for (const seatNumber of selected) {
+    for (const seatNumber of activeSelected) {
       // Prevent duplicate seat reservation requests if already reserved by me
       const seatObj = seats.find(s => s.seatNumber === seatNumber);
       const currentUserId = user?._id || user?.id;
@@ -717,8 +729,8 @@ const SeatLayoutModal = ({
       return;
     }
 
-    const passengersList = selected.map((seatNum) => {
-      const p = passengerDetails[seatNum] || {};
+    const passengersList = activeSelected.map((seatNum) => {
+      const p = activeDetails[seatNum] || {};
       return {
         name: p.name,
         passengerName: p.name,
@@ -732,7 +744,7 @@ const SeatLayoutModal = ({
       };
     });
 
-    onConfirm(selected, passengersList);
+    onConfirm(activeSelected, passengersList);
   };
 
   // ── Fare calculations ──────────────────────────────────────────────────────
