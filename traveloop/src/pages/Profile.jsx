@@ -314,6 +314,16 @@ const Profile = () => {
   const [notifForm, setNotifForm] = useState({ reminders: true, budget: true, weather: true, statusUpdates: true });
   const [achievements, setAchievements] = useState([]);
 
+  const [showPrimaryOtp, setShowPrimaryOtp] = useState(false);
+  const [showAlternateOtp, setShowAlternateOtp] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [alternateEnabled, setAlternateEnabled] = useState(false);
+
+  console.log('alternateEnabled:', alternateEnabled);
+  console.log('setter:', setAlternateEnabled);
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -661,12 +671,7 @@ const Profile = () => {
     if (ok) setPersonalSheet(false);
   };
 
-  const [showPrimaryOtp, setShowPrimaryOtp] = useState(false);
-  const [showAlternateOtp, setShowAlternateOtp] = useState(false);
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSending, setOtpSending] = useState(false);
-  const [otpVerifying, setOtpVerifying] = useState(false);
-  const [alternateEnabled, setAlternateEnabled] = useState(false);
+  // OTP and alternate number states moved to the top of component
 
   const handleSendOtp = async (phone, isAlternate) => {
     if (!/^[6-9][0-9]{9}$/.test(phone)) {

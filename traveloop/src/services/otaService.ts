@@ -200,6 +200,17 @@ export class OTAService {
 
     }
 
+    static async notifyAppReady() {
+        try {
+            await CapacitorUpdater.notifyAppReady();
+            console.log("[OTA] notifyAppReady sent.");
+            return true;
+        } catch (err: any) {
+            console.warn("[OTA] notifyAppReady error:", err?.message);
+            return false;
+        }
+    }
+
 }
 
 export const BUNDLED_VERSION = "1.0.0";

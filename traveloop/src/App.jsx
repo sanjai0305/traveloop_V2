@@ -85,7 +85,13 @@ const App = () => {
   // ── OTA Step 1: notify Capacitor immediately on startup ───────────────────
   // Prevents the watchdog from auto-rolling back if we don't signal readiness
   useEffect(() => {
-    OTAService.notifyAppReady();
+    try {
+      if (OTAService && typeof OTAService.notifyAppReady === "function") {
+        OTAService.notifyAppReady();
+      }
+    } catch (error) {
+      console.error("OTA initialization failed:", error);
+    }
   }, []);
 
   // ── Splash timer ──────────────────────────────────────────────────────────
