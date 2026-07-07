@@ -28,7 +28,7 @@ const PassengerFormModal = ({
   onClose,
   onBack,
 }) => {
-  const { user, login } = useAuth();
+  const { user, updateUser } = useAuth();
   const toast = useToast();
 
   const getInitialPassenger = (seat, i) => {
@@ -59,8 +59,9 @@ const PassengerFormModal = ({
   const [modalOtpSent, setModalOtpSent] = useState(false);
   const [modalOtpCode, setModalOtpCode] = useState("");
   const [modalOtpVerifying, setModalOtpVerifying] = useState(false);
-  const [modalConfirmationResult, setModalConfirmationResult] = useState(null);
   const [modalOtpTimer, setModalOtpTimer] = useState(0);
+  const [modalOtpDebug, setModalOtpDebug] = useState(null);
+  const [modalOtpError, setModalOtpError] = useState("");
   const modalOtpTimerRef = useRef(null);
 
   const startModalOtpTimer = () => {
@@ -77,87 +78,82 @@ const PassengerFormModal = ({
     }, 1000);
   };
 
+  // ── Send OTP via backend (JWT-protected, no Firebase) ────────────────────
   const handleSendModalOtp = async (phone) => {
-    if (!/^[6-9][0-9]{9}$/.test(phone)) {
-      toast.error("Please enter a valid 10-digit mobile number starting with 6-9");
+    const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+    if (!/^[6-9][0-9]{9}$/.test(cleanPhone)) {
+      toast.error("Please enter a valid 10-digit Indian mobile number starting with 6-9");
       return;
     }
     setModalOtpSending(true);
+    setModalOtpError("");
     try {
-      const { RecaptchaVerifier, signInWithPhoneNumber } = await import("firebase/auth");
-      const { auth } = await import("../../services/firebase");
-
-      if (!window.modalRecaptchaVerifier) {
-        window.modalRecaptchaVerifier = new RecaptchaVerifier(auth, "modal-recaptcha-container", {
-          size: "invisible",
-          callback: (response) => {
-            console.log("reCAPTCHA solved");
-          },
-          "expired-callback": () => {
-            console.log("reCAPTCHA expired");
-          }
-        });
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("passenger/send-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: cleanPhone }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setModalOtpSent(true);
+        setModalOtpCode("");
+        setModalOtpDebug(data.debugOtp || null);
+        startModalOtpTimer();
+        toast.success(data.message || "OTP sent successfully!");
+      } else {
+        setModalOtpError(data.message || "Failed to send OTP.");
+        toast.error(data.message || "Failed to send OTP.");
       }
-
-      const formattedPhone = `+91${phone}`;
-      const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, window.modalRecaptchaVerifier);
-      setModalConfirmationResult(confirmationResult);
-      setModalOtpSent(true);
-      startModalOtpTimer();
-      toast.success("Verification SMS sent successfully!");
     } catch (err) {
-      console.error("Firebase SMS send failure:", err);
-      toast.error(err.message || "Failed to send verification SMS.");
+      console.error("[PassengerForm] send-otp error:", err);
+      setModalOtpError("Network error. Please try again.");
+      toast.error("Network error sending OTP.");
     } finally {
       setModalOtpSending(false);
     }
   };
 
+  // ── Verify OTP via backend ────────────────────────────────────────
   const handleVerifyModalOtp = async (code, phone) => {
     if (!code || code.length < 6) {
       toast.error("Please enter a 6-digit OTP code");
       return;
     }
     setModalOtpVerifying(true);
+    setModalOtpError("");
     try {
-      if (!modalConfirmationResult) {
-        throw new Error("No active phone verification session found.");
-      }
-      const result = await modalConfirmationResult.confirm(code);
-      const idToken = await result.user.getIdToken();
-
-      // If bookingForOthers is FALSE, we verify and sync the account owner's phone to their profile!
-      if (!current.bookingForOthers) {
-        const token = localStorage.getItem("token");
-        const res = await fetch(getApiUrl("user/verify-phone"), {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ phone, idToken, isAlternate: false })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Verification sync failed on server.");
+      const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("passenger/verify-otp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ phone: cleanPhone, otp: code }),
+      });
+      const data = await res.json();
+      if (data.success && data.verified) {
+        // Sync updated user into localStorage + context
+        if (data.user && updateUser) {
+          const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
+          const mergedUser = { ...cachedUser, ...data.user };
+          localStorage.setItem("user", JSON.stringify(mergedUser));
+          updateUser(mergedUser);
         }
-        // Update user context
-        const cachedUser = JSON.parse(localStorage.getItem("user") || "{}");
-        const mergedUser = { ...cachedUser, ...data.user };
-        localStorage.setItem("user", JSON.stringify(mergedUser));
-        login(mergedUser, token);
+        update("travelerPhone", phone);
+        update("travelerPhoneVerified", true);
+        update("verifiedAt", new Date().toISOString());
+        setModalOtpSent(false);
+        setModalOtpCode("");
+        setModalOtpDebug(null);
+        toast.success("Mobile number verified successfully! ✓");
+      } else {
+        setModalOtpError(data.message || "Invalid OTP. Please try again.");
+        toast.error(data.message || "Invalid OTP. Please try again.");
       }
-
-      update("travelerPhone", phone);
-      update("travelerPhoneVerified", true);
-      update("verifiedAt", new Date().toISOString());
-
-      setModalOtpSent(false);
-      setModalOtpCode("");
-      toast.success("Mobile number verified successfully!");
     } catch (err) {
-      console.error("OTP verification failure:", err);
-      toast.error(err.message || "Invalid OTP code. Please try again.");
+      console.error("[PassengerForm] verify-otp error:", err);
+      setModalOtpError("Network error verifying OTP.");
+      toast.error("Network error. Please try again.");
     } finally {
       setModalOtpVerifying(false);
     }
@@ -472,6 +468,7 @@ const PassengerFormModal = ({
                   update("travelerPhoneVerified", newVal ? false : (user?.phoneVerified || user?.primaryVerified || false));
                   setModalOtpSent(false);
                   setModalOtpCode("");
+                  setModalOtpError("");
                 }}
                 className="relative w-10 h-6 rounded-full transition-colors shrink-0"
                 style={{ background: current.bookingForOthers ? "#14B8B5" : "#E2E8F0" }}
@@ -637,7 +634,17 @@ const PassengerFormModal = ({
                 </div>
               )}
             </div>
-            <div id="modal-recaptcha-container" className="hidden" />
+            {/* Debug OTP hint in dev mode */}
+            {modalOtpDebug && (
+              <div className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-[10px] text-yellow-400 font-mono">
+                DEV OTP: {modalOtpDebug}
+              </div>
+            )}
+            {modalOtpError && (
+              <p className="text-[10px] text-rose-400 font-semibold flex items-center gap-1">
+                <AlertCircle size={10} /> {modalOtpError}
+              </p>
+            )}
           </motion.div>
         </AnimatePresence>
 

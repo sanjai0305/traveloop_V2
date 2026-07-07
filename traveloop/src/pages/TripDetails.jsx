@@ -67,7 +67,7 @@ export const TripDetails = () => {
 
   // Booking Flow States
   const [showBookingModal, setShowBookingModal] = useState(false);
-  // stages: "seat_select" | "passenger_form" | "confirm" | "upi_payment" | "ticket" | "form" | "seats" | "payment" | "success"
+  // stages: "seat_select" | "passenger_form" | "upi_payment" | "ticket" | "form" | "seats" | "confirm" | "payment" | "success"
   const [bookingStage, setBookingStage] = useState("seat_select");
   const [bookingDetails, setBookingDetails] = useState(null);
   const [bookedSeats, setBookedSeats] = useState([]);
@@ -78,6 +78,14 @@ export const TripDetails = () => {
   const [passengers, setPassengers] = useState([]);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [ticketData, setTicketData] = useState(null);
+
+  // ── Booking flow progress flags (prevent modal re-open loop) ──────────────
+  const [passengerSaved, setPassengerSaved] = useState(false);
+  const [passengerCompleted, setPassengerCompleted] = useState(false);
+  const [seatReserved, setSeatReserved] = useState(false);
+  const [bookingDraftCreated, setBookingDraftCreated] = useState(false);
+  const [paymentInitiated, setPaymentInitiated] = useState(false);
+  const [paymentCompleted, setPaymentCompleted] = useState(false);
 
   // Form Fields
   const [firstName, setFirstName] = useState("");
@@ -346,30 +354,62 @@ export const TripDetails = () => {
       navigate("/login");
       return;
     }
-    // New flow: open seat selection first
+    // New flow: open seat selection first — reset all flags for a fresh booking
     setBookingStage("seat_select");
     setSelectedSeatsList([]);
     setPassengers([]);
     setConfirmedBooking(null);
     setTicketData(null);
+    setPassengerSaved(false);
+    setPassengerCompleted(false);
+    setSeatReserved(false);
+    setBookingDraftCreated(false);
+    setPaymentInitiated(false);
+    setPaymentCompleted(false);
     setShowBookingModal(true);
   };
 
   // Called when SeatLayoutModal confirms seat selection
+  // SeatLayoutModal already collects per-seat passenger details in its drawer,
+  // so we skip PassengerFormModal and go directly to booking creation.
   const handleSeatsConfirmed = (seats, passengerList) => {
     setSelectedSeatsList(seats);
+    setSeatReserved(true);
     if (passengerList && passengerList.length > 0) {
       setPassengers(passengerList);
+      setPassengerSaved(true);
+      setPassengerCompleted(true);
+      // Pass seats explicitly to avoid React state-lag (selectedSeats may still be [])
       handlePassengersConfirmed(passengerList, seats);
     } else {
+      // No passenger data from SeatLayoutModal — show PassengerFormModal
       setBookingStage("passenger_form");
     }
   };
 
   // Called when PassengerFormModal submits all passenger data
+  // Also called directly from SeatLayoutModal.onConfirm with explicit seats override.
   const handlePassengersConfirmed = async (passengerList, seatsOverride) => {
+    // Guard: if booking draft already created, skip duplicate creation
+    if (bookingDraftCreated && confirmedBooking) {
+      console.log("[BookingFlow] Draft already created, going directly to payment.");
+      setPassengerSaved(true);
+      setPassengerCompleted(true);
+      setBookingStage("upi_payment");
+      return;
+    }
+
     setPassengers(passengerList);
+    // CRITICAL FIX: Use explicit seats override to bypass React state lag
+    // When called from SeatLayoutModal.onConfirm, selectedSeats state may still be []
     const activeSeats = seatsOverride || selectedSeats;
+
+    if (!activeSeats || activeSeats.length === 0) {
+      console.error("[BookingFlow] No seats available:", { seatsOverride, selectedSeats });
+      toast.error("No seats selected. Please select your seat(s) first.");
+      setBookingStage("seat_select");
+      return;
+    }
 
     // Calculate amounts
     const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
@@ -380,31 +420,49 @@ export const TripDetails = () => {
     const maleCount = passengerList.filter(p => p.gender === "Male").length;
     const femaleCount = passengerList.filter(p => p.gender === "Female").length;
 
-    // Create booking on backend before showing payment modal
+    // Derive accountEmail from authenticated user profile
     const localUser = JSON.parse(localStorage.getItem("user") || "{}");
     const localUserId = localUser?._id || localUser?.id;
+    const accountEmail = localUser?.email || "";
+
     if (!localUserId) {
       toast.error("User session expired. Please log in again to book.");
       setBookingStage("passenger_form");
       return;
     }
 
+    // Enrich passengers with account email
+    const enrichedPassengers = passengerList.map(p => ({
+      ...p,
+      accountEmail: p.accountEmail || accountEmail,
+      contactEmail: p.contactEmail || accountEmail,
+      email: p.email || accountEmail,
+    }));
+
     try {
       const token = localStorage.getItem("token");
+      console.log("[BookingFlow] Creating booking draft:", {
+        tripId: trip._id,
+        seats: enrichedPassengers.length,
+        seatNumbers: activeSeats,
+        totalAmount: total,
+      });
+
       const bookingRes = await fetch(getApiUrl("bookings"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           tripId: trip._id,
-          travellers: passengerList,
-          seats: passengerList.length,
+          travellers: enrichedPassengers,
+          seats: enrichedPassengers.length,
           seatNumbers: activeSeats,
           totalAmount: total,
           maleCount,
           femaleCount,
-          adults: passengerList.length,
+          adults: enrichedPassengers.length,
           children: 0,
           pickupLocation: trip.pickupLocation || "",
+          contactEmail: accountEmail,
         }),
       });
 
@@ -421,19 +479,27 @@ export const TripDetails = () => {
         throw new Error("Invalid booking reference returned from server.");
       }
 
-      setConfirmedBooking({
+      console.log("[BookingFlow] Booking draft created:", { bookingRef, bookingMongoId });
+
+      const bookingObj = {
         bookingId: bookingRef,
         _id: bookingMongoId,
         tripTitle: trip.title,
         totalAmount: total,
         startDate: trip.startDate,
         pickupLocation: trip.pickupLocation || "",
-      });
+      };
+
+      setConfirmedBooking(bookingObj);
+      setBookingDraftCreated(true);
+      setPassengerSaved(true);
+      setPassengerCompleted(true);
       setBookingStage("upi_payment");
     } catch (err) {
       console.error("[Booking Creation Error]:", err);
       toast.error(err.message || "Failed to create booking. Please try again.");
-      setBookingStage("passenger_form");
+      // Return to seat select (not passenger_form) to avoid looping modal
+      setBookingStage("seat_select");
     }
   };
 
@@ -514,8 +580,24 @@ export const TripDetails = () => {
 
   const handleCancelPayment = async () => {
     await releaseSelectedSeats();
+    // Reset all flow flags so a fresh booking can begin
+    setPassengerSaved(false);
+    setPassengerCompleted(false);
+    setSeatReserved(false);
+    setBookingDraftCreated(false);
+    setPaymentInitiated(false);
+    setConfirmedBooking(null);
     setBookingStage("seat_select");
     toast.info("Payment cancelled. Seats have been released.");
+  };
+
+  // Allow user to explicitly re-edit passenger details
+  const handleEditPassenger = () => {
+    setPassengerSaved(false);
+    setPassengerCompleted(false);
+    setBookingDraftCreated(false);
+    setConfirmedBooking(null);
+    setBookingStage("passenger_form");
   };
 
   const handleFormSubmit = (e) => {
@@ -2021,18 +2103,24 @@ export const TripDetails = () => {
               trip={trip}
               requiredSeats={totalBookingSeats || 1}
               onConfirm={(seats, passengersList) => {
-                setSelectedSeatsList(seats);
-                handlePassengersConfirmed(passengersList);
+                // CRITICAL: Pass seats explicitly as second arg to bypass React state lag.
+                // setSelectedSeatsList is async; selectedSeats would still be [] on next line.
+                handleSeatsConfirmed(seats, passengersList);
               }}
               onClose={() => { setShowBookingModal(false); }}
             />
           )}
 
-          {showBookingModal && bookingStage === "passenger_form" && trip && (
+          {/* PassengerFormModal only shows if SeatLayoutModal did NOT collect passenger data */}
+          {showBookingModal && bookingStage === "passenger_form" && trip && !passengerCompleted && (
             <PassengerFormModal
               selectedSeats={selectedSeats}
               trip={trip}
-              onConfirm={handlePassengersConfirmed}
+              onConfirm={(passengerList) => {
+                setPassengerSaved(true);
+                setPassengerCompleted(true);
+                handlePassengersConfirmed(passengerList, selectedSeats);
+              }}
               onBack={() => setBookingStage("seat_select")}
               onClose={() => { releaseSelectedSeats(); setShowBookingModal(false); }}
             />
