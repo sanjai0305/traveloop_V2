@@ -680,95 +680,136 @@ export const sendScheduleUpdateNotification = async (to, name, data) => {
 export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfBuffer) => {
   if (isBlockedEmail(to)) {
     console.warn(`[Email Service] Booking confirmation email blocked for: ${to}`);
-    return;
+    return false;
   }
   const transporter = await createTransporter();
   const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL;
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
   const travelDate = trip?.startDate
-    ? new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    ? new Date(trip.startDate).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
     : "TBD";
 
+  const depTime = trip?.departureTime ? new Date(trip.departureTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "TBD";
+  const arrTime = trip?.arrivalTime ? new Date(trip.arrivalTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "TBD";
+  const bookingDate = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN");
+
   const html = `
-    <div style="background-color: #05111E; padding: 30px; font-family: 'Poppins', 'Inter', sans-serif; color: #FFFFFF; max-width: 600px; margin: 0 auto; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-      <div style="text-align: center; margin-bottom: 24px;">
-        <h1 style="color: #14B8B5; margin: 0; font-size: 28px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">Traveloop</h1>
-        <p style="color: #94A3B8; margin: 4px 0 0 0; font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">Premium Voyage Pass</p>
+    <div style="background-color: #0B1325; padding: 40px 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #E2E8F0; max-width: 600px; margin: 0 auto;">
+      
+      <!-- LOGO HEADER -->
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #14B8A6; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">TravelLoop</h1>
+        <p style="color: #64748B; margin: 4px 0 0 0; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;">Premium Bus Network</p>
       </div>
 
-      <div style="background: linear-gradient(135deg, rgba(20,184,181,0.15) 0%, rgba(6,182,212,0.05) 100%); border: 1px solid rgba(20,184,181,0.2); border-radius: 16px; padding: 20px; text-align: center; margin-bottom: 20px;">
-        <span style="font-size: 32px; display: block; margin-bottom: 8px;">✈️</span>
-        <h2 style="color: #FFFFFF; margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.5px;">Booking Confirmed</h2>
-        <p style="color: #14B8B5; margin: 4px 0 0 0; font-size: 12px; font-weight: 700; font-family: monospace;">Ticket #${booking?.ticketId || 'TLP-2026-XXXXXX'}</p>
+      <!-- STATUS HEADER -->
+      <div style="background: linear-gradient(135deg, rgba(20,184,181,0.12) 0%, rgba(6,182,212,0.04) 100%); border: 1px solid rgba(20,184,181,0.2); border-radius: 20px; padding: 24px; text-align: center; margin-bottom: 24px;">
+        <span style="font-size: 32px; display: block; margin-bottom: 10px;">🎉</span>
+        <h2 style="color: #FFFFFF; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">Booking Confirmed!</h2>
+        <p style="color: #94A3B8; margin: 6px 0 0 0; font-size: 13px;">Hi <b>${name || "Traveler"}</b>, your voyage has been confirmed. See details below.</p>
       </div>
 
-      <div style="background-color: #0B2035; border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 20px; margin-bottom: 20px;">
+      <!-- TRIP DETAILS CARD -->
+      <div style="background-color: #0F172A; border: 1px solid #1E293B; border-radius: 20px; padding: 24px; margin-bottom: 24px;">
+        <h3 style="color: #FFFFFF; margin: 0 0 16px 0; font-size: 14px; font-weight: 800; border-bottom: 1px solid #1E293B; padding-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Trip Details</h3>
+        
         <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Passenger</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${name || 'Traveler'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Trip Name</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.title || "Premium Bus Voyage"}</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Trip / Route</td>
-            <td style="color: #14B8B5; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.title || 'Premium Voyage'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Source / Boarding</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${booking.pickupLocation || trip?.pickupLocation || "Main Terminal"}</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Assigned Seat</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">Seat ${booking?.assignedSeat || booking?.seatNumber || 'TBD'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Destination</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.dropPoint || trip?.destination || "Destination Drop"}</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Bus Number</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.busNumber || 'TLP-2026'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Journey Date</td>
+            <td style="color: #14B8A6; padding: 8px 0; font-weight: 700; text-align: right;">${travelDate}</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Travel Date</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${travelDate}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Departure / Arrival</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${depTime} - ${arrTime}</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Boarding Terminal</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.pickupLocation || booking?.pickupLocation || 'Main Terminal'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Bus Type / Number</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.busType || "AC Volvo"} (${trip?.busNumber || "TLP-2026"})</td>
           </tr>
           <tr>
-            <td style="color: #94A3B8; padding: 8px 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Drop Point</td>
-            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${trip?.dropPoint || 'Destination Terminus'}</td>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Seat Number(s)</td>
+            <td style="color: #14B8A6; padding: 8px 0; font-weight: 800; text-align: right; font-family: monospace;">Seats ${booking.seatNumbers?.join(", ") || booking.assignedSeat || "TBD"}</td>
           </tr>
-          <tr style="border-top: 1px solid rgba(255,255,255,0.08);">
-            <td style="color: #94A3B8; padding: 12px 0 0 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Fare Paid</td>
-            <td style="color: #14B8B5; padding: 12px 0 0 0; font-size: 16px; font-weight: 900; text-align: right;">₹${(booking?.pricePaid || booking?.amountPaid || 3999).toLocaleString('en-IN')}</td>
+          <tr>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Booking ID</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">${booking.bookingId}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Payment ID</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">${booking.paymentId || "N/A"}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Amount Paid</td>
+            <td style="color: #10B981; padding: 8px 0; font-weight: 800; text-align: right;">₹${(booking.pricePaid || booking.amountPaid || 0).toLocaleString("en-IN")}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Booking Date</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${bookingDate}</td>
           </tr>
         </table>
       </div>
 
-      <div style="background-color: rgba(20,184,181,0.05); border: 1px dashed rgba(20,184,181,0.3); border-radius: 16px; padding: 16px; text-align: center; margin-bottom: 20px;">
-        <span style="color: #94A3B8; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px;">Fallback Verification Code</span>
-        <span style="color: #14B8B5; font-size: 20px; font-weight: 900; letter-spacing: 2px; font-family: monospace;">${booking?.verificationCode || 'TLP-XXXXXXX'}</span>
-        <p style="color: #94A3B8; margin: 6px 0 0 0; font-size: 10px; line-height: 1.4;">If your QR pass fails to scan, please present this manual check-in code directly to the driver.</p>
+      <!-- IMPORTANT NOTICE -->
+      <div style="background-color: #0F172A; border-left: 4px solid #14B8A6; border-radius: 8px; padding: 16px; margin-bottom: 24px; font-size: 12px; line-height: 1.5; color: #94A3B8;">
+        <h4 style="color: #FFFFFF; margin: 0 0 8px 0; font-size: 13px; font-weight: 700;">Important Notice</h4>
+        <ul style="margin: 0; padding-left: 18px; space-y: 6px;">
+          <li>Please arrive at the boarding terminal at least 30 minutes before departure.</li>
+          <li>Carry a valid Government-issued Photo ID card.</li>
+          <li>Present the attached PDF e-ticket or Booking ID to the driver during check-in.</li>
+          <li>Keep this email receipt safe for future references.</li>
+        </ul>
       </div>
 
-      <p style="font-size: 11px; text-align: center; color: #94A3B8; line-height: 1.6; margin-bottom: 20px;">
-        Your official boarding pass is attached to this email as a premium PDF.
-      </p>
+      <!-- ACTION BUTTONS -->
+      <div style="text-align: center; margin-bottom: 30px;">
+        <a href="${frontendUrl}/my-bookings/${booking.bookingId || booking._id}" style="background-color: #14B8A6; color: #FFFFFF; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: 700; display: inline-block; font-size: 13px; margin: 6px;">View Booking</a>
+        <a href="${frontendUrl}/my-trips" style="background-color: #1E293B; color: #E2E8F0; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: 700; display: inline-block; font-size: 13px; margin: 6px; border: 1px solid #334155;">Visit My Trips</a>
+      </div>
 
-      <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; text-align: center; font-size: 11px; color: #64748B;">
-        <p style="margin: 0 0 4px 0;">&copy; ${new Date().getFullYear()} Traveloop. All rights reserved.</p>
-        <p style="margin: 0;">Need immediate assistance? Contact <a href="mailto:support@traveloop.com" style="color: #14B8B5; text-decoration: none;">support@traveloop.com</a></p>
+      <!-- FOOTER -->
+      <div style="border-top: 1px solid #1E293B; padding-top: 20px; text-align: center; font-size: 11px; color: #64748B; line-height: 1.6;">
+        <p style="margin: 0 0 6px 0;">&copy; ${new Date().getFullYear()} TravelLoop. All rights reserved.</p>
+        <p style="margin: 0 0 12px 0;">
+          <a href="${frontendUrl}/privacy" style="color: #64748B; text-decoration: underline; margin: 0 6px;">Privacy Policy</a> | 
+          <a href="${frontendUrl}/terms" style="color: #64748B; text-decoration: underline; margin: 0 6px;">Terms & Conditions</a>
+        </p>
+        <p style="margin: 0;">Need immediate assistance? Contact <a href="mailto:support@traveloop.app" style="color: #14B8A6; text-decoration: none; font-weight: 600;">support@traveloop.app</a></p>
       </div>
     </div>
   `;
 
-  await sendMailWithRetry(transporter, {
-    from: `"Traveloop" <${senderEmail}>`,
-    to,
-    subject: `Traveloop Booking Confirmed • Ticket #${booking?.ticketId || 'TLP-2026-000123'}`,
-    html,
-    attachments: [
-      {
-        filename: `Traveloop-Ticket-${booking?.ticketId || 'Pass'}.pdf`,
-        content: pdfBuffer,
-        contentType: "application/pdf"
-      }
-    ]
-  });
+  try {
+    await sendMailWithRetry(transporter, {
+      from: `"TravelLoop" <${senderEmail}>`,
+      to,
+      subject: `TravelLoop Ticket Confirmed • Booking ${booking.bookingId}`,
+      html,
+      attachments: [
+        {
+          filename: `TravelLoop-Ticket-${booking.bookingId}.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf"
+        }
+      ]
+    });
+    return true;
+  } catch (err) {
+    console.error("[Email Service] Nodemailer send failed:", err.message);
+    return false;
+  }
 };
 
 export const sendEmailVerificationOtp = async (to, firstName, otpCode) => {

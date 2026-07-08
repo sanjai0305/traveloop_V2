@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import BottomSheet from "../components/mobile/BottomSheet";
+import { useToast } from "../components/mobile/MobileToast";
 import { useAuth } from "../context/AuthContext";
 import { subscribeUnreadCount } from "../services/chatService";
 
@@ -183,6 +184,7 @@ const getTripLifeCycleState = (booking) => {
 const BookedPackageCard = ({ booking, index }) => {
   if (!booking) return null;
   const navigate = useNavigate();
+  const toast = useToast();
   const trip     = booking.agentTrip || {};
   const dest     = (trip.destinations || [])[0] || "Trip";
   const emoji    = getEmoji(dest);
@@ -366,7 +368,15 @@ const BookedPackageCard = ({ booking, index }) => {
               <span className="font-semibold text-slate-500">Non-Refundable</span>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-3">
+            {booking.bookingId && (
+              <img 
+                src={getApiUrl(`bookings/${booking.bookingId}/qr`)} 
+                onError={(e) => { e.target.style.display = "none"; }} 
+                className="w-10 h-10 bg-white p-0.5 rounded-lg border border-slate-200" 
+                alt="QR Code" 
+              />
+            )}
             {isCancellable ? (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-150 text-emerald-800 border border-emerald-200 uppercase">
                 Refund Eligible
@@ -412,6 +422,116 @@ const BookedPackageCard = ({ booking, index }) => {
               Cancel Trip
             </button>
           )}
+        </div>
+
+        {/* E-Ticket and Invoice Download Actions */}
+        <div className="flex flex-wrap gap-2 w-full pt-1.5 border-t border-slate-100/65">
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const toastId = toast.loading("Generating PDF E-Ticket...");
+              try {
+                const token = localStorage.getItem("token");
+                const res = await fetch(getApiUrl(`bookings/${booking.bookingId}/pdf`), {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error("Failed to download PDF ticket.");
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `ticket-${booking.bookingId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                toast.success("E-Ticket downloaded!");
+              } catch (err) {
+                toast.error(err.message || "Download failed.");
+              } finally {
+                toast.dismiss(toastId);
+              }
+            }}
+            className="flex-1 py-2 px-2.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 font-extrabold text-[10px] uppercase border border-teal-100 transition-colors flex items-center justify-center gap-1"
+          >
+            Download Ticket
+          </button>
+
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const toastId = toast.loading("Generating Invoice PDF...");
+              try {
+                const token = localStorage.getItem("token");
+                const res = await fetch(getApiUrl(`bookings/${booking.bookingId}/pdf`), {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error("Failed to download invoice.");
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `invoice-${booking.bookingId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                toast.success("Invoice downloaded!");
+              } catch (err) {
+                toast.error("Invoice download failed.");
+              } finally {
+                toast.dismiss(toastId);
+              }
+            }}
+            className="flex-1 py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-750 font-extrabold text-[10px] uppercase border border-slate-200 transition-colors flex items-center justify-center gap-1"
+          >
+            Invoice
+          </button>
+
+          <button
+            type="button"
+            onClick={async (e) => {
+              e.stopPropagation();
+              const toastId = toast.loading("Resending ticket email...");
+              try {
+                const token = localStorage.getItem("token");
+                const res = await fetch(getApiUrl(`bookings/resend-ticket`), {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                  },
+                  body: JSON.stringify({ bookingId: booking.bookingId })
+                });
+                const data = await res.json();
+                if (data.success) {
+                  toast.success("Email sent successfully!");
+                } else {
+                  toast.error(data.message || "Resend failed.");
+                }
+              } catch (err) {
+                toast.error("Resend request failed.");
+              } finally {
+                toast.dismiss(toastId);
+              }
+            }}
+            className="flex-1 py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-extrabold text-[10px] uppercase border border-slate-200 transition-colors flex items-center justify-center gap-1"
+          >
+            Resend Email
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpen("itinerary");
+            }}
+            className="flex-1 py-2 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] uppercase transition-colors flex items-center justify-center gap-1"
+          >
+            View Booking
+          </button>
         </div>
       </div>
 

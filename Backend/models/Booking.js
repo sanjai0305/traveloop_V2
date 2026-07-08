@@ -62,7 +62,7 @@ const bookingSchema = new mongoose.Schema(
     },
     boardingStatus: {
       type: String,
-      enum: ["LOCKED", "OPEN", "BOARDED", "CLOSED", "NO_SHOW"],
+      enum: ["LOCKED", "OPEN", "BOARDED", "CLOSED", "NO_SHOW", "NOT BOARDED", "Not Boarded", "not boarded", "Boarded", "boarded"],
       default: "LOCKED",
       set: v => v ? v.toUpperCase() : v
     },
@@ -207,6 +207,26 @@ const bookingSchema = new mongoose.Schema(
       default: 0,
     },
     qrCode: {
+      type: String,
+      default: "",
+    },
+    pdfUrl: {
+      type: String,
+      default: "",
+    },
+    ticketUrl: {
+      type: String,
+      default: "",
+    },
+    emailSent: {
+      type: Boolean,
+      default: false,
+    },
+    emailSentAt: {
+      type: Date,
+      default: null,
+    },
+    paymentId: {
       type: String,
       default: "",
     },

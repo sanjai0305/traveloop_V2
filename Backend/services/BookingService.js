@@ -14,6 +14,16 @@ import User from "../models/User.js";
 import Referral from "../models/Referral.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
+const generateBookingId = () => {
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let randStr = "";
+  for (let i = 0; i < 6; i++) {
+    randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `TL-${dateStr}-${randStr}`;
+};
+
 
 // ─── HELPERS FOR USER TRIP CLONING ────────────────────────────────────────────
 
@@ -247,7 +257,7 @@ export class BookingService {
       verifiedAt: t.verifiedAt || null,
     }));
 
-    const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
+    const bookingId = generateBookingId();
 
     // Referral calculation check
     const referralEnabledSetting = await SystemSetting.findOne({ key: "referral_enabled" });

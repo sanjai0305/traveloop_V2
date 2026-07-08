@@ -1022,18 +1022,19 @@ export const Trips: React.FC = () => {
     }
 
     // ── 2. Validate Itinerary ──
-    const duration = formData.duration || "";
+    const duration = getValues("duration") || "";
     const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
-    const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
+    const totalDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
 
-    const itinerary = (formData.itinerary || []).map((day: any) => ({
+    const rawItinerary = getValues("itinerary") || [];
+    const itinerary = rawItinerary.map((day: any) => ({
       ...day,
       title: day.title || (day.startLocation && day.destination ? `Day ${day.day}: ${day.startLocation} to ${day.destination}` : "")
     }));
 
     const itineraryComplete =
       Array.isArray(itinerary) &&
-      itinerary.length === expectedDays &&
+      itinerary.length === totalDays &&
       itinerary.every(day =>
         day &&
         day.title &&
@@ -1059,7 +1060,7 @@ export const Trips: React.FC = () => {
     }
 
     // ── 4. Create Trip ──
-    const payload = getPayload(formData, false);
+    const payload = getPayload(getValues(), true);
     if (editingTripId) {
       updateMutation.mutate({ id: editingTripId, data: payload }, {
         onSuccess: (resData: any) => {
@@ -1126,7 +1127,7 @@ export const Trips: React.FC = () => {
     } else if (activeTab === 4) {
       const duration = getValues("duration") || "";
       const durationDaysMatch = duration.match(/^(\d+)\s+Day/);
-      const expectedDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
+      const totalDays = durationDaysMatch ? parseInt(durationDaysMatch[1], 10) : 0;
       
       const rawItinerary = getValues("itinerary") || [];
       const itinerary = rawItinerary.map((day: any) => ({
@@ -1136,7 +1137,7 @@ export const Trips: React.FC = () => {
 
       const itineraryComplete =
         Array.isArray(itinerary) &&
-        itinerary.length === expectedDays &&
+        itinerary.length === totalDays &&
         itinerary.every(day =>
           day &&
           day.title &&

@@ -182,13 +182,14 @@ router.get("/dashboard", protectDriver, async (req, res) => {
     const bookings = bookingsList || [];
 
     const total    = bookings.reduce((s, b) => s + (b.seats || 1), 0);
-    const boarded  = bookings.filter(b => b.boardingStatus === "boarded").length;
-    const noShow   = bookings.filter(b => b.boardingStatus === "no_show").length;
-    const pending  = bookings.filter(b => b.boardingStatus === "not_boarded" || b.boardingStatus === "Pending").length;
+    const getStatusStr = (b) => (b.boardingStatus || "").toUpperCase();
+    const boarded  = bookings.filter(b => getStatusStr(b) === "BOARDED").length;
+    const noShow   = bookings.filter(b => getStatusStr(b) === "NO_SHOW").length;
+    const pending  = bookings.filter(b => ["LOCKED", "OPEN", "PENDING", "NOT BOARDED", "NOT_BOARDED"].includes(getStatusStr(b))).length;
 
     // Boarding timeline
     const boardingLog = bookings
-      .filter(b => b.boardingStatus === "boarded")
+      .filter(b => getStatusStr(b) === "BOARDED")
       .map(b => ({
         bookingId:    b.bookingId,
         travelerName: "",

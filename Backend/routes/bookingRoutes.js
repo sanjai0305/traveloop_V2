@@ -10,8 +10,17 @@ import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
 import Passenger from "../models/Passenger.js";
-import SeatBooking from "../models/SeatBooking.js";
 import redisClient from "../config/redis.js";
+
+const generateBookingId = () => {
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let randStr = "";
+  for (let i = 0; i < 6; i++) {
+    randStr += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `TL-${dateStr}-${randStr}`;
+};
 
 
 const router = express.Router();
@@ -510,6 +519,10 @@ router.get("/:bookingId/pdf", protect, async (req, res) => {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
+    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin" && req.user.role !== "driver") {
+      return res.status(403).json({ success: false, message: "Unauthorized access to this ticket" });
+    }
+
     const trip = booking.tripId;
     const primaryTraveler = booking.travellers?.[0] || {};
     const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
@@ -523,6 +536,155 @@ router.get("/:bookingId/pdf", protect, async (req, res) => {
   } catch (error) {
     console.error("[Ticket PDF Download] Error:", error);
     res.status(500).json({ success: false, message: "Server Error generating PDF" });
+  }
+});
+
+// @route   POST /api/bookings/send-ticket
+// @desc    Generate and send premium e-ticket to passenger
+// @access  Private
+router.post("/send-ticket", protect, async (req, res) => {
+  const { bookingId } = req.body;
+  if (!bookingId) {
+    return res.status(400).json({ success: false, message: "bookingId is required" });
+  }
+
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    }).populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
+    }
+
+    const trip = booking.tripId;
+    const primaryTraveler = booking.travellers?.[0] || {};
+    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+    const passengerEmail = primaryTraveler.email || booking.contactEmail || req.user.email;
+
+    if (!passengerEmail) {
+      return res.status(400).json({ success: false, message: "No email address found for the booking" });
+    }
+
+    const { generateTicketPdf } = await import("../services/pdfService.js");
+    const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
+
+    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+    const sent = await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
+
+    if (sent) {
+      booking.emailSent = true;
+      booking.emailSentAt = new Date();
+      booking.pdfUrl = `/api/bookings/${booking.bookingId}/pdf`;
+      booking.ticketUrl = `/api/bookings/${booking.bookingId}/pdf`;
+      await booking.save();
+      return res.json({ success: true, message: "Ticket email sent successfully." });
+    } else {
+      booking.emailSent = false;
+      await booking.save();
+      return res.status(500).json({ success: false, message: "Failed to dispatch email. Ticket is still confirmed." });
+    }
+  } catch (error) {
+    console.error("[Send Ticket API] Error:", error);
+    res.status(500).json({ success: false, message: "Server error sending ticket." });
+  }
+});
+
+// @route   POST /api/bookings/resend-ticket
+// @desc    Resend ticket email confirmation
+// @access  Private
+router.post("/resend-ticket", protect, async (req, res) => {
+  const { bookingId } = req.body;
+  if (!bookingId) {
+    return res.status(400).json({ success: false, message: "bookingId is required" });
+  }
+
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    }).populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
+    }
+
+    const trip = booking.tripId;
+    const primaryTraveler = booking.travellers?.[0] || {};
+    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+    const passengerEmail = primaryTraveler.email || booking.contactEmail || req.user.email;
+
+    if (!passengerEmail) {
+      return res.status(400).json({ success: false, message: "No email address found for the booking" });
+    }
+
+    const { generateTicketPdf } = await import("../services/pdfService.js");
+    const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
+
+    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+    const sent = await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
+
+    if (sent) {
+      booking.emailSent = true;
+      booking.emailSentAt = new Date();
+      booking.pdfUrl = `/api/bookings/${booking.bookingId}/pdf`;
+      booking.ticketUrl = `/api/bookings/${booking.bookingId}/pdf`;
+      await booking.save();
+      return res.json({ success: true, message: "Ticket email resent successfully." });
+    } else {
+      booking.emailSent = false;
+      await booking.save();
+      return res.status(500).json({ success: false, message: "Failed to dispatch email. Ticket is still confirmed." });
+    }
+  } catch (error) {
+    console.error("[Resend Ticket API] Error:", error);
+    res.status(500).json({ success: false, message: "Server error resending ticket." });
+  }
+});
+
+// @route   GET /api/bookings/:bookingId/qr
+// @desc    Generate and stream QR code image
+// @access  Private
+router.get("/:bookingId/qr", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin" && req.user.role !== "driver") {
+      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
+    }
+
+    const QRCode = (await import("qrcode")).default;
+    const qrData = JSON.stringify({ bookingId: booking.bookingId || String(booking._id) });
+    const qrBuffer = await QRCode.toBuffer(qrData, { margin: 1 });
+
+    res.setHeader("Content-Type", "image/png");
+    res.send(qrBuffer);
+  } catch (error) {
+    console.error("[QR Code Generation] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error generating QR code" });
   }
 });
 
@@ -964,7 +1126,7 @@ router.post("/create-order", protect, async (req, res) => {
     }
 
     // Save Booking Draft
-    const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
+    const bookingId = generateBookingId();
     const User = mongoose.model("User");
     const userObj = await User.findById(userId);
 
