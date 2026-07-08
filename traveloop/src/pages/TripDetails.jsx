@@ -581,52 +581,15 @@ export const TripDetails = () => {
           body: JSON.stringify({
             tripId: trip._id,
             seatNumber: passenger.seatNumber,
-            bookingId: confirmedBooking?.bookingId,
+            bookingId: confirmedBooking?.bookingId || bookingId,
             passengerData: passenger,
           }),
         });
       } catch {}
     }
 
-    // Fetch ticket data
-    try {
-      const res = await fetch(
-        getApiUrl(`bookings/ticket/${confirmedBooking?.bookingId || bookingId}`),
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await res.json();
-      if (data.success) {
-        setTicketData(data);
-      }
-    } catch {}
-
-    // Synthesize ticket data from local state if API unavailable
-    if (!ticketData) {
-      setTicketData({
-        booking: confirmedBooking,
-        passengers: passengers.map((p, i) => ({
-          ...p,
-          qrPayload: {
-            bookingId: confirmedBooking?.bookingId,
-            tripId: trip._id,
-            passenger: p.name,
-            seat: p.seatNumber,
-            gender: p.gender,
-            age: p.age,
-          },
-          qrString: JSON.stringify({
-            bookingId: confirmedBooking?.bookingId,
-            passenger: p.name,
-            seat: p.seatNumber,
-            gender: p.gender,
-            age: p.age,
-          }),
-        })),
-      });
-    }
-
     toast.success("Booking confirmed! Your QR ticket is ready.");
-    setBookingStage("ticket");
+    navigate(`/booking-success/${confirmedBooking?.bookingId || bookingId}`);
   };
 
   const handleCancelBooking = async () => {

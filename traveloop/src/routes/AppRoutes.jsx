@@ -306,6 +306,14 @@ const AppRoutes = () => {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/booking-success/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookingSuccess />
+              </ProtectedRoute>
+            }
+          />
 
           {/* 454 */}
           <Route
