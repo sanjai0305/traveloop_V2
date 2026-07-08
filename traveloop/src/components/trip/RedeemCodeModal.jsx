@@ -97,10 +97,10 @@ const RedeemCodeModal = ({
 
   const handleProceed = () => {
     if (errorMsg) {
-      toast.error("Please remove or fix the invalid coupon code before proceeding.");
-      return;
+      onConfirm("", 0, originalTotal);
+    } else {
+      onConfirm(appliedCoupon || "", discountAmount, finalTotal);
     }
-    onConfirm(appliedCoupon || "", discountAmount, finalTotal);
   };
 
   return (
@@ -194,12 +194,16 @@ const RedeemCodeModal = ({
             <input
               type="text"
               value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value)}
+              onChange={(e) => {
+                setCouponCode(e.target.value);
+                setErrorMsg("");
+                setSuccessMsg("");
+              }}
               disabled={appliedCoupon || isApplying}
               placeholder="Enter coupon code"
               className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-teal-500 transition-colors uppercase font-mono tracking-wider disabled:opacity-50"
             />
-            {appliedCoupon ? (
+            {appliedCoupon || errorMsg ? (
               <button
                 type="button"
                 onClick={handleClear}
@@ -251,12 +255,7 @@ const RedeemCodeModal = ({
         <button
           type="button"
           onClick={handleProceed}
-          disabled={!!errorMsg}
-          className={`w-full py-3.5 rounded-2xl text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 shadow-lg ${
-            errorMsg
-              ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-750"
-              : "bg-teal-500 hover:bg-teal-600 text-slate-950 shadow-teal-500/10 hover:shadow-teal-500/20 active:scale-[0.98]"
-          }`}
+          className="w-full py-3.5 rounded-2xl text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 shadow-lg bg-teal-500 hover:bg-teal-600 text-slate-950 shadow-teal-500/10 hover:shadow-teal-500/20 active:scale-[0.98]"
         >
           Proceed to Payment (₹{finalTotal})
         </button>
