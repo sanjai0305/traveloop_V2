@@ -15,6 +15,9 @@ export default {
       colors: {
         background: "#0B1325",
         surface: "#111827",
+        dark: {
+          900: "#090d16",
+        },
       },
     },
   },

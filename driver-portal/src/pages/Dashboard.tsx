@@ -47,9 +47,12 @@ export default function Dashboard() {
   const handleOpenBoarding = async (tripId: string) => {
     try {
       setLoading(true)
-      await openBoarding(tripId)
+      console.log(`[Driver: ${driver?._id || "unknown"}] Opening Boarding for Trip ID: ${tripId}`);
+      const res = await openBoarding(tripId)
+      console.log(`[Driver: ${driver?._id || "unknown"}] Open Boarding Response:`, res);
       await fetchData()
     } catch (err: any) {
+      console.error(`[Driver: ${driver?._id || "unknown"}] Open Boarding Failed:`, err);
       alert(err.response?.data?.message || "Failed to open boarding")
     } finally {
       setLoading(false)
@@ -60,9 +63,12 @@ export default function Dashboard() {
     if (!confirm('Are you sure you want to close boarding? Travelers will no longer be able to generate QR passes.')) return
     try {
       setLoading(true)
-      await closeBoarding(tripId)
+      console.log(`[Driver: ${driver?._id || "unknown"}] Closing Boarding for Trip ID: ${tripId}`);
+      const res = await closeBoarding(tripId)
+      console.log(`[Driver: ${driver?._id || "unknown"}] Close Boarding Response:`, res);
       await fetchData()
     } catch (err: any) {
+      console.error(`[Driver: ${driver?._id || "unknown"}] Close Boarding Failed:`, err);
       alert(err.response?.data?.message || 'Failed to close boarding')
     } finally {
       setLoading(false)

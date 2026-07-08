@@ -388,14 +388,18 @@ router.post("/trips/:tripId/unlock-boarding", protectDriver, async (req, res) =>
     const now = new Date();
     const closesAt = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours
 
+    console.log(`[Driver: ${driverIdStr}] Opening Boarding for Trip ID: ${trip._id}`);
+
     // Update Trip boarding details
     trip.boardingStatus = "OPEN";
     trip.boardingOpenedAt = now;
     trip.boardingClosesAt = closesAt;
     await trip.save();
 
+    console.log(`[Backend: Updating Booking] setting status to OPEN, qrUnlocked to true for Trip ID: ${trip._id}`);
+    
     // Update all bookings for this trip
-    await Booking.updateMany(
+    const updateResult = await Booking.updateMany(
       { tripId },
       {
         qrUnlocked: true,
@@ -406,18 +410,25 @@ router.post("/trips/:tripId/unlock-boarding", protectDriver, async (req, res) =>
       }
     );
 
+    console.log(`[Backend] Bookings Updated: Modified Count = ${updateResult.modifiedCount}, Trip ID = ${trip._id}`);
+
     // Update driver active trip
     await Driver.findByIdAndUpdate(req.driver._id, { activeBoardingTrip: trip._id });
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("boarding_qr_unlocked", { tripId });
-      io.to(tripId.toString()).emit("boarding-opened", {
-        tripId,
+      const payload = {
+        tripId: trip._id.toString(),
         boardingStatus: "OPEN",
         openedAt: now,
         closedAt: closesAt,
-      });
+        qrUnlocked: true
+      };
+      console.log(`[Backend] Socket Emitted: boarding_qr_unlocked for trip ${trip._id}`);
+      io.emit("boarding_qr_unlocked", { tripId: trip._id });
+      
+      console.log(`[Backend] Socket Event Sent: boarding-opened to Room: ${trip._id}, Payload:`, payload);
+      io.to(trip._id.toString()).emit("boarding-opened", payload);
     }
 
     res.json({
@@ -456,13 +467,17 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
 
     const now = new Date();
 
+    console.log(`[Driver: ${driverIdStr}] Closing Boarding for Trip ID: ${trip._id}`);
+
     trip.boardingStatus = "CLOSED";
     trip.boardingClosedAt = now;
     trip.boardingClosesAt = now;
     await trip.save();
 
+    console.log(`[Backend: Updating Booking] setting status to CLOSED, qrUnlocked to false for Trip ID: ${trip._id}`);
+
     // Lock passenger QR codes and mark remaining as no_show
-    await Booking.updateMany(
+    const lockResult = await Booking.updateMany(
       { tripId },
       {
         qrUnlocked: false,
@@ -472,7 +487,7 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
     );
 
     // Auto mark remaining Pending/not_boarded as No Show in database for stats
-    await Booking.updateMany(
+    const noShowResult = await Booking.updateMany(
       {
         tripId,
         boardingStatus: { $in: ["LOCKED", "OPEN", "Pending", "not_boarded"] }
@@ -480,18 +495,25 @@ router.post("/trips/:tripId/close-boarding", protectDriver, async (req, res) => 
       { boardingStatus: "no_show" }
     );
 
+    console.log(`[Backend] Bookings Updated (Close Boarding): Locked Count = ${lockResult.modifiedCount}, No-Show Count = ${noShowResult.modifiedCount}, Trip ID = ${trip._id}`);
+
     // Clear active trip for driver
     await Driver.findByIdAndUpdate(req.driver._id, { activeBoardingTrip: null });
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("boarding_closed", { tripId });
-      io.to(tripId.toString()).emit("boarding-closed", {
-        tripId,
+      const payload = {
+        tripId: trip._id.toString(),
         boardingStatus: "CLOSED",
         closedAt: now,
-      });
-      io.emit("boarding_completed", { tripId });
+      };
+      console.log(`[Backend] Socket Emitted: boarding_closed for trip ${trip._id}`);
+      io.emit("boarding_closed", { tripId: trip._id });
+      
+      console.log(`[Backend] Socket Event Sent: boarding-closed to Room: ${trip._id}, Payload:`, payload);
+      io.to(trip._id.toString()).emit("boarding-closed", payload);
+      
+      io.emit("boarding_completed", { tripId: trip._id });
     }
 
     res.json({
@@ -735,13 +757,22 @@ router.post("/board/:bookingId", protectDriver, async (req, res) => {
     }
     await booking.save();
 
+    console.log(`[Backend: Updating Booking] setting status to BOARDED for Booking ID: ${booking._id}`);
+
     const io = req.app.get("io");
     if (io) {
-      io.emit("boarding_scanned", { bookingId, tripId: booking.tripId });
-      io.to(booking.tripId.toString()).emit("passenger-boarded", {
+      const scanPayload = { bookingId, tripId: booking.tripId };
+      const boardedPayload = {
         bookingId: booking.bookingId,
+        bookingDbId: booking._id.toString(),
         boardingStatus: "BOARDED",
-      });
+      };
+      
+      console.log(`[Backend] Socket Emitted: boarding_scanned for booking ${bookingId}`);
+      io.emit("boarding_scanned", scanPayload);
+      
+      console.log(`[Backend] Socket Event Sent: passenger-boarded to Room: ${booking.tripId}, Payload:`, boardedPayload);
+      io.to(booking.tripId.toString()).emit("passenger-boarded", boardedPayload);
     }
 
     res.json({

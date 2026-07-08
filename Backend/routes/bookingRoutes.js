@@ -275,15 +275,22 @@ router.get("/my-bookings", protect, async (req, res) => {
 
     const bookings = (bookingsList || []).map(b => {
       const obj = b.toObject ? b.toObject() : b;
-      const tripDoc = obj.tripId;
+      const tripDoc = b.tripId; // populated AgentTrip doc
       return {
         ...obj,
         _id: b._id,
-        agentTrip: {
-          _id: tripDoc?._id || b.tripId,
-          title: tripDoc?.title || "Yercaud Trip",
-          boardingStatus: tripDoc?.boardingStatus || "CLOSED",
-        },
+        agentTrip: tripDoc && typeof tripDoc.toObject === "function"
+          ? {
+              ...tripDoc.toObject(),
+              _id: tripDoc._id,
+              boardingStatus: tripDoc.boardingStatus || "CLOSED",
+            }
+          : tripDoc
+          ? {
+              ...tripDoc,
+              boardingStatus: tripDoc.boardingStatus || "CLOSED",
+            }
+          : null,
       };
     });
 

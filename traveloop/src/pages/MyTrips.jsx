@@ -845,45 +845,70 @@ const MyTrips = () => {
   useEffect(() => {
     if (!bookedPackages || bookedPackages.length === 0) return;
 
+    // Log connection
+    const handleConnect = () => {
+      console.log(`[Passenger] Socket Connected: ${socket.id}`);
+    };
+    if (socket.connected) {
+      handleConnect();
+    }
+    socket.on("connect", handleConnect);
+
     // Join rooms for all trips
     bookedPackages.forEach(booking => {
       const tripId = booking.tripId || booking.agentTrip?._id;
       if (tripId) {
-        console.log(`[Socket.io] Joining room for booking ${booking.bookingId}: trip_${tripId}`);
-        socket.emit("join_room", tripId.toString());
+        const roomName = tripId.toString();
+        console.log(`[Passenger] Joined Room: ${roomName} for booking ${booking.bookingId}`);
+        socket.emit("join_room", roomName);
       }
     });
 
     const handleBoardingOpened = (data) => {
-      console.log("[Socket.io] Boarding opened event received", data);
-      setBookedPackages(prev => prev.map(b => {
-        const tripId = b.tripId || b.agentTrip?._id;
-        if (tripId && tripId.toString() === data.tripId?.toString()) {
-          return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
-        }
-        return b;
-      }));
+      console.log("[Passenger] Event Received: boarding-opened, Payload:", data);
+      setBookedPackages(prev => {
+        const next = prev.map(b => {
+          const tripId = b.tripId || b.agentTrip?._id;
+          if (tripId && tripId.toString() === data.tripId?.toString()) {
+            console.log(`[Passenger] React State Updated: QR Unlocked for booking ${b.bookingId}`);
+            return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
+          }
+          return b;
+        });
+        return next;
+      });
     };
 
     const handleBoardingClosed = (data) => {
-      console.log("[Socket.io] Boarding closed event received", data);
-      setBookedPackages(prev => prev.map(b => {
-        const tripId = b.tripId || b.agentTrip?._id;
-        if (tripId && tripId.toString() === data.tripId?.toString()) {
-          return { ...b, qrUnlocked: false, boardingStatus: "CLOSED" };
-        }
-        return b;
-      }));
+      console.log("[Passenger] Event Received: boarding-closed, Payload:", data);
+      setBookedPackages(prev => {
+        const next = prev.map(b => {
+          const tripId = b.tripId || b.agentTrip?._id;
+          if (tripId && tripId.toString() === data.tripId?.toString()) {
+            console.log(`[Passenger] React State Updated: QR Locked/Closed for booking ${b.bookingId}`);
+            return { ...b, qrUnlocked: false, boardingStatus: "CLOSED" };
+          }
+          return b;
+        });
+        return next;
+      });
     };
 
     const handlePassengerBoarded = (data) => {
-      console.log("[Socket.io] Passenger boarded event received", data);
-      setBookedPackages(prev => prev.map(b => {
-        if (b._id?.toString() === data.bookingId?.toString() || b.bookingId === data.bookingId) {
-          return { ...b, boardingStatus: "BOARDED" };
-        }
-        return b;
-      }));
+      console.log("[Passenger] Event Received: passenger-boarded/boarded, Payload:", data);
+      setBookedPackages(prev => {
+        const next = prev.map(b => {
+          const isMatch = b._id?.toString() === data.bookingDbId?.toString() || 
+                          b._id?.toString() === data.bookingId?.toString() || 
+                          b.bookingId === data.bookingId;
+          if (isMatch) {
+            console.log(`[Passenger] React State Updated: Status set to BOARDED for booking ${b.bookingId}`);
+            return { ...b, boardingStatus: "BOARDED" };
+          }
+          return b;
+        });
+        return next;
+      });
     };
 
     socket.on("boarding-opened", handleBoardingOpened);
@@ -893,19 +918,25 @@ const MyTrips = () => {
     socket.on("boarding_scanned", handlePassengerBoarded);
     
     socket.on("boarding_qr_unlocked", (data) => {
-      console.log("[Socket.io] QR Unlocked event received", data);
-      setBookedPackages(prev => prev.map(b => {
-        const tripId = b.tripId || b.agentTrip?._id;
-        if (tripId && tripId.toString() === data.tripId?.toString()) {
-          return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
-        }
-        return b;
-      }));
+      console.log("[Passenger] Event Received: boarding_qr_unlocked, Payload:", data);
+      setBookedPackages(prev => {
+        const next = prev.map(b => {
+          const tripId = b.tripId || b.agentTrip?._id;
+          if (tripId && tripId.toString() === data.tripId?.toString()) {
+            console.log(`[Passenger] React State Updated: QR Unlocked for booking ${b.bookingId}`);
+            return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
+          }
+          return b;
+        });
+        return next;
+      });
     });
+    
     socket.on("boarding_closed", handleBoardingClosed);
     socket.on("boarding_completed", handleBoardingClosed);
 
     return () => {
+      socket.off("connect", handleConnect);
       socket.off("boarding-opened", handleBoardingOpened);
       socket.off("boarding-closed", handleBoardingClosed);
       socket.off("passenger-boarded", handlePassengerBoarded);

@@ -758,34 +758,66 @@ const BookedPackageDetail = () => {
 
   useEffect(() => {
     if (!trip?._id) return;
+
+    // Log connection
+    const handleConnect = () => {
+      console.log(`[Passenger] Socket Connected: ${socket.id}`);
+    };
+    if (socket.connected) {
+      handleConnect();
+    }
+    socket.on("connect", handleConnect);
+
+    // Join room for the trip
+    const tripIdStr = trip._id.toString();
+    console.log(`[Passenger] Joined Room: ${tripIdStr} for booking ${bookingId}`);
+    socket.emit("join_room", tripIdStr);
+    
+    // Also join the trip updates room
+    console.log(`[Passenger] Joined Room: trip_${tripIdStr} for booking ${bookingId}`);
+    socket.emit("join_room", `trip_${tripIdStr}`);
+
     const handleBoardingOpened = (data) => {
+      console.log("[Passenger] Event Received: boarding-opened, Payload:", data);
       if (data.tripId === trip._id) {
+        console.log(`[Passenger] React State Updated: Fetching booking details to unlock QR`);
         fetchBooking();
       }
     };
     const handleBoardingClosed = (data) => {
+      console.log("[Passenger] Event Received: boarding-closed, Payload:", data);
       if (data.tripId === trip._id) {
+        console.log(`[Passenger] React State Updated: Fetching booking details to lock QR`);
         fetchBooking();
       }
     };
     const handlePassengerBoarded = (data) => {
-      if (data.bookingId === bookingId || data.booking?._id === bookingId) {
+      console.log("[Passenger] Event Received: passenger-boarded/boarded, Payload:", data);
+      const isMatch = data.bookingDbId === bookingId || data.bookingId === bookingId || data.booking?._id === bookingId;
+      if (isMatch) {
+        console.log(`[Passenger] React State Updated: Fetching booking details to mark BOARDED`);
         fetchBooking();
       }
     };
     const handleBookingUpdated = (data) => {
+      console.log("[Passenger] Event Received: booking_updated, Payload:", data);
       if (data.bookingId === bookingId || data.booking?._id === bookingId) {
+        console.log(`[Passenger] React State Updated: Fetching booking details`);
         fetchBooking();
       }
     };
     const handleBoardingQrUnlocked = (data) => {
+      console.log("[Passenger] Event Received: boarding_qr_unlocked, Payload:", data);
       if (data.tripId === trip._id) {
+        console.log(`[Passenger] React State Updated: qrUnlocked set to true`);
         setBooking(prev => ({ ...prev, qrUnlocked: true }));
         fetchBooking();
       }
     };
     const handleBoardingClosedRealtime = (data) => {
+      console.log("[Passenger] Event Received: boarding_closed/completed, Payload:", data);
       if (data.tripId === trip._id) {
+        console.log(`[Passenger] React State Updated: qrUnlocked set to false`);
         setBooking(prev => ({ ...prev, qrUnlocked: false }));
         fetchBooking();
       }
@@ -793,16 +825,21 @@ const BookedPackageDetail = () => {
 
     socket.on("boarding-opened", handleBoardingOpened);
     socket.on("boarding-closed", handleBoardingClosed);
+    socket.on("passenger-boarded", handlePassengerBoarded);
     socket.on("passenger_boarded", handlePassengerBoarded);
+    socket.on("boarding_scanned", handlePassengerBoarded);
     socket.on("booking_updated", handleBookingUpdated);
     socket.on("boarding_qr_unlocked", handleBoardingQrUnlocked);
     socket.on("boarding_closed", handleBoardingClosedRealtime);
     socket.on("boarding_completed", handleBoardingClosedRealtime);
 
     return () => {
+      socket.off("connect", handleConnect);
       socket.off("boarding-opened", handleBoardingOpened);
       socket.off("boarding-closed", handleBoardingClosed);
+      socket.off("passenger-boarded", handlePassengerBoarded);
       socket.off("passenger_boarded", handlePassengerBoarded);
+      socket.off("boarding_scanned", handlePassengerBoarded);
       socket.off("booking_updated", handleBookingUpdated);
       socket.off("boarding_qr_unlocked", handleBoardingQrUnlocked);
       socket.off("boarding_closed", handleBoardingClosedRealtime);
