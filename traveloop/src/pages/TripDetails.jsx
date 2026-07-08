@@ -422,6 +422,8 @@ export const TripDetails = () => {
       return;
     }
 
+    console.log("[STEP 2] Validation Passed: Seat and passenger validation succeeded.");
+
     // Calculate amounts
     const basePrice = trip.offerPrice || trip.pricePerPerson || 0;
     const tax = Math.round(basePrice * passengerList.length * 0.05);
@@ -489,6 +491,7 @@ export const TripDetails = () => {
         contactEmail: accountEmail,
       });
 
+      console.log("[STEP 4] Calling /api/bookings/create-order");
       const bookingRes = await fetch(getApiUrl("bookings/create-order"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -509,6 +512,7 @@ export const TripDetails = () => {
       });
 
       const bookingData = await bookingRes.json();
+      console.log("[STEP 5] API Response received:", bookingData);
 
       if (!bookingRes.ok || !bookingData.success) {
         console.error("[BookingFlow] Booking creation failed:", bookingData);
@@ -523,6 +527,7 @@ export const TripDetails = () => {
         throw new Error("Invalid booking reference returned from server.");
       }
 
+      console.log("[STEP 3] Booking Draft Created - ID:", bookingRef);
       console.log("[BookingFlow] Booking draft created:", { bookingRef, bookingMongoId });
       console.log("Booking Draft Created");
 
@@ -623,10 +628,13 @@ export const TripDetails = () => {
   };
 
   const handleProceedToPayment = () => {
+    console.log("[STEP 1] Button Click (TripDetails bottom-bar Proceed to Payment)");
     if (passengerSaved && confirmedBooking) {
+      console.log("[STEP 2] Validation Passed - proceeding with existing confirmed booking.");
       setBookingStage("upi_payment");
       setShowBookingModal(true);
     } else {
+      console.log("[STEP 2] No confirmed booking found - opening seat selection sheet.");
       setBookingStage("seat_select");
       setShowBookingModal(true);
     }

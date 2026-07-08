@@ -96,6 +96,7 @@ const RedeemCodeModal = ({
   };
 
   const handleProceed = () => {
+    console.log("[STEP 1] Button Click (Proceed to Payment)");
     if (errorMsg) {
       onConfirm("", 0, originalTotal);
     } else {

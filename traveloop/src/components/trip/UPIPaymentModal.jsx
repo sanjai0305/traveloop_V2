@@ -306,6 +306,7 @@ const UPIPaymentModal = ({
         toast.error(`Payment failed: ${desc}`);
         console.log("Payment Failed");
       });
+      console.log("[STEP 6] Opening Razorpay");
       console.log("Launching Razorpay");
       console.log("Payment Started");
       rzp.open();
