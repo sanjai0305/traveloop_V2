@@ -101,14 +101,30 @@ export const PaymentModal = ({
       const order_id = orderData.orderId;
       console.log("order_id", order_id);
 
+      const checkoutAmountPaise = orderData.amountPaise || (orderData.amount * 100);
+
+      // Before opening Razorpay, log:
+      console.log("[PaymentModal Razorpay Checkout Init Config]:", {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+        order_id: order_id,
+        amount: checkoutAmountPaise,
+        currency: orderData.currency || "INR"
+      });
+
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
-        amount: orderData.amount,
-        currency: orderData.currency,
+        amount: checkoutAmountPaise,
+        currency: orderData.currency || "INR",
         name: "TravelLoop Checkout",
         description: "Group Journey Booking Fee",
         order_id: order_id,
         handler: async (response) => {
+          // After payment success, log:
+          console.log("[PaymentModal Razorpay Success Response]:", {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature
+          });
           setStatus(PaymentStatus.VERIFICATION_PENDING);
           try {
             const verifyRes = await fetch(`${host}/api/payment/verify`, {

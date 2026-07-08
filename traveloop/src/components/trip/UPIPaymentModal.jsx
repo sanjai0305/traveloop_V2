@@ -201,7 +201,13 @@ const UPIPaymentModal = ({
           return;
         }
 
-        order = { id: data.orderId, amount: data.amount, currency: data.currency || "INR", razorpayKey: data.razorpayKey };
+        order = { 
+          id: data.orderId, 
+          amountPaise: data.amountPaise,   // preferred: already in paise from backend
+          amount: data.amount,             // rupees (for display only)
+          currency: data.currency || "INR", 
+          razorpayKey: data.razorpayKey 
+        };
       } catch (err) {
         console.error("[Payment] create-order network error:", err);
         setError("Network error while creating order. Please check your connection.");
@@ -219,12 +225,23 @@ const UPIPaymentModal = ({
       bookingId: resolvedBookingId,
     });
 
+    // ── DIAGNOSTIC LOG: Print exactly what will be sent to Razorpay checkout ──
+    // amountPaise MUST match what the backend sent to Razorpay orders.create()
+    // If they differ, Razorpay returns 400 Bad Request / "Payment Not Found".
+    const checkoutAmountPaise = order.amountPaise ?? Math.round((order.amount || amount) * 100);
+    console.log("[Razorpay Checkout Init]", {
+      key: order.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "(missing)",
+      order_id: order.id,
+      amountPaise: checkoutAmountPaise,
+      currency: order.currency || "INR",
+    });
+
     // ISSUE 1 & 5: Open native Razorpay popup — NO fake wallet list
     const userData = JSON.parse(localStorage.getItem("user") || "{}");
     const primaryPassenger = passengers?.[0] || {};
     const rzpOptions = {
       key: order.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "",
-      amount: Math.round((order.amount || amount) * 100), // paise
+      amount: checkoutAmountPaise,   // paise — must match the Razorpay order exactly
       currency: order.currency || "INR",
       name: "Travelloop",
       description: `${tripTitle} | ${passengers?.map(p => p.name).join(", ")} | Seats: ${seatNumbers}`.slice(0, 255),
@@ -252,6 +269,12 @@ const UPIPaymentModal = ({
         animation: true,
       },
       handler: async (response) => {
+        // ── LOG all three Razorpay fields immediately after payment success ──
+        console.log("[Razorpay] Payment success callback:", {
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_signature: response.razorpay_signature,
+        });
         const confirmPayload = {
           razorpay_order_id: response.razorpay_order_id,
           razorpay_payment_id: response.razorpay_payment_id,

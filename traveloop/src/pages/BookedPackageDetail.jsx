@@ -504,14 +504,30 @@ const BookedPackageDetail = () => {
       }
 
       // 2. Open Razorpay Checkout Dialog
+      const checkoutAmountPaise = orderData.amountPaise || (orderData.amount * 100);
+
+      // Before opening Razorpay, log:
+      console.log("[BookedPackageDetail Razorpay Checkout Init Config]:", {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+        order_id: orderData.orderId,
+        amount: checkoutAmountPaise,
+        currency: orderData.currency || "INR"
+      });
+
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
-        amount: orderData.amount * 100, // paise
+        amount: checkoutAmountPaise, // paise
         currency: orderData.currency || "INR",
         name: "Traveloop - Add Passenger",
         description: `Add passenger to ${trip.title}`,
         order_id: orderData.orderId,
         handler: async (response) => {
+          // After payment success, log:
+          console.log("[BookedPackageDetail Razorpay Success Response]:", {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature
+          });
           try {
             // Verify and update the existing booking document
             const verifyRes = await fetch(getApiUrl("payment/verify"), {

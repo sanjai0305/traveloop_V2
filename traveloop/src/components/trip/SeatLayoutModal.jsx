@@ -432,9 +432,6 @@ const SeatLayoutModal = ({
         delete next[seatNum];
         return next;
       });
-      if (drawerSeat === seatNum) {
-        setDrawerSeat(null);
-      }
       return;
     }
 
@@ -443,128 +440,61 @@ const SeatLayoutModal = ({
       return;
     }
 
-    setSelected((prev) => [...prev, seatNum]);
-    openPassengerDrawer(seatNum);
-  };
-
-  const openPassengerDrawer = async (seatNum) => {
-    const existing = passengerDetails[seatNum] || {};
-    // Prefill first passenger with user profile if empty
-    let initialName = existing.name || "";
-    let initialAge = existing.age || "";
-    let initialGender = existing.gender || "Male";
-    if (!initialName && selected.indexOf(seatNum) === 0 && user) {
+    const isFirst = selected.length === 0;
+    let initialName = "";
+    let initialAge = "";
+    let initialGender = "Male";
+    if (isFirst && user) {
       initialName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
       initialAge = user.age || "";
       initialGender = user.gender || "Male";
     }
 
-    const isBookingForOthers = existing.bookingForOthers || false;
     const isPhoneVerifiedFromProfile = user?.phoneVerified || user?.primaryVerified || user?.passengerVerified || false;
+    const phone = isFirst ? (user?.phone || user?.phoneNumber || user?.primaryMobile || "") : "";
 
-    // Start with what we know from profile/existing
-    let isPhoneVerified = existing.travelerPhoneVerified !== undefined
-      ? existing.travelerPhoneVerified
-      : (isBookingForOthers ? false : isPhoneVerifiedFromProfile);
-
-    const phone = existing.travelerPhone || (isBookingForOthers ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""));
-
-    setFormData({
-      name: initialName,
-      age: initialAge,
-      gender: initialGender,
-      bookingForOthers: isBookingForOthers,
-      travelerPhone: phone,
-      travelerPhoneVerified: isPhoneVerified,
-      verifiedAt: existing.verifiedAt || null,
-    });
-    setDrawerSeat(seatNum);
-    setDrawerOtpSent(false);
-    setDrawerOtpBoxes(["", "", "", "", "", ""]);
-    setDrawerOtpError("");
-    setDrawerOtpSuccess(false);
-    setDrawerDebugOtp(null);
-
-    // Auto-detect existing verification from backend (skip OTP if already done)
-    if (!isBookingForOthers && !isPhoneVerified && phone) {
-      setCheckingVerification(true);
-      try {
-        const token = localStorage.getItem("token");
-        const cleanPhone = String(phone).replace(/\D/g, "").slice(-10);
-        const res = await fetch(
-          getApiUrl(`passenger/check-verification?phone=${cleanPhone}`),
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const data = await res.json();
-        if (data.success && data.verified) {
-          setFormData((prev) => ({
-            ...prev,
-            travelerPhoneVerified: true,
-            verifiedAt: data.passengerVerifiedAt || new Date().toISOString(),
-          }));
-        }
-      } catch (err) {
-        console.warn("[PassengerOTP] check-verification failed:", err.message);
-      } finally {
-        setCheckingVerification(false);
+    setSelected((prev) => [...prev, seatNum]);
+    setPassengerDetails((prev) => ({
+      ...prev,
+      [seatNum]: {
+        seatNumber: seatNum,
+        name: initialName,
+        age: initialAge,
+        gender: initialGender,
+        bookingForOthers: !isFirst,
+        travelerPhone: phone,
+        travelerPhoneVerified: isFirst ? isPhoneVerifiedFromProfile : false,
+        verifiedAt: null,
       }
-    }
+    }));
   };
 
-
-  // ── Save Passenger Form Details ─────────────────────────────────────────────
-  const handleSavePassenger = (e) => {
-    e.preventDefault();
-    if (!formData.name.trim() || formData.name.trim().length < 3) {
-      toast.error("Passenger Name must be at least 3 characters");
-      return;
-    }
-    const ageNum = Number(formData.age);
-    if (!formData.age || isNaN(ageNum) || ageNum < 1 || ageNum > 100) {
-      toast.error("Passenger Age must be between 1 and 100");
-      return;
-    }
-    if (!formData.gender) {
-      toast.error("Gender is required");
-      return;
-    }
-
-    const isVerified = formData.bookingForOthers
-      ? formData.travelerPhoneVerified
-      : (user?.phoneVerified || user?.primaryVerified || formData.travelerPhoneVerified);
-
-    if (!isVerified) {
-      toast.error("Mobile number verification is mandatory before saving passenger details");
-      return;
-    }
-
-    // Save details
-    const updatedDetails = {
-      ...passengerDetails,
-      [drawerSeat]: {
-        seatNumber: drawerSeat,
-        name: formData.name.trim(),
-        age: ageNum,
-        gender: formData.gender,
-        bookingForOthers: formData.bookingForOthers,
-        travelerPhone: formData.travelerPhone,
-        travelerPhoneVerified: formData.travelerPhoneVerified,
-        verifiedAt: formData.verifiedAt,
+  const updatePassengerField = (seatNumber, field, value) => {
+    setPassengerDetails((prev) => ({
+      ...prev,
+      [seatNumber]: {
+        ...prev[seatNumber],
+        seatNumber,
+        [field]: value,
       },
-    };
-
-    setPassengerDetails(updatedDetails);
-    setDrawerSeat(null);
-    toast.success(`Details for Seat ${drawerSeat} saved!`);
-    console.log("Passenger Saved", updatedDetails[drawerSeat]);
-
-    // Check if details for all selected seats are completed
-    const allSeatsAssigned = selected.every((seatNumber) => updatedDetails[seatNumber]);
-    if (allSeatsAssigned && selected.length === requiredSeats) {
-      console.log("[SeatLayoutModal] Passenger Saved. All selected seats assigned details. Auto-triggering confirmation.");
-      handleConfirm(selected, updatedDetails);
-    }
+    }));
   };
+
+  const isPassengerComplete = (p) => {
+    if (!p) return false;
+    const nameValid = p.name && p.name.trim().length >= 3;
+    const ageNum = Number(p.age);
+    const ageValid = p.age && !isNaN(ageNum) && ageNum >= 1 && ageNum <= 120;
+    const genderValid = !!p.gender;
+    const isVerified = p.bookingForOthers ? p.travelerPhoneVerified : (user?.phoneVerified || p.travelerPhoneVerified);
+    return nameValid && ageValid && genderValid && isVerified;
+  };
+
+  const completedCount = selected.filter(seatNum => isPassengerComplete(passengerDetails[seatNum])).length;
+  const allDetailsCompleted = selected.length === requiredSeats && completedCount === requiredSeats;
+
+  // Single OTP verification target seat
+  const [drawerOtpActiveSeat, setDrawerOtpActiveSeat] = useState(null);
 
   // ── OTP Delivery & Timer Helpers ──────────────────────────────────────────
   const handleSendOtp = async (passengersList) => {
@@ -1131,9 +1061,9 @@ const SeatLayoutModal = ({
 
             <button
               onClick={handleConfirm}
-              disabled={selected.length !== requiredSeats || reserving}
+              disabled={!allDetailsCompleted || reserving}
               className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                selected.length === requiredSeats && !reserving
+                allDetailsCompleted && !reserving
                   ? "bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/20 active:scale-98"
                   : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50"
               }`}
@@ -1155,7 +1085,7 @@ const SeatLayoutModal = ({
 
         {/* Right Side: Slide-over Drawer for Passenger Assignment */}
         <AnimatePresence>
-          {drawerSeat && (
+          {selected.length > 0 && (
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -1164,399 +1094,200 @@ const SeatLayoutModal = ({
               className="absolute md:relative top-0 right-0 h-full w-full md:w-[380px] bg-slate-950 md:bg-slate-950 border-l border-slate-850 z-30 flex flex-col backdrop-blur-xl rounded-l-[28px]"
             >
               {/* Drawer Header */}
-              <div className="p-6 border-b border-slate-850 flex items-center justify-between">
+              <div className="p-6 border-b border-slate-850 flex items-center justify-between shrink-0">
                 <div>
                   <h3 className="text-sm font-black flex items-center gap-2 text-white">
                     <Sparkles size={14} className="text-teal-400 animate-pulse" />
-                    Passenger Assignment
+                    Passenger Assignment ({completedCount} / {selected.length} Completed)
                   </h3>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Please provide passenger details for verification.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Please provide details for all passengers.</p>
                 </div>
-                <button
-                  onClick={() => setDrawerSeat(null)}
-                  className="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white"
-                >
-                  <X size={14} />
-                </button>
               </div>
 
-              {/* Drawer Body */}
-              <form onSubmit={handleSavePassenger} className="flex-1 overflow-y-auto p-6 space-y-5">
-                
-                {/* Seat Assigned Badge */}
-                <div className="flex items-center justify-between bg-teal-500/10 border border-teal-500/20 rounded-2xl px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-teal-400" />
-                    <span className="text-xs font-black text-slate-200">Seat Allocation</span>
-                  </div>
-                  <span className="px-3 py-1 rounded-xl bg-teal-500 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(20,184,166,0.4)]">
-                    Seat {drawerSeat} Assigned
-                  </span>
-                </div>
+              {/* Drawer Body (form with scrollable passenger forms list) */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {selected.map((seatNum, idx) => {
+                  const p = passengerDetails[seatNum] || {};
+                  const isVerified = p.bookingForOthers
+                    ? p.travelerPhoneVerified
+                    : (user?.phoneVerified || p.travelerPhoneVerified);
 
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="Enter Full Name"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-800 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 focus:shadow-[0_0_12px_rgba(20,184,166,0.15)] transition-all"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Age</label>
-                      <input
-                        type="number"
-                        required
-                        min="5"
-                        max="120"
-                        value={formData.age}
-                        onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                        placeholder="Years"
-                        className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Gender</label>
-                      <select
-                        value={formData.gender}
-                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                        className="w-full px-4 py-3 rounded-xl border border-slate-850 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                      >
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Booking For Someone Else Toggle */}
-                <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-slate-200">Booking For Someone Else</span>
-                    <span className="text-[9px] text-slate-400">Specify if someone else is travelling</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newVal = !formData.bookingForOthers;
-                      setFormData(prev => ({
-                        ...prev,
-                        bookingForOthers: newVal,
-                        travelerPhone: newVal ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""),
-                        travelerPhoneVerified: newVal ? false : (user?.phoneVerified || user?.primaryVerified || false),
-                      }));
-                      setDrawerOtpSent(false);
-                      setDrawerOtpCode("");
-                    }}
-                    className="relative w-10 h-6 rounded-full transition-colors shrink-0"
-                    style={{ background: formData.bookingForOthers ? "#14B8B5" : "#E2E8F0" }}
-                  >
-                    <div
-                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all"
-                      style={{ left: formData.bookingForOthers ? "18px" : "2px" }}
-                    />
-                  </button>
-                </div>
-
-                {/* Contact Verification Cards */}
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-                  <div className="px-4 pt-3.5 pb-2.5 border-b border-slate-800 flex items-center gap-1.5">
-                    <ShieldCheck size={11} className="text-teal-400" />
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                      Passenger Verification
-                    </p>
-                  </div>
-
-                  <div className="p-4 space-y-3">
-                    {!formData.bookingForOthers ? (
-                      /* ── Booking for Self ──────────────────────────────── */
-                      <div className="space-y-3">
-                        {/* Email — always verified (account email) */}
-                        <div>
-                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Email Address</label>
-                          <div className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
-                            <span className="truncate max-w-[160px]">{user?.email || "No email available"}</span>
-                            <span className="text-[9px] font-black text-teal-400 tracking-wider shrink-0 ml-2">✓ Verified</span>
-                          </div>
+                  return (
+                    <div key={seatNum} className="space-y-4 p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                      {/* Seat Allocation Badge */}
+                      <div className="flex items-center justify-between bg-teal-500/10 border border-teal-500/20 rounded-xl px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={14} className="text-teal-400" />
+                          <span className="text-[10px] font-black text-slate-200 font-sans">Passenger {idx + 1}</span>
                         </div>
-
-                        {/* Mobile — check-verification loading state */}
-                        {checkingVerification ? (
-                          <div className="flex items-center gap-2 py-2 text-[10px] text-slate-400 font-semibold">
-                            <Loader2 size={11} className="animate-spin text-teal-400" />
-                            Checking verification status...
-                          </div>
-                        ) : formData.travelerPhoneVerified ? (
-                          /* Already verified — show badge */
-                          <div>
-                            <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
-                            <div className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-slate-500 select-none flex justify-between items-center">
-                              <span>{formData.travelerPhone || user?.phone || user?.phoneNumber || user?.primaryMobile}</span>
-                              <span className="text-[9px] font-black text-teal-400 tracking-wider shrink-0 ml-2">✓ Verified</span>
-                            </div>
-                          </div>
-                        ) : (
-                          /* First-time / unverified */
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Mobile Number</label>
-                              <input
-                                type="tel"
-                                value={formData.travelerPhone}
-                                onChange={(e) => {
-                                  const v = e.target.value.replace(/\D/g, "").slice(0, 10);
-                                  setFormData({ ...formData, travelerPhone: v });
-                                  setDrawerOtpSent(false);
-                                  setDrawerOtpBoxes(["", "", "", "", "", ""]);
-                                  setDrawerOtpError("");
-                                }}
-                                placeholder="Enter 10-digit number"
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
-                              />
-                            </div>
-
-                            {/* OTP Section */}
-                            {!drawerOtpSent ? (
-                              <button
-                                type="button"
-                                onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
-                                disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
-                                className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                              >
-                                {drawerOtpSending ? <><Loader2 size={11} className="animate-spin" /> Sending...</> : <><Phone size={11} /> Verify Mobile Number</>}
-                              </button>
-                            ) : drawerOtpSuccess ? (
-                              /* Success animation */
-                              <div className="flex flex-col items-center py-3 gap-2 animate-fade-in">
-                                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">
-                                  ✓
-                                </div>
-                                <p className="text-[10px] font-black text-emerald-400">Mobile Verified!</p>
-                              </div>
-                            ) : (
-                              /* 6-box OTP input */
-                              <div className="space-y-3 bg-slate-950 border border-slate-800 rounded-2xl p-3">
-                                <div className="text-center">
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">OTP Verification</p>
-                                  <p className="text-[9px] text-slate-500 mt-0.5">Code sent to your email</p>
-                                </div>
-
-                                <div className="flex gap-1.5 justify-center">
-                                  {drawerOtpBoxes.map((val, idx) => (
-                                    <input
-                                      key={`dotp-${idx}`}
-                                      ref={(el) => (drawerOtpBoxRefs.current[idx] = el)}
-                                      id={`dotp-self-${idx}`}
-                                      type="text"
-                                      inputMode="numeric"
-                                      maxLength="1"
-                                      pattern="[0-9]*"
-                                      value={val}
-                                      onChange={(e) => {
-                                        const v = e.target.value.replace(/\D/g, "");
-                                        const boxes = [...drawerOtpBoxes];
-                                        boxes[idx] = v.slice(-1);
-                                        setDrawerOtpBoxes(boxes);
-                                        setDrawerOtpError("");
-                                        if (v && idx < 5) drawerOtpBoxRefs.current[idx + 1]?.focus();
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Backspace" && !drawerOtpBoxes[idx] && idx > 0) {
-                                          drawerOtpBoxRefs.current[idx - 1]?.focus();
-                                        }
-                                      }}
-                                      onPaste={(e) => {
-                                        e.preventDefault();
-                                        const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-                                        if (pasted) {
-                                          const boxes = ["", "", "", "", "", ""];
-                                          pasted.split("").forEach((ch, i) => { if (i < 6) boxes[i] = ch; });
-                                          setDrawerOtpBoxes(boxes);
-                                          drawerOtpBoxRefs.current[Math.min(pasted.length, 5)]?.focus();
-                                        }
-                                      }}
-                                      className="w-9 h-11 rounded-xl border-2 border-slate-800 bg-slate-900 text-center font-black text-sm text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-all"
-                                    />
-                                  ))}
-                                </div>
-
-                                {/* Debug autofill */}
-                                {drawerDebugOtp && (
-                                  <div className="flex items-center justify-center gap-2 text-[9px] text-teal-400 font-mono bg-teal-500/5 border border-teal-500/10 rounded-lg px-2 py-1.5">
-                                    <span>Dev OTP: <strong>{drawerDebugOtp}</strong></span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setDrawerOtpBoxes(String(drawerDebugOtp).split(""))}
-                                      className="px-1.5 py-0.5 bg-teal-500 text-slate-950 font-black rounded text-[8px] uppercase"
-                                    >Fill</button>
-                                  </div>
-                                )}
-
-                                {drawerOtpError && (
-                                  <p className="text-[9px] text-rose-400 font-bold text-center">{drawerOtpError}</p>
-                                )}
-
-                                {/* Resend timer */}
-                                <div className="flex items-center justify-between text-[9px]">
-                                  <span className="text-slate-500">
-                                    {drawerOtpTimer > 0 ? `Resend in ${drawerOtpTimer}s` : ""}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
-                                    disabled={drawerOtpTimer > 0 || drawerOtpSending}
-                                    className="text-teal-400 font-black disabled:opacity-40 disabled:cursor-not-allowed hover:text-teal-300"
-                                  >
-                                    {drawerOtpSending ? "Sending..." : "Resend OTP"}
-                                  </button>
-                                </div>
-
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleVerifyDrawerOtp(formData.travelerPhone)}
-                                    disabled={drawerOtpVerifying || drawerOtpBoxes.join("").length !== 6}
-                                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-[10px] uppercase tracking-wide transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                  >
-                                    {drawerOtpVerifying ? <><Loader2 size={11} className="animate-spin" /> Verifying...</> : <><Check size={11} /> Verify OTP</>}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setDrawerOtpSent(false); setDrawerOtpBoxes(["", "", "", "", "", ""]); setDrawerOtpError(""); }}
-                                    className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-[10px] font-bold"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <span className="px-2.5 py-0.5 rounded-lg bg-teal-500 text-slate-950 font-black text-[10px] shadow-[0_0_10px_rgba(20,184,166,0.3)]">
+                          Seat {seatNum}
+                        </span>
                       </div>
-                    ) : (
-                      /* ── Booking for Others ────────────────────────────── */
-                      <div className="space-y-3">
+
+                      {/* Name input */}
+                      <div>
+                        <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={p.name || ""}
+                          onChange={(e) => updatePassengerField(seatNum, 'name', e.target.value)}
+                          placeholder="Enter Full Name"
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                        />
+                      </div>
+
+                      {/* Age and Gender grid */}
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Passenger Mobile Number</label>
+                          <label className="block text-[9px] font-black text-slate-450 uppercase tracking-widest mb-1.5">Age</label>
                           <input
-                            type="tel"
-                            value={formData.travelerPhone}
-                            onChange={(e) => {
-                              const v = e.target.value.replace(/\D/g, "").slice(0, 10);
-                              setFormData({ ...formData, travelerPhone: v });
-                              setDrawerOtpSent(false);
-                              setDrawerOtpBoxes(["", "", "", "", "", ""]);
-                              setDrawerOtpError("");
-                            }}
-                            placeholder="Enter Passenger Mobile"
-                            disabled={formData.travelerPhoneVerified}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-850 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                            type="number"
+                            required
+                            min="1"
+                            max="120"
+                            value={p.age || ""}
+                            onChange={(e) => updatePassengerField(seatNum, 'age', e.target.value)}
+                            placeholder="Years"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                           />
                         </div>
 
-                        {formData.travelerPhoneVerified ? (
-                          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold flex items-center gap-2">
-                            <Check size={12} /> Passenger Verified
-                          </div>
-                        ) : !drawerOtpSent ? (
-                          <button
-                            type="button"
-                            onClick={() => handleSendDrawerOtp(formData.travelerPhone)}
-                            disabled={drawerOtpSending || formData.travelerPhone.length !== 10}
-                            className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        <div>
+                          <label className="block text-[9px] font-black text-slate-455 uppercase tracking-widest mb-1.5">Gender</label>
+                          <select
+                            value={p.gender || "Male"}
+                            onChange={(e) => updatePassengerField(seatNum, 'gender', e.target.value)}
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
                           >
-                            {drawerOtpSending ? <><Loader2 size={11} className="animate-spin" /> Sending...</> : <><Phone size={11} /> Send OTP</>}
-                          </button>
-                        ) : drawerOtpSuccess ? (
-                          <div className="flex flex-col items-center py-3 gap-2">
-                            <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg">✓</div>
-                            <p className="text-[10px] font-black text-emerald-400">Mobile Verified!</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3 bg-slate-950 border border-slate-800 rounded-2xl p-3">
-                            <div className="text-center">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">OTP Verification</p>
-                              <p className="text-[9px] text-slate-500 mt-0.5">Code sent to your account email</p>
-                            </div>
-                            <div className="flex gap-1.5 justify-center">
-                              {drawerOtpBoxes.map((val, idx) => (
-                                <input
-                                  key={`dotp-oth-${idx}`}
-                                  ref={(el) => (drawerOtpBoxRefs.current[idx] = el)}
-                                  id={`dotp-others-${idx}`}
-                                  type="text"
-                                  inputMode="numeric"
-                                  maxLength="1"
-                                  pattern="[0-9]*"
-                                  value={val}
-                                  onChange={(e) => {
-                                    const v = e.target.value.replace(/\D/g, "");
-                                    const boxes = [...drawerOtpBoxes];
-                                    boxes[idx] = v.slice(-1);
-                                    setDrawerOtpBoxes(boxes);
-                                    setDrawerOtpError("");
-                                    if (v && idx < 5) drawerOtpBoxRefs.current[idx + 1]?.focus();
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Backspace" && !drawerOtpBoxes[idx] && idx > 0) {
-                                      drawerOtpBoxRefs.current[idx - 1]?.focus();
-                                    }
-                                  }}
-                                  onPaste={(e) => {
-                                    e.preventDefault();
-                                    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-                                    if (pasted) {
-                                      const boxes = ["", "", "", "", "", ""];
-                                      pasted.split("").forEach((ch, i) => { if (i < 6) boxes[i] = ch; });
-                                      setDrawerOtpBoxes(boxes);
-                                      drawerOtpBoxRefs.current[Math.min(pasted.length, 5)]?.focus();
-                                    }
-                                  }}
-                                  className="w-9 h-11 rounded-xl border-2 border-slate-800 bg-slate-900 text-center font-black text-sm text-white outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/30 transition-all"
-                                />
-                              ))}
-                            </div>
-                            {drawerDebugOtp && (
-                              <div className="flex items-center justify-center gap-2 text-[9px] text-teal-400 font-mono bg-teal-500/5 border border-teal-500/10 rounded-lg px-2 py-1.5">
-                                <span>Dev OTP: <strong>{drawerDebugOtp}</strong></span>
-                                <button type="button" onClick={() => setDrawerOtpBoxes(String(drawerDebugOtp).split(""))} className="px-1.5 py-0.5 bg-teal-500 text-slate-950 font-black rounded text-[8px] uppercase">Fill</button>
-                              </div>
-                            )}
-                            {drawerOtpError && <p className="text-[9px] text-rose-400 font-bold text-center">{drawerOtpError}</p>}
-                            <div className="flex items-center justify-between text-[9px]">
-                              <span className="text-slate-500">{drawerOtpTimer > 0 ? `Resend in ${drawerOtpTimer}s` : ""}</span>
-                              <button type="button" onClick={() => handleSendDrawerOtp(formData.travelerPhone)} disabled={drawerOtpTimer > 0 || drawerOtpSending} className="text-teal-400 font-black disabled:opacity-40 disabled:cursor-not-allowed hover:text-teal-300">
-                                {drawerOtpSending ? "Sending..." : "Resend OTP"}
-                              </button>
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleVerifyDrawerOtp(formData.travelerPhone)}
-                                disabled={drawerOtpVerifying || drawerOtpBoxes.join("").length !== 6}
-                                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-[10px] uppercase tracking-wide transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                              >
-                                {drawerOtpVerifying ? <><Loader2 size={11} className="animate-spin" /> Verifying...</> : <><Check size={11} /> Verify OTP</>}
-                              </button>
-                              <button type="button" onClick={() => { setDrawerOtpSent(false); setDrawerOtpBoxes(["", "", "", "", "", ""]); setDrawerOtpError(""); }} className="px-3 py-2 rounded-xl border border-slate-800 hover:border-slate-700 text-slate-400 text-[10px] font-bold">
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                          </select>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-                <div id="passenger-recaptcha-container" className="hidden" />
+
+                      {/* Booking For Someone Else Toggle */}
+                      <div className="flex items-center justify-between bg-slate-955 border border-slate-850 rounded-xl px-3 py-2">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-slate-205">Booking For Someone Else</span>
+                          <span className="text-[8px] text-slate-400">Specify if someone else is travelling</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVal = !p.bookingForOthers;
+                            setPassengerDetails(prev => ({
+                              ...prev,
+                              [seatNum]: {
+                                ...prev[seatNum],
+                                bookingForOthers: newVal,
+                                travelerPhone: newVal ? "" : (user?.phone || user?.phoneNumber || user?.primaryMobile || ""),
+                                travelerPhoneVerified: newVal ? false : (user?.phoneVerified || user?.primaryVerified || false),
+                              }
+                            }));
+                            setDrawerOtpSent(false);
+                          }}
+                          className="relative w-8 h-5 rounded-full transition-colors shrink-0"
+                          style={{ background: p.bookingForOthers ? "#14B8A5" : "#E2E8F0" }}
+                        >
+                          <div
+                            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all"
+                            style={{ left: p.bookingForOthers ? "14px" : "2px" }}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Verification Section */}
+                      <div className="bg-slate-955 border border-slate-850 rounded-xl overflow-hidden">
+                        <div className="px-3 pt-2.5 pb-1.5 border-b border-slate-850 flex items-center gap-1.5">
+                          <ShieldCheck size={10} className="text-teal-400" />
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                            Verification
+                          </p>
+                        </div>
+                        <div className="p-3 space-y-2.5">
+                          {isVerified ? (
+                            <div className="flex justify-between items-center text-[10px] font-semibold text-slate-400">
+                              <span>{p.travelerPhone || user?.phone || user?.phoneNumber}</span>
+                              <span className="text-[9px] font-black text-teal-400">✓ Verified</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5">
+                              <input
+                                type="tel"
+                                value={p.travelerPhone || ""}
+                                onChange={(e) => {
+                                  const v = e.target.value.replace(/\D/g, "").slice(0, 10);
+                                  updatePassengerField(seatNum, 'travelerPhone', v);
+                                }}
+                                placeholder="Enter 10-digit number"
+                                className="w-full px-3 py-2 rounded-lg border border-slate-850 bg-slate-900 text-xs font-bold text-white outline-none focus:border-teal-400 transition-all"
+                              />
+                              {drawerOtpActiveSeat === seatNum && drawerOtpSent ? (
+                                <div className="space-y-2 bg-slate-900 border border-slate-850 rounded-xl p-2.5 animate-fade-in">
+                                  <div className="text-center">
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">OTP Code</p>
+                                  </div>
+                                  <div className="flex gap-1 justify-center">
+                                    {drawerOtpBoxes.map((val, bIdx) => (
+                                      <input
+                                        key={`dotp-${seatNum}-${bIdx}`}
+                                        ref={(el) => (drawerOtpBoxRefs.current[bIdx] = el)}
+                                        type="text"
+                                        maxLength="1"
+                                        value={val}
+                                        onChange={(e) => {
+                                          const v = e.target.value.replace(/\D/g, "");
+                                          const boxes = [...drawerOtpBoxes];
+                                          boxes[bIdx] = v.slice(-1);
+                                          setDrawerOtpBoxes(boxes);
+                                          if (v && bIdx < 5) drawerOtpBoxRefs.current[bIdx + 1]?.focus();
+                                        }}
+                                        className="w-7 h-9 rounded-lg border border-slate-800 bg-slate-950 text-center font-black text-xs text-white outline-none focus:border-teal-400"
+                                      />
+                                    ))}
+                                  </div>
+                                  {drawerDebugOtp && (
+                                    <div className="flex items-center justify-center gap-1.5 text-[8px] text-teal-400 font-mono bg-teal-500/5 p-1 rounded-md">
+                                      <span>Dev OTP: <strong>{drawerDebugOtp}</strong></span>
+                                      <button type="button" onClick={() => setDrawerOtpBoxes(String(drawerDebugOtp).split(""))} className="px-1 py-0.5 bg-teal-500 text-slate-950 font-black rounded text-[7px] uppercase">Fill</button>
+                                    </div>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVerifyDrawerOtp(p.travelerPhone, seatNum)}
+                                      className="flex-1 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-[9px] uppercase transition-colors"
+                                    >
+                                      Verify
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setDrawerOtpActiveSeat(null); setDrawerOtpSent(false); }}
+                                      className="px-2 py-1.5 rounded-lg border border-slate-800 text-slate-400 text-[9px] font-bold"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendDrawerOtp(p.travelerPhone, seatNum)}
+                                  disabled={drawerOtpSending || !p.travelerPhone || p.travelerPhone.length !== 10}
+                                  className="w-full py-2 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 text-slate-950 font-black text-[10px] uppercase rounded-lg transition-colors"
+                                >
+                                  {drawerOtpSending && drawerOtpActiveSeat === seatNum ? "Sending..." : "Verify Mobile"}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {/* Fare Summary Breakdown */}
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4.5 space-y-2.5">
@@ -1566,15 +1297,15 @@ const SeatLayoutModal = ({
                   <div className="space-y-1.5 text-xs text-slate-400 font-semibold">
                     <div className="flex justify-between">
                       <span>Base Ticket price:</span>
-                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(baseFare)}</span>
+                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(baseFare)} × {selected.length}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>GST & State taxes (5%):</span>
-                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(Math.round(baseFare * 0.05))}</span>
+                      <span className="font-extrabold text-white">₹{new Intl.NumberFormat('en-IN').format(fareTax)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Booking Convenience fee:</span>
-                      <span className="font-extrabold text-white">₹150</span>
+                      <span className="font-extrabold text-white">₹{fareConvenience}</span>
                     </div>
                   </div>
                   <div className="flex justify-between items-center pt-2.5 border-t border-slate-800 mt-2 text-xs font-black">
@@ -1583,18 +1314,7 @@ const SeatLayoutModal = ({
                   </div>
                 </div>
 
-                {/* Drawer Footer CTA */}
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-teal-500/20 active:scale-98 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Check size={14} />
-                    Save Passenger Details
-                  </button>
-                </div>
-
-              </form>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

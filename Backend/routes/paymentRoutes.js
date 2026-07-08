@@ -139,29 +139,42 @@ router.post("/create-order", protect, async (req, res) => {
       await booking.save();
     }
 
+    const amountPaise = Math.round(finalAmount * 100); // paise (integer, no decimals)
     const options = {
-      amount: Math.round(finalAmount * 100), // Razorpay accepts in paise
+      amount: amountPaise,
       currency: "INR",
       receipt: `TRIP-${tripId.toString().slice(-8)}-${String(Date.now()).slice(-6)}`,
     };
 
-    console.log("NODE_ENV:", process.env.NODE_ENV);
-    console.log("KEY:", process.env.RAZORPAY_KEY_ID);
-    console.log("SECRET LENGTH:", process.env.RAZORPAY_KEY_SECRET?.length);
+    console.log("[Razorpay] NODE_ENV:", process.env.NODE_ENV);
+    console.log("[Razorpay] KEY_ID:", process.env.RAZORPAY_KEY_ID);
+    console.log("[Razorpay] SECRET_LENGTH:", process.env.RAZORPAY_KEY_SECRET?.length || 0);
+    console.log("[Razorpay] Creating order with options:", JSON.stringify(options));
 
     let order;
     try {
       const instance = getRazorpayInstance();
       order = await instance.orders.create(options);
+      console.log("[Razorpay] Order created successfully:", JSON.stringify({
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        status: order.status,
+        receipt: order.receipt,
+      }));
     } catch (apiError) {
-      console.error("[Razorpay Create Order] API call failed. Simulating order.");
-      order = {
-        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: options.amount,
-        currency: options.currency,
-        receipt: options.receipt,
-        status: "created"
-      };
+      // Do NOT silently fall back to a mock order — a mock order_id will always
+      // cause "Something went wrong" inside the Razorpay checkout popup because
+      // the order_id doesn't exist on Razorpay's servers.
+      console.error("[Razorpay] Order creation API failed:", apiError.message || apiError);
+      if (apiError.statusCode || apiError.error) {
+        console.error("[Razorpay] Full error body:", JSON.stringify(apiError.error || apiError));
+      }
+      return res.status(502).json({
+        success: false,
+        message: apiError?.error?.description || apiError.message || "Razorpay order creation failed",
+        razorpayError: apiError?.error || null,
+      });
     }
 
     if (booking) {
@@ -169,15 +182,18 @@ router.post("/create-order", protect, async (req, res) => {
       await booking.save();
     }
 
+    // Return amountPaise (integer) so the frontend passes it directly to Razorpay
+    // without any multiplication. The human-readable rupee amount is also included.
     res.status(200).json({
       success: true,
-      orderId: order.id,
-      amount: finalAmount,
-      currency: "INR",
-      razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+      orderId: order.id,           // Razorpay order_id (e.g. "order_XXXXXXXXXXXXXXX")
+      amount: finalAmount,         // rupees (for display only)
+      amountPaise: order.amount,   // paise (use this directly in checkout options)
+      currency: order.currency,    // "INR" (from Razorpay response, not hardcoded)
+      razorpayKey: process.env.RAZORPAY_KEY_ID,
     });
   } catch (error) {
-    console.error("[Razorpay Create Order] Error:", error);
+    console.error("[Razorpay Create Order] Unexpected error:", error);
     res.status(500).json({ success: false, message: "Server Error creating Razorpay order" });
   }
 });
@@ -268,12 +284,12 @@ const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) =>
 // @desc    Verify payment signature and record booking
 // @access  Private (Traveler)
 router.post("/verify", protect, async (req, res) => {
-  console.log("=== PAYMENT VERIFICATION REQUEST ===");
-  console.log("req.body:", req.body);
-  console.log("razorpay_order_id:", req.body.razorpay_order_id);
-  console.log("razorpay_payment_id:", req.body.razorpay_payment_id);
-  console.log("razorpay_signature:", req.body.razorpay_signature);
-  console.log("bookingId:", req.body.bookingId);
+  console.log("=== PAYMENT VERIFICATION REQUEST (INCOMING REQUEST) ===");
+  console.log("[Razorpay Verify] Incoming Request Body:", JSON.stringify(req.body));
+  console.log("[Razorpay Verify] razorpay_order_id:", req.body.razorpay_order_id);
+  console.log("[Razorpay Verify] razorpay_payment_id:", req.body.razorpay_payment_id);
+  console.log("[Razorpay Verify] razorpay_signature:", req.body.razorpay_signature);
+  console.log("[Razorpay Verify] bookingId:", req.body.bookingId);
 
   const {
     razorpay_order_id,
@@ -288,13 +304,18 @@ router.post("/verify", protect, async (req, res) => {
   const key_secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
 
   if (!key_id || !key_secret) {
-    console.error("[Razorpay] Verification failed: Razorpay credentials missing");
-    return res.status(400).json({ success: false, message: "Razorpay credentials missing" });
+    console.error("[Razorpay Verify] Payment Error: Razorpay credentials missing");
+    const errorMsg = "Razorpay credentials missing on the server";
+    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
   }
 
   // 1. Enforce strict signature verification
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    return res.status(400).json({ success: false, message: "Missing Razorpay payment verification fields" });
+    const errorMsg = "Missing Razorpay payment verification fields (order_id, payment_id, or signature)";
+    console.error("[Razorpay Verify] Payment Error:", errorMsg);
+    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
   }
 
   const body = razorpay_order_id + "|" + razorpay_payment_id;
@@ -305,8 +326,10 @@ router.post("/verify", protect, async (req, res) => {
 
   const isMockPayment = (process.env.NODE_ENV !== "production" || razorpay_order_id.startsWith("order_mock_")) && razorpay_signature === "mock_signature";
   if (expectedSignature !== razorpay_signature && !isMockPayment) {
-    console.error("[Razorpay Verification] Signature mismatch.");
-    return res.status(400).json({ success: false, message: "Payment verification failed" });
+    const errorMsg = "Payment verification failed (Signature mismatch)";
+    console.error("[Razorpay Verify] Payment Error:", errorMsg);
+    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
   }
 
   // 2. Resolve or Load Booking and Finalize Atomically
@@ -328,11 +351,19 @@ router.post("/verify", protect, async (req, res) => {
     });
 
     if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking draft not found" });
+      const errorMsg = `Booking draft not found for lookupId: ${lookupId} or orderId: ${razorpay_order_id}`;
+      console.error("[Razorpay Verify] Payment Error:", errorMsg);
+      console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+      return res.status(404).json({ success: false, message: errorMsg });
     }
+
+    console.log("[Razorpay Verify] Trip ID:", booking.tripId);
+    console.log("[Razorpay Verify] Booking Amount (Rupees):", booking.pricePaid);
+    console.log("[Razorpay Verify] Expected Amount (Paise):", Math.round(booking.pricePaid * 100));
 
     // Prevent duplicate verification
     if (booking.status === "PAID" || booking.paymentStatus === "Paid") {
+      console.log("[Razorpay Verify] Verification Response: Success (Already Paid)");
       return res.status(200).json({
         success: true,
         bookingId: booking.bookingId,
@@ -344,20 +375,36 @@ router.post("/verify", protect, async (req, res) => {
 
     // Verify Amount and Currency against Razorpay API
     if (!isMockPayment) {
+      let rzpOrder;
       try {
         const instance = getRazorpayInstance();
-        const rzpOrder = await instance.orders.fetch(razorpay_order_id);
-        const expectedAmountPaise = Math.round(booking.pricePaid * 100);
-        if (rzpOrder.amount !== expectedAmountPaise) {
-          return res.status(400).json({ success: false, message: "Payment amount mismatch with order amount." });
-        }
-        if (rzpOrder.currency !== "INR") {
-          return res.status(400).json({ success: false, message: "Payment currency verification failed." });
-        }
+        rzpOrder = await instance.orders.fetch(razorpay_order_id);
+        console.log("[Razorpay Verify] Razorpay Response (Order Fetch):", JSON.stringify(rzpOrder));
       } catch (rzpOrderErr) {
-        console.warn("[Razorpay Verify] Could not retrieve order from Razorpay API. Proceeding with local checks:", rzpOrderErr.message);
+        console.error("[Razorpay Verify] Payment Error: Failed to fetch order from Razorpay API:", rzpOrderErr.message || rzpOrderErr);
+        console.log("[Razorpay Verify] Verification Response: Failure - Failed to fetch order from Razorpay API");
+        return res.status(400).json({
+          success: false,
+          message: rzpOrderErr.message || "Failed to fetch order details from Razorpay",
+          razorpayError: rzpOrderErr
+        });
+      }
+
+      const expectedAmountPaise = Math.round(booking.pricePaid * 100);
+      if (rzpOrder.amount !== expectedAmountPaise) {
+        const errorMsg = `Payment amount mismatch. Booking expects ${expectedAmountPaise} paise, Razorpay order has ${rzpOrder.amount} paise.`;
+        console.error("[Razorpay Verify] Payment Error:", errorMsg);
+        console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+        return res.status(400).json({ success: false, message: errorMsg });
+      }
+      if (rzpOrder.currency !== "INR") {
+        const errorMsg = `Payment currency verification failed. Expected INR, got ${rzpOrder.currency}`;
+        console.error("[Razorpay Verify] Payment Error:", errorMsg);
+        console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
+        return res.status(400).json({ success: false, message: errorMsg });
       }
     }
+
 
     // Ensure seats are still reserved for this user and not expired/booked
     const SeatBooking = mongoose.model("SeatBooking");

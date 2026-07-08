@@ -888,15 +888,30 @@ export const TripDetails = () => {
       }
 
       // 2. Configure and Open Razorpay Checkout Dialog
+      const checkoutAmountPaise = orderData.amountPaise || (orderData.amount * 100);
+      
+      // Before opening Razorpay, log:
+      console.log("[Razorpay Checkout Init Config]:", {
+        key: orderData.razorpayKey || "rzp_test_dummykeyid",
+        order_id: orderData.orderId,
+        amount: checkoutAmountPaise,
+        currency: orderData.currency || "INR"
+      });
+
       const options = {
         key: orderData.razorpayKey || "rzp_test_dummykeyid",
-        amount: orderData.amount * 100, // paise
+        amount: checkoutAmountPaise, // paise
         currency: orderData.currency || "INR",
-        name: "Traveloop",
+        name: "Travelloop",
         description: trip.title,
         order_id: orderData.orderId,
         handler: async (response) => {
-          console.log("[Razorpay Checkout Callback Response]:", response);
+          // After payment success, log:
+          console.log("[Razorpay Success Response]:", {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature
+          });
           setBookingStage("payment"); // Show loader during signature verification
           try {
             // 3. Verify Payment on Backend
