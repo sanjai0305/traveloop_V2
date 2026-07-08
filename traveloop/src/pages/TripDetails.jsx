@@ -552,8 +552,8 @@ export const TripDetails = () => {
     } catch (err) {
       console.error("[Booking Creation Error]:", err);
       toast.error(err.message || "Failed to create booking. Please try again.");
-      // Return to seat select (not passenger_form) to avoid looping modal
-      setBookingStage("seat_select");
+      // Return to redeem_code stage (not seat_select) to allow retry without losing passenger/seat data
+      setBookingStage("redeem_code");
     } finally {
       setCreatingBooking(false);
     }
@@ -648,17 +648,56 @@ export const TripDetails = () => {
     setShowBookingModal(true);
   };
 
-  const handleProceedToPayment = () => {
+  const handleProceedToPayment = async () => {
     console.log("[STEP 1] Button Click (TripDetails bottom-bar Proceed to Payment)");
-    if (passengerSaved && confirmedBooking) {
-      console.log("[STEP 2] Validation Passed - proceeding with existing confirmed booking.");
+    console.log("[STEP 1] State:", { passengerSaved, passengerCompleted, confirmedBooking: !!confirmedBooking, passengers: passengers.length, selectedSeats: selectedSeats.length, bookingDraftCreated });
+
+    // Case 1: Booking draft was already created and confirmedBooking exists
+    // → Resume the UPI payment modal directly
+    if (bookingDraftCreated && confirmedBooking) {
+      console.log("[STEP 2] Draft already created — resuming UPI payment modal.");
       setBookingStage("upi_payment");
       setShowBookingModal(true);
-    } else {
-      console.log("[STEP 2] No confirmed booking found - opening seat selection sheet.");
+      return;
+    }
+
+    // Case 2: Passengers have been verified and seats selected, but draft not yet created
+    // → Create the booking draft + Razorpay order immediately
+    if (passengerCompleted && passengers.length > 0 && selectedSeats.length > 0) {
+      console.log("[STEP 2] Validation Passed: Proceeding to create Razorpay order from passenger data.");
+
+      // Ensure the Razorpay SDK is loaded before we need it
+      if (!window.Razorpay) {
+        try {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://checkout.razorpay.com/v1/checkout.js";
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("Failed to load Razorpay SDK"));
+            document.head.appendChild(script);
+          });
+        } catch (sdkErr) {
+          toast.error("Could not load payment gateway. Please check your internet connection.");
+          return;
+        }
+      }
+
+      setShowBookingModal(true);
+      await handlePassengersConfirmed(passengers, selectedSeats, appliedCouponCode || "");
+      return;
+    }
+
+    // Case 3: Passenger form filled but no seats selected — go to seat selection in new flow
+    if (passengerSaved && selectedSeats.length === 0) {
+      console.log("[STEP 2] Passenger saved but no seats — redirecting to seat selection.");
       setBookingStage("seat_select");
       setShowBookingModal(true);
+      return;
     }
+
+    // Case 4: Nothing filled yet — open fresh booking (seat selection first)
+    console.log("[STEP 2] Fresh booking — opening seat selection.");
+    handleOpenBooking();
   };
 
   const handleFormSubmit = (e) => {
