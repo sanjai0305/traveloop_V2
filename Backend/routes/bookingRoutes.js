@@ -1078,7 +1078,7 @@ router.post("/create-order", protect, async (req, res) => {
           // Rollback previous locks
           for (const sNum of locksAcquired) {
             await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
-            if (redisClient) await redisClient.del(`seat_lock:${tripId}:${sNum}`);
+            if (redisClient && redisClient.status === "ready") await redisClient.del(`seat_lock:${tripId}:${sNum}`);
           }
           return res.status(409).json({
             success: false,
@@ -1087,7 +1087,7 @@ router.post("/create-order", protect, async (req, res) => {
         }
       }
 
-      if (redisClient) {
+      if (redisClient && redisClient.status === "ready") {
         const key = `seat_lock:${tripId}:${seatNumber}`;
         const lockAcquired = await redisClient.set(key, String(userId), "EX", SEAT_LOCK_TTL, "NX");
         if (lockAcquired !== "OK" && !(seatDoc && String(seatDoc.reservedByUserId) === String(userId))) {

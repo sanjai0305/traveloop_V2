@@ -207,6 +207,8 @@ const SeatLayoutModal = ({
   const [drawerOtpSuccess, setDrawerOtpSuccess] = useState(false);
   const [drawerOtpError, setDrawerOtpError] = useState("");
   const [checkingVerification, setCheckingVerification] = useState(false);
+  // drawerDebugOtp: stores dev OTP returned from backend (shown in dev mode for quick fill)
+  const [drawerDebugOtp, setDrawerDebugOtp] = useState(null);
   const drawerOtpTimerRef = useRef(null);
   const drawerOtpBoxRefs = useRef([]);
   const recaptchaContainerRef = useRef(null);

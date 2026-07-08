@@ -90,7 +90,7 @@ const seatLockKey = (tripId, seatNumber) =>
  * Returns true if lock acquired, false if seat is already locked by someone else.
  */
 const acquireSeatLock = async (tripId, seatNumber, userId) => {
-  if (!redisClient) return true; // Graceful degradation if Redis is unavailable
+  if (!redisClient || redisClient.status !== "ready") return true; // Graceful degradation if Redis is unavailable
   const key = seatLockKey(tripId, seatNumber);
 
   // Re-entrant lock check: if the current user already owns the lock, refresh TTL and succeed
@@ -116,7 +116,7 @@ const acquireSeatLock = async (tripId, seatNumber, userId) => {
  * Only releases if the caller owns the lock (prevents accidental unlock by others).
  */
 const releaseSeatLock = async (tripId, seatNumber, userId) => {
-  if (!redisClient) return;
+  if (!redisClient || redisClient.status !== "ready") return;
   const key = seatLockKey(tripId, seatNumber);
   const owner = await redisClient.get(key);
   if (owner === String(userId)) {
@@ -128,7 +128,7 @@ const releaseSeatLock = async (tripId, seatNumber, userId) => {
  * Check if a Redis lock exists for a seat (regardless of owner).
  */
 const isSeatLocked = async (tripId, seatNumber) => {
-  if (!redisClient) return false;
+  if (!redisClient || redisClient.status !== "ready") return false;
   const key = seatLockKey(tripId, seatNumber);
   const val = await redisClient.get(key);
   return val !== null;

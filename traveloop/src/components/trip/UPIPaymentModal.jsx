@@ -167,6 +167,7 @@ const UPIPaymentModal = ({
       const payload = {
         tripId: trip?._id,
         seats: passengers?.length || 1,
+        bookingId: mongoId || bookingRef,  // Link Razorpay order to existing booking draft
       };
       console.log("[Payment] Calling create-order with payload:", payload);
 
