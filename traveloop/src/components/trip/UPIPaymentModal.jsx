@@ -166,11 +166,17 @@ const UPIPaymentModal = ({
     if (booking?.orderId) {
       order = {
         id: booking.orderId,
-        amount: booking.totalAmount || amount,
+        amountPaise: booking.amountPaise || Math.round((booking.totalAmount || amount) * 100), // paise
+        amount: booking.totalAmount || amount,   // rupees (display only)
         currency: "INR",
-        razorpayKey: booking.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid"
+        razorpayKey: booking.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || ""
       };
-      console.log("[Payment] Using pre-created order from booking object:", order);
+      console.log("[Payment] Using pre-created order from booking object:", {
+        order_id: order.id,
+        amountPaise: order.amountPaise,
+        currency: order.currency,
+        key: order.razorpayKey || "(missing — check VITE_RAZORPAY_KEY_ID)"
+      });
     } else {
       try {
         const token = localStorage.getItem("token");

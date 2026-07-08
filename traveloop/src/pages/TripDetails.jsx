@@ -545,9 +545,10 @@ export const TripDetails = () => {
         bookingId: bookingRef,
         _id: bookingMongoId,
         orderId: bookingData.orderId,
-        razorpayKey: bookingData.razorpayKey,
+        razorpayKey: bookingData.razorpayKey || bookingData.key,
         tripTitle: trip.title,
         totalAmount: bookingData.amount || total,
+        amountPaise: bookingData.amountPaise,  // pass through exact paise from Razorpay order
         startDate: trip.startDate,
         pickupLocation: trip.pickupLocation || "",
       };
@@ -915,7 +916,7 @@ export const TripDetails = () => {
           setBookingStage("payment"); // Show loader during signature verification
           try {
             // 3. Verify Payment on Backend
-            const verifyRes = await fetch(getApiUrl("payments/verify"), {
+            const verifyRes = await fetch(getApiUrl("payment/verify"), {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",

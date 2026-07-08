@@ -1270,26 +1270,59 @@ router.post("/create-order", protect, async (req, res) => {
       paymentAmount: finalAmount,
     });
 
+
     // Create Razorpay Order
+    const amountPaise = Math.round(finalAmount * 100); // integer paise, no decimals
     const options = {
-      amount: Math.round(finalAmount * 100),
+      amount: amountPaise,
       currency: "INR",
       receipt: `RCPT-${bookingId}`,
     };
+
+    console.log("[Create Order] Incoming Create Order request:");
+    console.log("[Create Order] tripId:", tripId, "| userId:", userId);
+    console.log("[Create Order] finalAmount (rupees):", finalAmount, "| amountPaise:", amountPaise);
+    console.log("[Create Order] seatNumbers:", seatNumbers, "| travellers count:", travellers.length);
+    console.log("[Create Order] RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID);
+    console.log("[Create Order] Razorpay options:", JSON.stringify(options));
 
     let order;
     try {
       const rzp = getRazorpayInstance();
       order = await rzp.orders.create(options);
+      console.log("[Create Order] Razorpay Order created successfully:", JSON.stringify({
+        id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        status: order.status,
+        receipt: order.receipt,
+      }));
     } catch (rzpErr) {
-      console.warn("[Razorpay Order Failed] Mock order simulation:", rzpErr.message);
-      order = {
-        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: options.amount,
-        currency: options.currency,
-        receipt: options.receipt,
-        status: "created"
-      };
+      // Do NOT silently fall back to a mock order — a mock order_id will always
+      // cause "Something went wrong" inside the Razorpay checkout popup because
+      // the order_id doesn't exist on Razorpay's servers.
+      console.error("[Create Order] Razorpay API call FAILED:", rzpErr.message || rzpErr);
+      if (rzpErr.error) {
+        console.error("[Create Order] Razorpay error body:", JSON.stringify(rzpErr.error));
+      }
+      // Cancel the booking draft since payment can't proceed
+      if (booking && booking._id) {
+        booking.status = "CANCELLED";
+        booking.bookingStatus = "cancelled";
+        await booking.save().catch(() => {});
+        // Release seat locks
+        for (const seatNum of seatNumbers) {
+          await SeatBooking.updateOne(
+            { tripId, seatNumber: seatNum },
+            { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
+          ).catch(() => {});
+        }
+      }
+      return res.status(502).json({
+        success: false,
+        message: rzpErr?.error?.description || rzpErr.message || "Razorpay order creation failed. Check your API credentials.",
+        razorpayError: rzpErr?.error || null,
+      });
     }
 
     booking.orderId = order.id;
@@ -1299,16 +1332,17 @@ router.post("/create-order", protect, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      orderId: order.id,
-      amount: finalAmount,
-      currency: "INR",
+      orderId: order.id,           // Razorpay order_id (e.g. "order_XXXXXXXXXXXXXXX")
+      amount: finalAmount,         // rupees (for display only)
+      amountPaise: order.amount,   // paise (use directly in Razorpay checkout options)
+      currency: order.currency,    // from Razorpay response
       bookingDraftId: booking._id,
-      key: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
-      razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid"
+      key: process.env.RAZORPAY_KEY_ID,
+      razorpayKey: process.env.RAZORPAY_KEY_ID
     });
 
   } catch (error) {
-    console.error("[Create Order API]", error);
+    console.error("[Create Order API] Unexpected error:", error);
     res.status(500).json({
       success: false,
       message: error.message,
