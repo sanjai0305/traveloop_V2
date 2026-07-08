@@ -614,7 +614,28 @@ export const TripDetails = () => {
   };
 
   const handleCancelPayment = async () => {
-    await handleCancelBooking();
+    const token = localStorage.getItem("token");
+    const targetBookingId = confirmedBooking?._id || confirmedBooking?.bookingId;
+    if (targetBookingId) {
+      try {
+        await fetch(getApiUrl("bookings/cancel"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ bookingId: targetBookingId })
+        });
+      } catch (err) {
+        console.error("[BookingFlow] Failed to cancel draft booking:", err);
+      }
+    }
+
+    setBookingDraftCreated(false);
+    setConfirmedBooking(null);
+    setPaymentStarted(false);
+    setBookingStage("confirm");
+    toast.info("Payment cancelled. You can retry payment.");
   };
 
   // Allow user to explicitly re-edit passenger details

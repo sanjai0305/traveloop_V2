@@ -318,6 +318,68 @@ router.post("/verify", protect, async (req, res) => {
     const userId = req.user._id || req.user.id;
     const lookupId = bookingId || razorpay_order_id;
 
+    // Load booking draft first
+    booking = await Booking.findOne({
+      $or: [
+        { bookingId: lookupId },
+        { _id: mongoose.Types.ObjectId.isValid(lookupId) ? lookupId : null },
+        { orderId: razorpay_order_id }
+      ].filter(Boolean)
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking draft not found" });
+    }
+
+    // Prevent duplicate verification
+    if (booking.status === "PAID" || booking.paymentStatus === "Paid") {
+      return res.status(200).json({
+        success: true,
+        bookingId: booking.bookingId,
+        paymentId: razorpay_payment_id,
+        status: "paid",
+        booking
+      });
+    }
+
+    // Verify Amount and Currency against Razorpay API
+    if (!isMockPayment) {
+      try {
+        const instance = getRazorpayInstance();
+        const rzpOrder = await instance.orders.fetch(razorpay_order_id);
+        const expectedAmountPaise = Math.round(booking.pricePaid * 100);
+        if (rzpOrder.amount !== expectedAmountPaise) {
+          return res.status(400).json({ success: false, message: "Payment amount mismatch with order amount." });
+        }
+        if (rzpOrder.currency !== "INR") {
+          return res.status(400).json({ success: false, message: "Payment currency verification failed." });
+        }
+      } catch (rzpOrderErr) {
+        console.warn("[Razorpay Verify] Could not retrieve order from Razorpay API. Proceeding with local checks:", rzpOrderErr.message);
+      }
+    }
+
+    // Ensure seats are still reserved for this user and not expired/booked
+    const SeatBooking = mongoose.model("SeatBooking");
+    const now = new Date();
+    for (const seatNum of booking.seatNumbers) {
+      const seatDoc = await SeatBooking.findOne({ tripId: booking.tripId, seatNumber: seatNum });
+      if (!seatDoc) {
+        return res.status(400).json({ success: false, message: `Seat ${seatNum} not found.` });
+      }
+      if (seatDoc.status === "booked" && String(seatDoc.bookingId) !== String(booking._id)) {
+        return res.status(400).json({ success: false, message: `Seat ${seatNum} is already booked by another traveler.` });
+      }
+      if (seatDoc.status === "reserved") {
+        if (String(seatDoc.reservedByUserId) !== String(userId)) {
+          return res.status(400).json({ success: false, message: `Seat ${seatNum} is reserved by another traveler.` });
+        }
+        if (seatDoc.reservedUntil && seatDoc.reservedUntil < now) {
+          return res.status(400).json({ success: false, message: `Reservation for seat ${seatNum} has expired.` });
+        }
+      }
+    }
+
     // Start Mongoose Transaction
     try {
       session = await mongoose.startSession();
@@ -330,7 +392,7 @@ router.post("/verify", protect, async (req, res) => {
     let result;
     try {
       result = await BookingService.finalizeBooking({
-        bookingId: lookupId,
+        bookingId: booking._id,
         paymentId: razorpay_payment_id,
         orderId: razorpay_order_id,
         signature: razorpay_signature
@@ -710,6 +772,135 @@ router.post("/validate-coupon", protect, async (req, res) => {
   } catch (error) {
     console.error("Validate coupon error:", error);
     res.status(500).json({ success: false, message: "Server error validating coupon" });
+  }
+});
+
+// @route   POST /api/payment/webhook
+// @desc    Razorpay Webhooks receiver
+// @access  Public
+router.post("/webhook", async (req, res) => {
+  const signature = req.headers["x-razorpay-signature"];
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  if (!signature || !secret) {
+    return res.status(400).json({ success: false, message: "Webhook secret or signature missing" });
+  }
+
+  // Verify signature using raw request body
+  const shasum = crypto.createHmac("sha256", secret);
+  shasum.update(req.rawBody || JSON.stringify(req.body));
+  const digest = shasum.digest("hex");
+
+  if (digest !== signature) {
+    console.error("[Razorpay Webhook] Signature verification failed.");
+    return res.status(400).json({ success: false, message: "Invalid signature" });
+  }
+
+  const event = req.body.event;
+  console.log(`[Razorpay Webhook] Event received: ${event}`);
+
+  try {
+    const payload = req.body.payload;
+
+    if (event === "payment.captured") {
+      const paymentEntity = payload.payment.entity;
+      const orderId = paymentEntity.order_id;
+      const paymentId = paymentEntity.id;
+
+      // Find booking by orderId
+      const booking = await Booking.findOne({ orderId });
+      if (!booking) {
+        console.warn(`[Razorpay Webhook] Booking not found for orderId: ${orderId}`);
+        return res.status(200).json({ status: "ok" });
+      }
+
+      // Prevent duplicate verification/finalization
+      if (booking.status === "PAID" || booking.paymentStatus === "Paid") {
+        console.log(`[Razorpay Webhook] Booking ${booking.bookingId} is already paid.`);
+        return res.status(200).json({ status: "ok" });
+      }
+
+      // Finalize the booking atomically
+      console.log(`[Razorpay Webhook] Finalizing booking ${booking.bookingId}`);
+      await BookingService.finalizeBooking({
+        bookingId: booking._id,
+        paymentId,
+        orderId,
+        signature: signature
+      });
+
+      // Emit seat updates to Socket.io
+      const io = req.app.get("io");
+      if (io && booking.seatNumbers?.length > 0) {
+        booking.seatNumbers.forEach((seatNum, idx) => {
+          const traveler = booking.travellers?.[idx] || {};
+          io.to(`trip_${booking.tripId}`).emit("seat_update", {
+            tripId: booking.tripId,
+            seatNumber: seatNum,
+            status: "booked",
+            gender: traveler.gender || "Other",
+            passengerName: traveler.name || "Traveler",
+            age: traveler.age || 0
+          });
+        });
+      }
+
+      // Send PDF ticket and confirmation email
+      const trip = await AgentTrip.findById(booking.tripId);
+      try {
+        const { generateTicketPdf } = await import("../services/pdfService.js");
+        const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
+
+        const primaryTraveler = booking.travellers?.[0] || {};
+        const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+        const passengerEmail = primaryTraveler.email || booking.contactEmail || "traveler@traveloop.app";
+
+        const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+        await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
+        console.log(`[Razorpay Webhook] Email confirmation sent for booking ${booking.bookingId}`);
+      } catch (err) {
+        console.error("[Razorpay Webhook] Email sending failed:", err.message);
+      }
+    } 
+    else if (event === "payment.failed") {
+      const paymentEntity = payload.payment.entity;
+      const orderId = paymentEntity.order_id;
+
+      const booking = await Booking.findOne({ orderId });
+      if (booking && booking.status !== "PAID" && booking.paymentStatus !== "Paid") {
+        booking.status = "FAILED";
+        booking.paymentStatus = "FAILED";
+        booking.bookingStatus = "failed";
+        await booking.save();
+
+        // Release reserved seats
+        const SeatBooking = mongoose.model("SeatBooking");
+        for (const seatNumber of booking.seatNumbers) {
+          await SeatBooking.updateOne(
+            { tripId: booking.tripId, seatNumber },
+            { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
+          );
+          if (redisClient) {
+            await redisClient.del(`seat_lock:${booking.tripId}:${seatNumber}`);
+          }
+
+          const io = req.app.get("io");
+          if (io) {
+            io.to(`trip_${booking.tripId}`).emit("seat_update", {
+              tripId: booking.tripId,
+              seatNumber,
+              status: "available"
+            });
+          }
+        }
+        console.log(`[Razorpay Webhook] Webhook failed payment processed: Booking ${booking.bookingId} cancelled, seats released.`);
+      }
+    }
+
+    res.status(200).json({ status: "ok" });
+  } catch (err) {
+    console.error("[Razorpay Webhook] Processing error:", err);
+    res.status(500).json({ success: false, message: "Webhook error" });
   }
 });
 

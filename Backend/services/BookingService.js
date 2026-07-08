@@ -557,6 +557,8 @@ export class BookingService {
     // Generate unique ticketId and verification code
     const randDigits = Math.floor(100000 + Math.random() * 900000).toString();
     booking.ticketId = `TLP-2026-${randDigits}`;
+    booking.ticketNumber = booking.ticketId;
+    booking.paymentId = paymentId || "";
     
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "TLP-";
@@ -712,6 +714,11 @@ export class BookingService {
       paymentId: paymentId || "",
       transactionId: paymentId || "",
       signature: signature || "",
+      razorpayOrderId: orderId || booking.orderId || "",
+      razorpayPaymentId: paymentId || "",
+      paymentStatus: "SUCCESS",
+      currency: "INR",
+      paymentMethod: "razorpay",
       paidAt: new Date()
     }], { session });
 

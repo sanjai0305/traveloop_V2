@@ -305,6 +305,10 @@ const bookingSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    ticketNumber: {
+      type: String,
+      default: "",
+    },
     verificationCode: {
       type: String,
       unique: true,

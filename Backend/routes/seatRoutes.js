@@ -80,7 +80,7 @@ const ensureTripSeatsExist = async (tripId, totalSeats) => {
 
 // ─── REDIS SEAT LOCK HELPERS ──────────────────────────────────────────────────
 
-const SEAT_LOCK_TTL = 600; // 10 minutes in seconds
+const SEAT_LOCK_TTL = 300; // 5 minutes in seconds
 
 const seatLockKey = (tripId, seatNumber) =>
   `seat_lock:${tripId}:${seatNumber}`;

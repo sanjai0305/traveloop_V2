@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import QRCode from "qrcode";
 
 const isBlockedEmail = (email) => {
   if (!email || typeof email !== "string") return true;
@@ -694,6 +695,26 @@ export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfB
   const arrTime = trip?.arrivalTime ? new Date(trip.arrivalTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "TBD";
   const bookingDate = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : new Date().toLocaleDateString("en-IN");
 
+  // Generate inline QR Code buffer
+  let qrBuffer;
+  try {
+    const qrData = JSON.stringify({
+      bookingId: booking.bookingId || String(booking._id),
+      ticketId: booking.ticketId || "",
+      seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || ""
+    });
+    qrBuffer = await QRCode.toBuffer(qrData, {
+      margin: 1,
+      width: 150,
+      color: {
+        dark: "#0F172A",
+        light: "#FFFFFF"
+      }
+    });
+  } catch (qrErr) {
+    console.error("[Email Service] QR Code buffer generation failed:", qrErr.message);
+  }
+
   const html = `
     <div style="background-color: #0B1325; padding: 40px 20px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #E2E8F0; max-width: 600px; margin: 0 auto;">
       
@@ -709,6 +730,14 @@ export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfB
         <h2 style="color: #FFFFFF; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px;">Booking Confirmed!</h2>
         <p style="color: #94A3B8; margin: 6px 0 0 0; font-size: 13px;">Hi <b>${name || "Traveler"}</b>, your voyage has been confirmed. See details below.</p>
       </div>
+
+      <!-- INLINE QR CODE PASS -->
+      ${qrBuffer ? `
+      <div style="background-color: #0F172A; border: 1px dashed rgba(20,184,181,0.3); border-radius: 20px; padding: 20px; text-align: center; margin-bottom: 24px;">
+        <img src="cid:qrcode" style="width: 120px; height: 120px; border-radius: 8px;" alt="Boarding pass QR Code"/>
+        <p style="color: #94A3B8; margin: 8px 0 0 0; font-size: 12px; font-weight: 600;">Scan this QR code during boarding</p>
+      </div>
+      ` : ""}
 
       <!-- TRIP DETAILS CARD -->
       <div style="background-color: #0F172A; border: 1px solid #1E293B; border-radius: 20px; padding: 24px; margin-bottom: 24px;">
@@ -792,18 +821,28 @@ export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfB
   `;
 
   try {
+    const attachmentsList = [
+      {
+        filename: `TravelLoop-Ticket-${booking.bookingId}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf"
+      }
+    ];
+
+    if (qrBuffer) {
+      attachmentsList.push({
+        filename: "qrcode.png",
+        content: qrBuffer,
+        cid: "qrcode"
+      });
+    }
+
     await sendMailWithRetry(transporter, {
       from: `"TravelLoop" <${senderEmail}>`,
       to,
       subject: `TravelLoop Ticket Confirmed • Booking ${booking.bookingId}`,
       html,
-      attachments: [
-        {
-          filename: `TravelLoop-Ticket-${booking.bookingId}.pdf`,
-          content: pdfBuffer,
-          contentType: "application/pdf"
-        }
-      ]
+      attachments: attachmentsList
     });
     return true;
   } catch (err) {

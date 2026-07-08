@@ -258,7 +258,12 @@ app.use(
 app.use("/api/scanner", express.json({ limit: "10mb" }));
 app.use("/api/profile", express.json({ limit: "5mb" }));
 
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({
+  limit: "100kb",
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 app.use(sanitizeInput);
 app.use(globalLimiter);

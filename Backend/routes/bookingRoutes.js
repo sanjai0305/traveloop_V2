@@ -1068,7 +1068,7 @@ router.post("/create-order", protect, async (req, res) => {
     }
 
     // Try to lock seats
-    const SEAT_LOCK_TTL = 600;
+    const SEAT_LOCK_TTL = 300;
     const now = new Date();
     const lockExpiresAt = new Date(Date.now() + SEAT_LOCK_TTL * 1000);
     const locksAcquired = [];

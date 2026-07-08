@@ -65,6 +65,22 @@ const paymentSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    razorpayOrderId: {
+      type: String,
+      default: "",
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: "",
+    },
+    paymentStatus: {
+      type: String,
+      default: "",
+    },
+    currency: {
+      type: String,
+      default: "INR",
+    },
     upiReference: {
       type: String,
       default: "",

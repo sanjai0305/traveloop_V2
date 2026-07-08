@@ -64,7 +64,7 @@ const UPIPaymentModal = ({
   // "ready" | "loading" | "success" | "failed"
   const [phase, setPhase] = useState("ready");
   const [error, setError] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(600); // 10-min session timer
+  const [timeLeft, setTimeLeft] = useState(300); // 5-min session timer
   const timerRef = useRef(null);
 
   // ── Derived values ────────────────────────────────────────────────────────
@@ -242,9 +242,10 @@ const UPIPaymentModal = ({
       theme: { color: "#14B8A6" },
       modal: {
         ondismiss: () => {
-          console.log("[Payment] Razorpay modal dismissed by user.");
+          console.log("[Payment] Razorpay modal dismissed by user. Releasing seats and returning to summary.");
           setPhase("ready");
           setError("Payment was cancelled. You can try again.");
+          onCancel();
         },
         escape: true,
         animation: true,
@@ -305,6 +306,17 @@ const UPIPaymentModal = ({
         setPhase("failed");
         toast.error(`Payment failed: ${desc}`);
         console.log("Payment Failed");
+        
+        // Immediately release seats in backend
+        const token = localStorage.getItem("token");
+        fetch(getApiUrl("bookings/cancel"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ bookingId: resolvedBookingId })
+        }).catch(err => console.error("Error cancelling failed booking:", err));
       });
       console.log("[STEP 6] Opening Razorpay");
       console.log("Launching Razorpay");
@@ -543,10 +555,10 @@ const UPIPaymentModal = ({
             {phase === "failed" && (
               <button
                 type="button"
-                onClick={() => { setPhase("ready"); setError(null); }}
+                onClick={onCancel}
                 className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-black text-sm uppercase tracking-wider rounded-2xl transition-all flex items-center justify-center gap-2"
               >
-                Try Again
+                Retry Booking (Re-lock Seats)
               </button>
             )}
 

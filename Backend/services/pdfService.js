@@ -31,19 +31,24 @@ export const generateTicketPdf = (booking, trip, passengerName) => {
       const borderLight = "#E2E8F0";
 
       // ─── HEADER banner ───
-      doc.rect(40, 40, 515, 80).fill(bgDark);
+      doc.rect(40, 40, 515, 95).fill(bgDark);
       
       // TravelLoop Logo
       doc.fillColor(brandTeal).fontSize(22).font("Helvetica-Bold").text("TravelLoop", 60, 55);
       doc.fillColor("#FFFFFF").fontSize(8).font("Helvetica").text("PREMIUM VOYAGE PASS", 60, 80);
+      doc.fillColor("#94A3B8").fontSize(8).font("Helvetica").text(`PAYMENT STATUS: ${booking.paymentStatus || "PAID"}`, 60, 105);
 
       // Booking Confirmed Badge
-      doc.rect(400, 55, 135, 22).fill("#10B981");
-      doc.fillColor("#FFFFFF").fontSize(8.5).font("Helvetica-Bold").text("BOOKING CONFIRMED", 400, 61, { width: 135, align: "center" });
+      doc.rect(400, 50, 135, 18).fill("#10B981");
+      doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text("BOOKING CONFIRMED", 400, 55, { width: 135, align: "center" });
 
       // Booking ID
-      doc.fillColor("#94A3B8").fontSize(8).font("Helvetica").text("BOOKING ID", 400, 87);
-      doc.fillColor("#FFFFFF").fontSize(10).font("Helvetica-Bold").text(booking.bookingId || "N/A", 400, 97);
+      doc.fillColor("#94A3B8").fontSize(7.5).font("Helvetica").text("BOOKING ID", 400, 73);
+      doc.fillColor("#FFFFFF").fontSize(9).font("Helvetica-Bold").text(booking.bookingId || "N/A", 400, 81);
+
+      // Transaction ID
+      doc.fillColor("#94A3B8").fontSize(7.5).font("Helvetica").text("TRANSACTION ID", 400, 93);
+      doc.fillColor("#FFFFFF").fontSize(8.5).font("Helvetica-Bold").text(booking.paymentId || "N/A", 400, 101);
 
       // ─── JOURNEY DETAILS ───
       doc.fillColor(textDark).fontSize(12).font("Helvetica-Bold").text("JOURNEY DETAILS", 40, 145);
