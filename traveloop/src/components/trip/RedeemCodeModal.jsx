@@ -24,10 +24,12 @@ const RedeemCodeModal = ({
 
   const [discountAmount, setDiscountAmount] = useState(0);
   const [finalTotal, setFinalTotal] = useState(originalTotal);
+  const [discountType, setDiscountType] = useState("");
+  const [discountValue, setDiscountValue] = useState(0);
 
   const handleApply = async () => {
     if (!couponCode.trim()) {
-      setErrorMsg("Please enter a coupon code");
+      setErrorMsg("❌ Please enter a coupon code");
       setSuccessMsg("");
       return;
     }
@@ -38,6 +40,9 @@ const RedeemCodeModal = ({
 
     try {
       const token = localStorage.getItem("token");
+      const localUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const userId = localUser?._id || localUser?.id;
+
       const res = await fetch(getApiUrl("coupons/validate"), {
         method: "POST",
         headers: {
@@ -46,6 +51,8 @@ const RedeemCodeModal = ({
         },
         body: JSON.stringify({
           couponCode: couponCode.trim(),
+          tripId: trip?._id || trip?.id,
+          userId: userId,
           bookingAmount: originalTotal
         })
       });
@@ -53,20 +60,24 @@ const RedeemCodeModal = ({
       const data = await res.json();
       if (data.success) {
         setDiscountAmount(data.discountAmount);
-        setFinalTotal(data.updatedTotal);
+        setFinalTotal(data.updatedTotal || data.finalAmount);
         setAppliedCoupon(data.couponCode);
-        setSuccessMsg("Coupon Applied Successfully");
+        setDiscountType(data.discountType || "");
+        setDiscountValue(data.discountValue || 0);
+        setSuccessMsg("✅ Coupon Applied Successfully");
         setErrorMsg("");
         toast.success("Coupon applied successfully!");
       } else {
-        setErrorMsg(data.message || "Invalid Coupon");
+        setErrorMsg(`❌ ${data.message || "Invalid Coupon Code"}`);
         setSuccessMsg("");
         setDiscountAmount(0);
         setFinalTotal(originalTotal);
         setAppliedCoupon(null);
+        setDiscountType("");
+        setDiscountValue(0);
       }
     } catch (err) {
-      setErrorMsg("Network error validating coupon");
+      setErrorMsg("❌ Network error validating coupon");
       setSuccessMsg("");
     } finally {
       setIsApplying(false);
@@ -78,6 +89,8 @@ const RedeemCodeModal = ({
     setDiscountAmount(0);
     setFinalTotal(originalTotal);
     setAppliedCoupon(null);
+    setDiscountType("");
+    setDiscountValue(0);
     setErrorMsg("");
     setSuccessMsg("");
   };
@@ -151,6 +164,16 @@ const RedeemCodeModal = ({
               <span>Convenience Fee</span>
               <span className="font-mono text-slate-200">₹{convenienceFee}</span>
             </div>
+            {appliedCoupon && (
+              <div className="border-t border-slate-800/50 my-1 pt-1 space-y-1">
+                <div className="flex justify-between text-slate-400 text-[11px] font-medium">
+                  <span>Coupon Applied</span>
+                  <span className="font-bold text-teal-400">
+                    {appliedCoupon} ({discountType === "PERCENTAGE" ? `-${discountValue}%` : `-₹${discountValue}`})
+                  </span>
+                </div>
+              </div>
+            )}
             {discountAmount > 0 && (
               <div className="flex justify-between text-emerald-400 font-bold">
                 <span>Discount</span>

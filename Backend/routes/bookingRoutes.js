@@ -1156,15 +1156,15 @@ router.post("/create-order", protect, async (req, res) => {
         const Coupon = mongoose.model("Coupon");
         const coupon = await Coupon.findOne({ couponCode: normalizedCode });
         if (!coupon) {
-          return res.status(400).json({ success: false, message: "Invalid Coupon" });
+          return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
         }
 
         if (coupon.status === "INACTIVE") {
-          return res.status(400).json({ success: false, message: "Inactive Coupon" });
+          return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
         }
 
         if (coupon.expiryDate && new Date() > new Date(coupon.expiryDate)) {
-          return res.status(400).json({ success: false, message: "Expired Coupon" });
+          return res.status(400).json({ success: false, message: "Coupon Expired" });
         }
 
         if (totalAmount < coupon.minimumAmount) {
