@@ -268,7 +268,7 @@ const LegalConsent = () => {
                         Review the rules and guidelines governing the use of TravelLoop services.
                       </p>
                       <a
-                        href="/legal-site/index.html?doc=terms"
+                        href="https://traveloop-v2-j88c.vercel.app/index.html?doc=terms"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
@@ -290,7 +290,7 @@ const LegalConsent = () => {
                         Learn how we securely collect, use, and process your personal travel details.
                       </p>
                       <a
-                        href="/legal-site/index.html?doc=privacy"
+                        href="https://traveloop-v2-j88c.vercel.app/index.html?doc=privacy"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs font-bold text-teal-400 hover:text-teal-300 transition-colors"

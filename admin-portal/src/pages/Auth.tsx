@@ -132,7 +132,7 @@ export const Auth: React.FC = () => {
           </form>
         ) : (
           /* ── STANDARD LOGIN CREDENTIALS SCREEN ── */
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-5" autoComplete="off">
             <div className="space-y-1">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Email Address
@@ -140,7 +140,8 @@ export const Auth: React.FC = () => {
               <input
                 type="email"
                 required
-                placeholder="sanjaim0940r@gmail.com"
+                autoComplete="new-password"
+                placeholder="Enter your admin email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full px-4 py-3 bg-slate-950/80 border border-slate-800 rounded-xl focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 text-white text-sm"
@@ -154,6 +155,7 @@ export const Auth: React.FC = () => {
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
