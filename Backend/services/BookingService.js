@@ -12,6 +12,7 @@ import Checklist from "../models/Checklist.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import Referral from "../models/Referral.js";
+import Payment from "../models/Payment.js";
 import { triggerNotification } from "../controllers/notificationController.js";
 
 const generateBookingId = () => {
@@ -719,7 +720,7 @@ export class BookingService {
     }
 
     // Create Payment record
-    const payment = await Payment.create([{
+    const paymentPayload = {
       bookingId: booking._id,
       bookingRef: booking.bookingId,
       tripId: trip._id,
@@ -738,11 +739,21 @@ export class BookingService {
       currency: "INR",
       paymentMethod: "razorpay",
       paidAt: new Date()
-    }], { session });
+    };
+
+    console.log("[finalizeBooking] Creating Payment record with payload:", paymentPayload);
+    const payment = await Payment.create([paymentPayload], { session });
+    const paymentRecord = payment[0] || payment;
+    console.log("[finalizeBooking] Payment Record created successfully:", paymentRecord);
+
+    if (!paymentRecord) {
+      throw new Error("Payment record not found/could not be created.");
+    }
 
     // Clone user trip
     let userTrip = null;
     try {
+      console.log("[finalizeBooking] Cloning trip to user workspace...");
       userTrip = await cloneAgentTripToUserTrip(booking, trip, booking.userId, booking.pricePaid);
     } catch (cloneErr) {
       console.warn("[BookingService] Trip clone failed:", cloneErr.message);
@@ -758,12 +769,14 @@ export class BookingService {
       }], { session });
     } catch (notifErr) {}
 
-    return {
+    const result = {
       booking,
-      payment: payment[0] || payment,
+      payment: paymentRecord,
       userTrip,
       passengers: createdPassengers
     };
+    console.log("[finalizeBooking] Finalized Booking result:", result);
+    return result;
   }
 }
 export default BookingService;
