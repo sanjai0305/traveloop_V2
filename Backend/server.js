@@ -307,6 +307,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/master", masterRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/payments", paymentRoutes);
 app.use("/api/driver", driverRoutes);
 app.use("/api/boarding", boardingRoutes);
 app.use("/api/admin", adminLimiter, adminRoutes);

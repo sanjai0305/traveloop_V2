@@ -180,6 +180,7 @@ export class BookingService {
       contactPhone = "",
       emailVerified = true,
       phoneVerified = true,
+      accountEmail = "",
     } = payload;
 
     if (!tripId) {
@@ -499,6 +500,219 @@ export class BookingService {
     return {
       booking,
       userTrip,
+    };
+  }
+
+  /**
+   * Finalizes a booking draft atomically.
+   * Supports execution within a MongoDB session/transaction.
+   */
+  static async finalizeBooking(payload, session = null) {
+    const { bookingId, paymentId, orderId, signature } = payload;
+    
+    // Resolve Booking
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
+      ].filter(Boolean)
+    }).session(session);
+
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+
+    if (booking.status === "PAID" || booking.paymentStatus === "Paid") {
+      return { booking, alreadyPaid: true };
+    }
+
+    const trip = await AgentTrip.findById(booking.tripId).session(session);
+    if (!trip) {
+      throw new Error("Trip not found");
+    }
+
+    // Update booking status
+    booking.paymentStatus = "Paid";
+    booking.status = "PAID";
+    booking.bookingStatus = "confirmed";
+    booking.paymentVerified = true;
+    booking.paymentDate = new Date();
+    booking.amountPaid = booking.pricePaid || booking.amount || 0;
+    
+    // Generate unique ticketId and verification code
+    const randDigits = Math.floor(100000 + Math.random() * 900000).toString();
+    booking.ticketId = `TLP-2026-${randDigits}`;
+    
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "TLP-";
+    for (let i = 0; i < 7; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    booking.verificationCode = code;
+    
+    booking.qrToken = Buffer.from(JSON.stringify({
+      bookingId: booking._id.toString(),
+      ticketId: booking.ticketId,
+      verificationCode: booking.verificationCode,
+      seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime(),
+    })).toString("base64");
+
+    await booking.save({ session });
+
+    // Update Passengers and SeatBookings
+    const createdPassengers = [];
+    const Passenger = mongoose.model("Passenger");
+    const SeatBooking = mongoose.model("SeatBooking");
+
+    const travellersList = booking.travellers || [];
+    const seatNumbersList = booking.seatNumbers || [];
+
+    for (let i = 0; i < travellersList.length; i++) {
+      const pData = travellersList[i];
+      const seatNumber = seatNumbersList[i] || pData.seatNumber;
+      if (!seatNumber) continue;
+
+      const passenger = await Passenger.findOneAndUpdate(
+        { bookingId: booking._id, seatNumber },
+        {
+          bookingId: booking._id,
+          bookingRef: booking.bookingId,
+          tripId: booking.tripId,
+          userId: booking.userId,
+          name: pData.name || "",
+          age: Number(pData.age) || 0,
+          gender: pData.gender || "Other",
+          phone: pData.phone || "",
+          email: pData.email || "",
+          emergencyContact: pData.emergencyContact || booking.contactNumber || "",
+          seatNumber,
+          seatPreference: pData.seatPreference || "No Preference",
+          seatType: pData.seatType || "Window",
+          specialRequest: pData.specialRequest || "",
+          status: "active",
+          paymentStatus: "completed",
+          qrPayload: {
+            bookingId: booking.bookingId || String(booking._id),
+            tripId: String(booking.tripId),
+            passenger: pData.name,
+            seat: seatNumber,
+            gender: pData.gender,
+            age: pData.age,
+            timestamp: new Date().toISOString(),
+          },
+        },
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, session }
+      );
+
+      createdPassengers.push(passenger);
+
+      await SeatBooking.updateOne(
+        { tripId: booking.tripId, seatNumber },
+        {
+          status: "booked",
+          bookingId: booking._id,
+          passengerId: passenger._id,
+          passengerName: pData.name || "",
+          gender: pData.gender || "Other",
+          age: Number(pData.age) || 0,
+          paymentStatus: "completed",
+          reservedUntil: null,
+        },
+        { session }
+      );
+    }
+
+    // Update Trip available seats
+    trip.bookedSeats = (trip.bookedSeats || 0) + booking.seats;
+    trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - booking.seats);
+    
+    const totalS = trip.totalSeats || 40;
+    trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
+    trip.occupancyRate = trip.occupancy;
+    trip.bookingCount = (trip.bookingCount || 0) + 1;
+
+    // Recalculate agent revenue and update wallet
+    const agent = await Agent.findById(trip.agentId || trip.agent).session(session);
+    const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" }).session(session);
+    const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
+    const commRate = trip.commissionPercentage !== undefined ? trip.commissionPercentage : defaultRate;
+
+    const commissionAmount = booking.pricePaid * (commRate / 100);
+    const agentAmount = booking.pricePaid - commissionAmount;
+
+    trip.walletAmount = (trip.walletAmount || 0) + agentAmount;
+    await trip.save({ session });
+
+    // Update Wallet balance
+    const targetAgentId = trip.agentId || trip.agent;
+    if (targetAgentId) {
+      let wallet = await Wallet.findOne({ agentId: targetAgentId }).session(session);
+      if (!wallet) {
+        wallet = new Wallet({ agentId: targetAgentId });
+      }
+      wallet.balance += agentAmount;
+      wallet.withdrawableBalance += agentAmount;
+      wallet.transactions.push({
+        date: new Date(),
+        bookingId: booking.bookingId,
+        customerName: travellersList[0]?.name || "Traveler",
+        amount: booking.pricePaid,
+        commission: commissionAmount,
+        netEarnings: agentAmount,
+        status: "Completed",
+      });
+      await wallet.save({ session });
+    }
+
+    if (agent) {
+      agent.revenue = (agent.revenue || 0) + booking.pricePaid;
+      agent.totalRevenue = (agent.totalRevenue || 0) + booking.pricePaid;
+      agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
+      agent.totalBookings = (agent.totalBookings || 0) + 1;
+      await agent.save({ session });
+    }
+
+    // Create Payment record
+    const payment = await Payment.create([{
+      bookingId: booking._id,
+      bookingRef: booking.bookingId,
+      tripId: trip._id,
+      agentId: trip.agentId || trip.agent,
+      userId: booking.userId,
+      amount: booking.pricePaid,
+      status: "SUCCESS",
+      gateway: "razorpay",
+      orderId: orderId || booking.orderId || "",
+      paymentId: paymentId || "",
+      transactionId: paymentId || "",
+      signature: signature || "",
+      paidAt: new Date()
+    }], { session });
+
+    // Clone user trip
+    let userTrip = null;
+    try {
+      userTrip = await cloneAgentTripToUserTrip(booking, trip, booking.userId, booking.pricePaid);
+    } catch (cloneErr) {
+      console.warn("[BookingService] Trip clone failed:", cloneErr.message);
+    }
+
+    // Create Admin Notification
+    try {
+      const AdminNotification = mongoose.model("AdminNotification");
+      await AdminNotification.create([{
+        title: "New Booking Confirmed",
+        message: `Traveler ${travellersList[0]?.name || "Traveler"} booked trip '${trip.title}' for ₹${booking.pricePaid}`,
+        type: "booking",
+      }], { session });
+    } catch (notifErr) {}
+
+    return {
+      booking,
+      payment: payment[0] || payment,
+      userTrip,
+      passengers: createdPassengers
     };
   }
 }

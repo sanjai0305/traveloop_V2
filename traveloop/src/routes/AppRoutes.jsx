@@ -42,6 +42,7 @@ const ForgotPassword = lazy(() => import("../pages/ForgotPassword"));
 const About = lazy(() => import("../pages/About"));
 const BookedPackageDetail = lazy(() => import("../pages/BookedPackageDetail"));
 const DriverPortal = lazy(() => import("../pages/DriverPortal"));
+const BookingSuccess = lazy(() => import("../pages/BookingSuccess"));
 
 // PROTECTED ROUTE
 import ProtectedRoute from "./ProtectedRoute";
@@ -294,6 +295,16 @@ const AppRoutes = () => {
           <Route
             path="/driver/verify"
             element={<DriverPortal />}
+          />
+
+          {/* BOOKING SUCCESS */}
+          <Route
+            path="/booking/:bookingId/success"
+            element={
+              <ProtectedRoute>
+                <BookingSuccess />
+              </ProtectedRoute>
+            }
           />
 
           {/* 454 */}

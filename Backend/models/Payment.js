@@ -45,7 +45,7 @@ const paymentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
+      enum: ["PENDING", "PAID", "FAILED", "REFUNDED", "SUCCESS"],
       default: "PENDING",
       set: v => v ? v.toUpperCase() : v
     },
@@ -72,6 +72,10 @@ const paymentSchema = new mongoose.Schema(
     bankRRN: {
       type: String,
       default: "",
+    },
+    paidAt: {
+      type: Date,
+      default: null,
     },
   },
   {

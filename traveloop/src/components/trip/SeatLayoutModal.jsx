@@ -676,8 +676,8 @@ const SeatLayoutModal = ({
 
   // ── Confirm Booking & Seat Reservation ─────────────────────────────────────
   const handleConfirm = async (selectedOverride, detailsOverride) => {
-    const activeSelected = selectedOverride || selected;
-    const activeDetails = detailsOverride || passengerDetails;
+    const activeSelected = Array.isArray(selectedOverride) ? selectedOverride : selected;
+    const activeDetails = (detailsOverride && typeof detailsOverride === "object" && !detailsOverride.nativeEvent) ? detailsOverride : passengerDetails;
 
     // Validate activeSelected is an array before using filter
     const selectedSeatsArray = Array.isArray(activeSelected) ? activeSelected : [];

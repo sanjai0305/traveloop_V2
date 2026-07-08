@@ -273,243 +273,81 @@ router.post("/verify", protect, async (req, res) => {
     return res.status(400).json({ success: false, message: "Payment verification failed" });
   }
 
-  // 2. Resolve or Load Booking
+  // 2. Resolve or Load Booking and Finalize Atomically
   let booking = null;
-  let trip = null;
-  let finalAmount = 0;
-  let totalTravellers = 0;
+  let paymentDoc = null;
+  let session = null;
 
   try {
     const userId = req.user._id || req.user.id;
+    const lookupId = bookingId || razorpay_order_id;
 
-    if (bookingId) {
-      booking = await Booking.findOne({
-        $or: [
-          { bookingId: bookingId },
-          { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
-        ].filter(Boolean)
-      });
-    }
-
-    const { additionalPassengers = [], additionalAmount = 0 } = req.body;
-
-    if (booking) {
-      // SCENARIO A: Existing booking update or additional passenger payment verification
-      trip = await AgentTrip.findById(booking.tripId);
-      if (!trip) {
-        return res.status(400).json({ success: false, message: "Trip not found" });
-      }
-
-      if (additionalPassengers.length > 0) {
-        // Additional passenger payment flow
-        finalAmount = additionalAmount;
-        totalTravellers = additionalPassengers.length;
-
-        if ((trip.availableSeats || 0) < totalTravellers) {
-          return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
-        }
-
-        // Add additional passengers to travellers arrays
-        const normalizeGender = (g) => {
-          if (!g) return "Other";
-          const lower = g.toLowerCase();
-          if (lower === "male") return "Male";
-          if (lower === "female") return "Female";
-          return "Other";
-        };
-
-        additionalPassengers.forEach(p => {
-          booking.travellers.push({
-            name: p.name,
-            age: Number(p.age || 0),
-            gender: normalizeGender(p.gender),
-            phone: p.phone || "",
-          });
-          if (p.seat) {
-            booking.seatNumbers.push(p.seat);
-          }
-        });
-
-        booking.seats = (booking.seats || 0) + totalTravellers;
-        booking.pricePaid = (booking.pricePaid || 0) + additionalAmount;
-        booking.amount = (booking.amount || 0) + additionalAmount;
-        booking.amountPaid = (booking.amountPaid || 0) + additionalAmount;
-
-        // Recalculate counts
-        let mCount = 0;
-        let fCount = 0;
-        additionalPassengers.forEach(p => {
-          const gen = normalizeGender(p.gender);
-          if (gen === "Male") mCount++;
-          if (gen === "Female") fCount++;
-        });
-
-        booking.maleCount = (booking.maleCount || 0) + mCount;
-        booking.femaleCount = (booking.femaleCount || 0) + fCount;
-        booking.adults = (booking.adults || 0) + totalTravellers;
-
-        await booking.save();
-
-        // Update trip counters
-        trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
-        trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - totalTravellers);
-        trip.maleCount = (trip.maleCount || 0) + mCount;
-        trip.femaleCount = (trip.femaleCount || 0) + fCount;
-        trip.occupancy = trip.totalSeats > 0 ? Math.round((trip.bookedSeats / trip.totalSeats) * 100) : 0;
-        await trip.save();
-
-        // Update Agent statistics
-        const agent = await Agent.findById(trip.agentId || trip.agent);
-        if (agent) {
-          const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
-          const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
-          const commissionRate = agent.commissionRate !== undefined ? agent.commissionRate : defaultRate;
-
-          const commissionAmount = finalAmount * (commissionRate / 100);
-          const gatewayFee = finalAmount * 0.02;
-          const agentAmount = finalAmount - commissionAmount - gatewayFee;
-
-          agent.revenue = (agent.revenue || 0) + finalAmount;
-          agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
-          agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
-          await agent.save();
-        }
-      } else {
-        // Standard confirm checkout payment flow
-        finalAmount = booking.pricePaid || booking.amount || 0;
-        totalTravellers = booking.seats || 1;
-
-        if (booking.paymentStatus !== "Paid" && (trip.availableSeats || 0) < totalTravellers) {
-          return res.status(400).json({ success: false, message: "Not enough available seats left on this trip" });
-        }
-
-        if (booking.paymentStatus !== "Paid") {
-          booking.paymentStatus = "Paid";
-          booking.status = "Paid";
-          booking.bookingStatus = "confirmed";
-          booking.paymentVerified = true;
-          booking.paymentDate = new Date();
-          await booking.save();
-
-          // Update trip counters
-          trip.bookedSeats = (trip.bookedSeats || 0) + totalTravellers;
-          trip.availableSeats = Math.max(0, (trip.availableSeats || 0) - totalTravellers);
-          
-          const totalS = trip.totalSeats || 40;
-          trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
-          await trip.save();
-
-          // Update Agent statistics
-          const agent = await Agent.findById(trip.agentId || trip.agent);
-          if (agent) {
-            const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" });
-            const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
-            const commissionRate = agent.commissionRate !== undefined ? agent.commissionRate : defaultRate;
-
-            const commissionAmount = finalAmount * (commissionRate / 100);
-            const gatewayFee = finalAmount * 0.02;
-            const agentAmount = finalAmount - commissionAmount - gatewayFee;
-
-            agent.revenue = (agent.revenue || 0) + finalAmount;
-            agent.totalRevenue = (agent.totalRevenue || 0) + finalAmount;
-            agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
-            agent.totalBookings = (agent.totalBookings || 0) + 1;
-            await agent.save();
-          }
-          await confirmPassengerSeats(booking, bookingPayload?.travellers || booking.travellers, trip._id, userId, req.app.get("io"));
-        }
-      }
-    } else if (bookingPayload) {
-      // SCENARIO B: Create new booking from payload
-      const { tripId } = bookingPayload;
-      trip = await AgentTrip.findById(tripId);
-      if (!trip) {
-        return res.status(400).json({ success: false, message: "Trip not found" });
-      }
-      totalTravellers = (bookingPayload.travellers || []).length || 1;
-      finalAmount = bookingPayload.totalAmount || (trip.offerPrice || trip.pricePerPerson || 0) * totalTravellers;
-
-      const result = await BookingService.createBooking({
-        tripId,
-        userId,
-        travellers: bookingPayload.travellers,
-        seats: totalTravellers,
-        seatNumbers: bookingPayload.seatNumbers,
-        totalAmount: finalAmount,
-        paymentStatus: "Paid",
-        bookingStatus: "confirmed",
-        paymentVerified: true,
-        paymentDate: new Date(),
-        maleCount: bookingPayload.maleCount,
-        femaleCount: bookingPayload.femaleCount,
-        adults: bookingPayload.adults,
-        children: bookingPayload.children,
-        pickupLocation: bookingPayload.pickupLocation,
-        contactNumber: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
-        contactEmail: req.user.email || "",
-        contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
-        emailVerified: true,
-        phoneVerified: true,
-        couponCode: bookingPayload.couponCode || "",
-      });
-      booking = result.booking;
-      await confirmPassengerSeats(booking, bookingPayload.travellers, trip._id, userId, req.app.get("io"));
-    } else {
-      return res.status(400).json({ success: false, message: "Missing bookingId or bookingPayload" });
-    }
-
-    // 4. Create/Store Payment Record
-    await Payment.create({
-      bookingId: booking._id,
-      bookingRef: booking.bookingId,
-      tripId: trip._id,
-      agentId: trip.agentId || trip.agent,
-      travelerId: userId,
-      userId: userId,
-      amount: finalAmount,
-      status: "Paid",
-      gateway: "razorpay",
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id,
-      transactionId: razorpay_payment_id,
-      signature: razorpay_signature,
-    });
-
-    // Send email invoice asynchronously
+    // Start Mongoose Transaction
     try {
-      const { sendInvoiceEmail } = await import("../services/emailService.js");
-      const travelerEmail = booking.travellers?.[0]?.email || req.user.email;
-      if (travelerEmail) {
-        const passengerDetails = booking.travellers.map((t, idx) => ({
-          name: t.name,
-          age: t.age,
-          gender: t.gender,
-          phone: t.phone,
-          email: t.email,
-          seatNumber: booking.seatNumbers[idx] || ""
-        }));
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch (txInitErr) {
+      console.warn("[Transaction] MongoDB transactions not supported by deployment. Running sequentially.");
+      session = null;
+    }
 
-        const invoicePayload = {
-          tripName: trip.title || "Bus Journey",
-          bookingId: booking.bookingId,
-          passengers: passengerDetails,
-          seatNumbers: booking.seatNumbers,
-          travelDate: trip.startDate ? new Date(trip.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
-          pickupPoint: trip.pickupLocation || booking.pickupLocation || "Main Terminal",
-          dropPoint: trip.dropPoint || "Terminal Drop",
-          amountPaid: finalAmount,
-          paymentId: razorpay_payment_id,
-          bookingStatus: booking.bookingStatus || "Confirmed",
-          qrUnlockStatus: booking.qrUnlocked ? "Unlocked" : "Locked (Driver Verification Pending)",
-          emergencyContact: booking.emergencyContact || booking.contactNumber || ""
-        };
+    let result;
+    try {
+      result = await BookingService.finalizeBooking({
+        bookingId: lookupId,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        signature: razorpay_signature
+      }, session);
 
-        sendInvoiceEmail(travelerEmail, invoicePayload).catch(err => {
-          console.error("Async sendInvoiceEmail error:", err);
-        });
+      if (session) {
+        await session.commitTransaction();
       }
-    } catch (invoiceErr) {
-      console.error("Failed to trigger invoice email:", invoiceErr);
+    } catch (finalizeErr) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      throw finalizeErr;
+    } finally {
+      if (session) {
+        session.endSession();
+      }
+    }
+
+    booking = result.booking;
+    paymentDoc = result.payment;
+
+    // 3. Emit real-time seat updates for newly confirmed seats
+    const io = req.app.get("io");
+    if (io && booking.seatNumbers?.length > 0) {
+      booking.seatNumbers.forEach((seatNum, idx) => {
+        const traveler = booking.travellers?.[idx] || {};
+        io.to(`trip_${booking.tripId}`).emit("seat_update", {
+          tripId: booking.tripId,
+          seatNumber: seatNum,
+          status: "booked",
+          gender: traveler.gender || "Other",
+          passengerName: traveler.name || "Traveler",
+          age: traveler.age || 0
+        });
+      });
+    }
+
+    // 4. Trigger PDF ticket pass generation and send confirmation email asynchronously
+    const trip = await AgentTrip.findById(booking.tripId);
+    try {
+      const { generateTicketPdf } = await import("../services/pdfService.js");
+      const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
+      
+      const primaryTraveler = booking.travellers?.[0] || {};
+      const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+      const passengerEmail = primaryTraveler.email || req.user.email || "traveler@traveloop.app";
+      
+      const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+      await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
+      console.log(`[Payment Verify API] Confirmation email sent to ${passengerEmail}`);
+    } catch (emailErr) {
+      console.error("[Payment Verify API] Failed to send ticket pass email:", emailErr.message);
     }
 
     res.status(200).json({
@@ -519,6 +357,7 @@ router.post("/verify", protect, async (req, res) => {
       status: "paid",
       booking
     });
+
   } catch (error) {
     console.error("[Razorpay Verify & Record] Error:", error);
     res.status(400).json({ success: false, message: error.message || "Payment Verification Failed" });

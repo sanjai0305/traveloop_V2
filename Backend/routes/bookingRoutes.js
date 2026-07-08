@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import Razorpay from "razorpay";
 import protect from "../middleware/authMiddleware.js";
 import Booking from "../models/Booking.js";
 import AgentTrip from "../models/AgentTrip.js";
@@ -493,6 +494,38 @@ router.get("/ticket/:bookingId", protect, async (req, res) => {
   }
 });
 
+// GET /api/bookings/:bookingId/pdf
+// Generates and downloads the ticket PDF.
+router.get("/:bookingId/pdf", protect, async (req, res) => {
+  const { bookingId } = req.params;
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    }).populate("tripId");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    const trip = booking.tripId;
+    const primaryTraveler = booking.travellers?.[0] || {};
+    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
+
+    const { generateTicketPdf } = await import("../services/pdfService.js");
+    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=ticket-${booking.bookingId || booking._id}.pdf`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("[Ticket PDF Download] Error:", error);
+    res.status(500).json({ success: false, message: "Server Error generating PDF" });
+  }
+});
+
 /**
  * GET /api/bookings/:bookingId
  * Returns booking details.
@@ -787,6 +820,329 @@ router.post("/:bookingId/verify-cancel-otp", protect, async (req, res) => {
   } catch (error) {
     console.error("[Verify Cancel OTP Error]:", error);
     res.status(500).json({ success: false, message: "Server error during cancellation" });
+  }
+});
+
+// Initialize Razorpay Instance helper
+const getRazorpayInstance = () => {
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
+
+  if (!key_id || !key_secret) {
+    console.warn("[Razorpay] WARNING: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET / RAZORPAY_SECRET missing in env. Using dummy defaults.");
+  }
+  return new Razorpay({
+    key_id: key_id || "rzp_test_dummykeyid",
+    key_secret: key_secret || "dummysecretvalue",
+  });
+};
+
+// @route   POST /api/bookings/create-order
+// @desc    Create booking draft, lock seats, and generate Razorpay order.
+// @access  Private (Traveler)
+router.post("/create-order", protect, async (req, res) => {
+  const {
+    tripId,
+    travellers = [],
+    seatNumbers = [],
+    totalAmount = 0,
+    pickupLocation = "",
+    couponCode = "",
+    maleCount = 0,
+    femaleCount = 0,
+    adults = 1,
+    children = 0,
+  } = req.body;
+
+  const userId = req.user._id || req.user.id;
+
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "User session expired. Please log in again." });
+  }
+  if (!tripId) {
+    return res.status(400).json({ success: false, message: "tripId is required" });
+  }
+  if (!seatNumbers || !Array.isArray(seatNumbers) || seatNumbers.length === 0) {
+    return res.status(400).json({ success: false, message: "At least one seat must be selected." });
+  }
+  if (!travellers || !Array.isArray(travellers) || travellers.length !== seatNumbers.length) {
+    return res.status(400).json({ success: false, message: "Passenger details must match selected seats." });
+  }
+  if (totalAmount <= 0) {
+    return res.status(400).json({ success: false, message: "Booking amount must be greater than zero." });
+  }
+
+  try {
+    const trip = await AgentTrip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found." });
+    }
+
+    if (trip.bookingDeadline) {
+      const deadline = new Date(trip.bookingDeadline);
+      if (!isNaN(deadline.getTime()) && new Date() > deadline) {
+        return res.status(400).json({ success: false, message: "Bookings closed for this trip." });
+      }
+    }
+
+    if ((trip.availableSeats || 0) < seatNumbers.length) {
+      return res.status(400).json({ success: false, message: "Not enough available seats left on this trip." });
+    }
+
+    // Check for permanently booked seats
+    const alreadyBooked = await SeatBooking.find({
+      tripId,
+      seatNumber: { $in: seatNumbers },
+      status: "booked"
+    });
+    if (alreadyBooked.length > 0) {
+      const bookedList = alreadyBooked.map(s => s.seatNumber).join(", ");
+      return res.status(400).json({
+        success: false,
+        message: `Seat(s) ${bookedList} are already permanently booked.`
+      });
+    }
+
+    // Try to lock seats
+    const SEAT_LOCK_TTL = 600;
+    const now = new Date();
+    const lockExpiresAt = new Date(Date.now() + SEAT_LOCK_TTL * 1000);
+    const locksAcquired = [];
+
+    for (const seatNumber of seatNumbers) {
+      const seatDoc = await SeatBooking.findOne({ tripId, seatNumber });
+      if (seatDoc && seatDoc.status === "reserved" && seatDoc.reservedUntil && seatDoc.reservedUntil > now) {
+        if (String(seatDoc.reservedByUserId) !== String(userId)) {
+          // Rollback previous locks
+          for (const sNum of locksAcquired) {
+            await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
+            if (redisClient) await redisClient.del(`seat_lock:${tripId}:${sNum}`);
+          }
+          return res.status(409).json({
+            success: false,
+            message: `Seat ${seatNumber} is temporarily reserved by another traveler.`
+          });
+        }
+      }
+
+      if (redisClient) {
+        const key = `seat_lock:${tripId}:${seatNumber}`;
+        const lockAcquired = await redisClient.set(key, String(userId), "EX", SEAT_LOCK_TTL, "NX");
+        if (lockAcquired !== "OK" && !(seatDoc && String(seatDoc.reservedByUserId) === String(userId))) {
+          for (const sNum of locksAcquired) {
+            await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
+            await redisClient.del(`seat_lock:${tripId}:${sNum}`);
+          }
+          return res.status(409).json({
+            success: false,
+            message: `Seat ${seatNumber} is temporarily reserved by another traveler.`
+          });
+        }
+      }
+
+      await SeatBooking.updateOne(
+        { tripId, seatNumber },
+        {
+          status: "reserved",
+          reservedUntil: lockExpiresAt,
+          lockExpiresAt,
+          reservedByUserId: userId,
+          paymentStatus: "pending"
+        }
+      );
+      locksAcquired.push(seatNumber);
+
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`trip_${tripId}`).emit("seat_update", {
+          tripId,
+          seatNumber,
+          status: "reserved",
+          reservedUntil: lockExpiresAt
+        });
+      }
+    }
+
+    // Save Booking Draft
+    const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
+    const User = mongoose.model("User");
+    const userObj = await User.findById(userId);
+
+    const normalizeGender = (g) => {
+      if (!g) return "Other";
+      const lower = g.toLowerCase();
+      if (lower === "male") return "Male";
+      if (lower === "female") return "Female";
+      return "Other";
+    };
+
+    const travelersNormalized = travellers.map(t => ({
+      name: t.name,
+      age: Number(t.age || 0),
+      gender: normalizeGender(t.gender),
+      phone: t.phone || t.travelerPhone || "",
+      email: t.email || t.accountEmail || "",
+      accountEmail: t.accountEmail || userObj?.email || "",
+      emailVerified: true,
+      phoneVerified: true,
+    }));
+
+    const booking = await Booking.create({
+      bookingId,
+      userId,
+      tripId,
+      agentId: trip.agentId || trip.agent,
+      seats: seatNumbers.length,
+      seatNumbers,
+      pricePaid: totalAmount,
+      amount: totalAmount,
+      amountPaid: 0,
+      status: "DRAFT",
+      bookingStatus: "draft",
+      paymentStatus: "PENDING",
+      paymentVerified: false,
+      assignedSeat: seatNumbers[0] || "",
+      travelerName: travelersNormalized[0]?.name || "",
+      gender: normalizeGender(travelersNormalized[0]?.gender || ""),
+      contactNumber: req.user.phone || req.user.phoneNumber || userObj?.phone || "",
+      age: travelersNormalized[0]?.age || 0,
+      travellers: travelersNormalized,
+      maleCount,
+      femaleCount,
+      adults,
+      children,
+      pickupLocation,
+      contactEmail: req.user.email || userObj?.email || "",
+      accountEmail: userObj?.email || "",
+      bookingForOthers: travelersNormalized[0]?.bookingForOthers || false,
+    });
+
+    // Create Razorpay Order
+    const options = {
+      amount: Math.round(totalAmount * 100),
+      currency: "INR",
+      receipt: `RCPT-${bookingId}`,
+    };
+
+    let order;
+    try {
+      const rzp = getRazorpayInstance();
+      order = await rzp.orders.create(options);
+    } catch (rzpErr) {
+      console.warn("[Razorpay Order Failed] Mock order simulation:", rzpErr.message);
+      order = {
+        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
+        amount: options.amount,
+        currency: options.currency,
+        receipt: options.receipt,
+        status: "created"
+      };
+    }
+
+    booking.orderId = order.id;
+    booking.status = "PENDING_PAYMENT";
+    booking.bookingStatus = "pending";
+    await booking.save();
+
+    res.status(201).json({
+      success: true,
+      orderId: order.id,
+      amount: totalAmount,
+      currency: "INR",
+      bookingDraftId: booking._id,
+      razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid"
+    });
+
+  } catch (error) {
+    console.error("[Create Order API] Error:", error);
+    res.status(500).json({ success: false, message: "Server error creating booking order." });
+  }
+});
+
+// @route   POST /api/bookings/cancel
+// @desc    Cancel draft booking and release temporary seat locks.
+// @access  Private (Traveler)
+router.post("/cancel", protect, async (req, res) => {
+  const { bookingId } = req.body;
+  const userId = req.user._id || req.user.id;
+
+  if (!bookingId) {
+    return res.status(400).json({ success: false, message: "bookingId is required." });
+  }
+
+  try {
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
+      ].filter(Boolean),
+      userId
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking draft not found." });
+    }
+
+    for (const seatNumber of booking.seatNumbers) {
+      await SeatBooking.updateOne(
+        { tripId: booking.tripId, seatNumber },
+        { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
+      );
+      if (redisClient) {
+        await redisClient.del(`seat_lock:${booking.tripId}:${seatNumber}`);
+      }
+      const io = req.app.get("io");
+      if (io) {
+        io.to(`trip_${booking.tripId}`).emit("seat_update", {
+          tripId: booking.tripId,
+          seatNumber,
+          status: "available"
+        });
+      }
+    }
+
+    booking.status = "CANCELLED";
+    booking.bookingStatus = "cancelled";
+    booking.paymentStatus = "FAILED";
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Booking draft cancelled and seat locks released."
+    });
+  } catch (error) {
+    console.error("[Cancel Draft API] Error:", error);
+    res.status(500).json({ success: false, message: "Server error cancelling booking draft." });
+  }
+});
+
+// @route   POST /api/bookings/finalize
+// @desc    Verify and finalize a booking draft.
+// @access  Private (Traveler)
+router.post("/finalize", protect, async (req, res) => {
+  const { bookingId, paymentId, orderId, signature } = req.body;
+
+  if (!bookingId) {
+    return res.status(400).json({ success: false, message: "bookingId is required." });
+  }
+
+  try {
+    const result = await BookingService.finalizeBooking({
+      bookingId,
+      paymentId,
+      orderId,
+      signature
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Booking finalized successfully.",
+      booking: result.booking,
+      payment: result.payment
+    });
+  } catch (error) {
+    console.error("[Finalize Booking API] Error:", error);
+    res.status(500).json({ success: false, message: error.message || "Server error finalizing booking." });
   }
 });
 

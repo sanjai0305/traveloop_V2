@@ -776,27 +776,64 @@ export const TripDetails = () => {
   };
 
   const handleConfirmBooking = async () => {
+    const activeSeats = bookingDetails?.selectedSeats;
+    const travellers = bookingDetails?.travellers;
+    const token = localStorage.getItem("token");
+    const amount = bookingDetails?.pricePaid;
+
+    if (!token) {
+      toast.error("User session expired. Please log in again to book.");
+      navigate("/login");
+      return;
+    }
+    if (!activeSeats || activeSeats.length === 0) {
+      toast.error("No seats selected. Please select your seat(s) first.");
+      setBookingStage("seats");
+      return;
+    }
+    if (!travellers || travellers.length === 0) {
+      toast.error("Passenger details are missing.");
+      setBookingStage("form");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      toast.error("Invalid booking amount.");
+      setBookingStage("confirm");
+      return;
+    }
+
+    if (paymentOpenedRef.current) {
+      console.warn("[Razorpay] Checkout already opened.");
+      return;
+    }
+    paymentOpenedRef.current = true;
     setBookingStage("payment"); // Show "Connecting payment gateway..." loader
 
     try {
-      const token = localStorage.getItem("token");
-      
-      // 1. Create Razorpay Order on Backend
-      const orderRes = await fetch(getApiUrl("payment/create-order"), {
+      // 1. Create Booking Draft and Razorpay Order on Backend
+      const orderRes = await fetch(getApiUrl("bookings/create-order"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          tripId: bookingDetails.tripId,
-          seats: bookingDetails.travellers.length,
+          tripId: trip._id,
+          travellers: travellers,
+          seatNumbers: activeSeats,
+          totalAmount: amount,
+          pickupLocation: bookingDetails.pickupLocation || trip.pickupLocation || "",
           couponCode: selectedCoupon,
+          maleCount: bookingDetails.maleCount,
+          femaleCount: bookingDetails.femaleCount,
+          adults: bookingDetails.adults,
+          children: bookingDetails.children,
         }),
       });
 
       const orderData = await orderRes.json();
-      if (!orderData.success) {
+      if (!orderRes.ok || !orderData.success) {
+        paymentOpenedRef.current = false;
         toast.error(orderData.message || "Failed to initiate payment");
         setBookingStage("confirm");
         return;
@@ -804,7 +841,7 @@ export const TripDetails = () => {
 
       // 2. Configure and Open Razorpay Checkout Dialog
       const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
+        key: orderData.razorpayKey || "rzp_test_dummykeyid",
         amount: orderData.amount * 100, // paise
         currency: orderData.currency || "INR",
         name: "Traveloop",
@@ -814,8 +851,8 @@ export const TripDetails = () => {
           console.log("[Razorpay Checkout Callback Response]:", response);
           setBookingStage("payment"); // Show loader during signature verification
           try {
-            // 3. Verify Payment and Store Booking on Backend
-            const verifyRes = await fetch(getApiUrl("payment/verify"), {
+            // 3. Verify Payment on Backend
+            const verifyRes = await fetch(getApiUrl("payments/verify"), {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -825,50 +862,41 @@ export const TripDetails = () => {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-                bookingId: bookingDetails?.bookingId,
-                bookingPayload: {
-                  tripId: bookingDetails.tripId,
-                  maleCount: bookingDetails.maleCount,
-                  femaleCount: bookingDetails.femaleCount,
-                  adults: bookingDetails.adults,
-                  children: bookingDetails.children,
-                  travellers: bookingDetails.travellers,
-                  pickupLocation: bookingDetails.pickupLocation,
-                  totalAmount: bookingDetails.pricePaid,
-                  seatNumbers: bookingDetails.selectedSeats,
-                  couponCode: selectedCoupon,
-                },
+                bookingId: orderData.bookingDraftId,
               }),
             });
 
             const verifyData = await verifyRes.json();
+            paymentOpenedRef.current = false;
             if (verifyData.success) {
               setBookingDetails(prev => ({
                 ...prev,
                 bookingId: verifyData.bookingId || verifyData.booking?.bookingId,
               }));
-              setBookingStage("success");
               toast.success("Booking successfully confirmed!");
+              navigate(`/booking/${verifyData.bookingId || verifyData.booking?.bookingId || orderData.bookingDraftId}/success`);
             } else {
               toast.error(verifyData.message || "Payment verification failed");
               setBookingStage("failure");
             }
           } catch (err) {
+            paymentOpenedRef.current = false;
             toast.error("Verification error. Please contact support.");
             setBookingStage("failure");
           }
         },
         prefill: {
-          name: `${firstName} ${lastName}`,
-          email: email,
-          contact: contactNumber,
+          name: travellers[0]?.name || `${firstName} ${lastName}`,
+          email: travellers[0]?.email || email,
+          contact: travellers[0]?.phone || contactNumber,
         },
         theme: {
           color: "#14B8A6", // teal-500
         },
         modal: {
           ondismiss: () => {
-            toast.info("Payment cancelled.");
+            paymentOpenedRef.current = false;
+            toast.info("Payment cancelled. You can continue later.");
             setBookingStage("confirm");
           },
         },
@@ -877,11 +905,14 @@ export const TripDetails = () => {
       console.log("[Razorpay Checkout Init] Using Key:", options.key);
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", (response) => {
+        paymentOpenedRef.current = false;
         console.error("[Razorpay Checkout Failed Callback]:", response.error);
-        toast.error(`Payment failed: ${response.error.description} (Code: ${response.error.code})`);
+        toast.error(`Payment failed: ${response.error.description}`);
+        setBookingStage("failure");
       });
       rzp.open();
     } catch (err) {
+      paymentOpenedRef.current = false;
       console.error("[Razorpay Checkout Error]:", err);
       toast.error(`Failed to connect to checkout gateway: ${err.message || err}`);
       setBookingStage("confirm");

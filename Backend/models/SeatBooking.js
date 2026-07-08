@@ -52,19 +52,25 @@ const seatBookingSchema = new mongoose.Schema(
      */
     status: {
       type: String,
-      enum: ["available", "reserved", "booked"],
+      enum: ["available", "reserved", "booked", "AVAILABLE", "LOCKED", "BOOKED", "locked"],
       default: "available",
+      set: v => v ? v.toLowerCase() : v
     },
     paymentStatus: {
       type: String,
-      enum: ["none", "pending", "completed"],
+      enum: ["none", "pending", "completed", "NONE", "PENDING", "COMPLETED"],
       default: "none",
+      set: v => v ? v.toLowerCase() : v
     },
     /**
      * ISO timestamp when the Redis reservation expires.
      * Backend uses this as ground-truth fallback if Redis is unavailable.
      */
     reservedUntil: {
+      type: Date,
+      default: null,
+    },
+    lockExpiresAt: {
       type: Date,
       default: null,
     },
@@ -79,7 +85,20 @@ const seatBookingSchema = new mongoose.Schema(
       default: true, // true = lower berth, false = upper berth (for sleeper buses)
     },
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
+);
+
+// Alias lockExpiresAt and reservedUntil
+seatBookingSchema.virtual("lockExpires").get(function() {
+  return this.lockExpiresAt || this.reservedUntil;
+}).set(function(val) {
+  this.lockExpiresAt = val;
+  this.reservedUntil = val;
+});
 );
 
 // Compound unique index per trip + seat

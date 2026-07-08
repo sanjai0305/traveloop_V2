@@ -50,11 +50,15 @@ const bookingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      default: "Paid",
+      enum: ["DRAFT", "PENDING_PAYMENT", "PAID", "FAILED", "CANCELLED", "draft", "pending_payment", "paid", "failed", "cancelled", "Paid", "Cancelled"],
+      default: "DRAFT",
+      set: v => v ? v.toUpperCase() : v
     },
     bookingStatus: {
       type: String,
-      default: "confirmed",
+      enum: ["confirmed", "pending", "cancelled", "failed", "draft", "CONFIRMED", "PENDING", "CANCELLED", "FAILED", "DRAFT"],
+      default: "draft",
+      set: v => v ? v.toLowerCase() : v
     },
     boardingStatus: {
       type: String,
