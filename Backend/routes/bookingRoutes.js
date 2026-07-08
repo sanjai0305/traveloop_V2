@@ -1130,6 +1130,82 @@ router.post("/create-order", protect, async (req, res) => {
     const User = mongoose.model("User");
     const userObj = await User.findById(userId);
 
+    // Validate Coupon Code if provided
+    let discountAmount = 0;
+    let finalAmount = totalAmount;
+
+    if (couponCode && String(couponCode).trim()) {
+      const normalizedCode = String(couponCode).trim().toUpperCase();
+
+      // 1. Check if it's a User Referral Code
+      const inviter = await User.findOne({ referralCode: normalizedCode });
+      if (inviter) {
+        if (String(inviter._id) === String(userId)) {
+          return res.status(400).json({
+            success: false,
+            message: "You cannot use your own referral code"
+          });
+        }
+        
+        // Referral codes give a flat 5% discount
+        const discountPercent = 5;
+        discountAmount = Math.round(totalAmount * (discountPercent / 100));
+        finalAmount = totalAmount - discountAmount;
+      } else {
+        // 2. Search Coupon Collection
+        const Coupon = mongoose.model("Coupon");
+        const coupon = await Coupon.findOne({ couponCode: normalizedCode });
+        if (!coupon) {
+          return res.status(400).json({ success: false, message: "Invalid Coupon" });
+        }
+
+        if (coupon.status === "INACTIVE") {
+          return res.status(400).json({ success: false, message: "Inactive Coupon" });
+        }
+
+        if (coupon.expiryDate && new Date() > new Date(coupon.expiryDate)) {
+          return res.status(400).json({ success: false, message: "Expired Coupon" });
+        }
+
+        if (totalAmount < coupon.minimumAmount) {
+          return res.status(400).json({
+            success: false,
+            message: `Minimum Booking Amount Not Met`
+          });
+        }
+
+        if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
+          return res.status(400).json({ success: false, message: "Coupon Limit Reached" });
+        }
+
+        // User Eligibility Check (max 1 usage per user of a coupon)
+        const userUsage = await Booking.countDocuments({
+          userId,
+          couponCode: normalizedCode,
+          paymentStatus: "Paid"
+        });
+        if (userUsage > 0) {
+          return res.status(400).json({ success: false, message: "Coupon Already Used" });
+        }
+
+        // Calculate discount
+        if (coupon.discountType === "PERCENTAGE") {
+          discountAmount = Math.round(totalAmount * (coupon.discountValue / 100));
+          if (coupon.maxDiscount !== null && discountAmount > coupon.maxDiscount) {
+            discountAmount = coupon.maxDiscount;
+          }
+        } else {
+          discountAmount = coupon.discountValue;
+        }
+
+        if (discountAmount > totalAmount) {
+          discountAmount = totalAmount;
+        }
+
+        finalAmount = totalAmount - discountAmount;
+      }
+    }
+
     const normalizeGender = (g) => {
       if (!g) return "Other";
       const lower = g.toLowerCase();
@@ -1156,8 +1232,8 @@ router.post("/create-order", protect, async (req, res) => {
       agentId: trip.agentId || trip.agent,
       seats: seatNumbers.length,
       seatNumbers,
-      pricePaid: totalAmount,
-      amount: totalAmount,
+      pricePaid: finalAmount,
+      amount: finalAmount,
       amountPaid: 0,
       status: "DRAFT",
       bookingStatus: "draft",
@@ -1177,11 +1253,16 @@ router.post("/create-order", protect, async (req, res) => {
       contactEmail: req.user.email || userObj?.email || "",
       accountEmail: userObj?.email || "",
       bookingForOthers: travelersNormalized[0]?.bookingForOthers || false,
+      couponCode: couponCode ? couponCode.trim().toUpperCase() : "",
+      discountAmount,
+      originalAmount: totalAmount,
+      finalAmount,
+      paymentAmount: finalAmount,
     });
 
     // Create Razorpay Order
     const options = {
-      amount: Math.round(totalAmount * 100),
+      amount: Math.round(finalAmount * 100),
       currency: "INR",
       receipt: `RCPT-${bookingId}`,
     };
@@ -1209,7 +1290,7 @@ router.post("/create-order", protect, async (req, res) => {
     res.status(201).json({
       success: true,
       orderId: order.id,
-      amount: totalAmount,
+      amount: finalAmount,
       currency: "INR",
       bookingDraftId: booking._id,
       razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid"

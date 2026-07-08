@@ -14,6 +14,7 @@ import SeatLayoutModal from "../components/trip/SeatLayoutModal";
 import PassengerFormModal from "../components/trip/PassengerFormModal";
 import UPIPaymentModal from "../components/trip/UPIPaymentModal";
 import TicketModal from "../components/trip/TicketModal";
+import RedeemCodeModal from "../components/trip/RedeemCodeModal";
 
 const PackingChecklistItem = ({ item }) => {
   const [checked, setChecked] = useState(false);
@@ -78,6 +79,7 @@ export const TripDetails = () => {
   const [passengers, setPassengers] = useState([]);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [ticketData, setTicketData] = useState(null);
+  const [appliedCouponCode, setAppliedCouponCode] = useState("");
 
   // ── Booking flow progress flags (prevent modal re-open loop) ──────────────
   const [seatSelected, setSeatSelected] = useState(false);
@@ -367,6 +369,7 @@ export const TripDetails = () => {
     setBookingDraftCreated(false);
     setPaymentStarted(false);
     setPaymentCompleted(false);
+    setAppliedCouponCode("");
     setShowBookingModal(true);
   };
 
@@ -383,7 +386,7 @@ export const TripDetails = () => {
       setPassengerCompleted(true);
       console.log("Passenger Saved");
       // Pass seats explicitly to avoid React state-lag (selectedSeats may still be [])
-      handlePassengersConfirmed(passengerList, seats);
+      setBookingStage("redeem_code");
     } else {
       // No passenger data from SeatLayoutModal — show PassengerFormModal
       setBookingStage("passenger_form");
@@ -392,7 +395,7 @@ export const TripDetails = () => {
 
   // Called when PassengerFormModal submits all passenger data
   // Also called directly from SeatLayoutModal.onConfirm with explicit seats override.
-  const handlePassengersConfirmed = async (passengerList, seatsOverride) => {
+  const handlePassengersConfirmed = async (passengerList, seatsOverride, couponCode = "") => {
     // Guard: if booking draft already created, skip duplicate creation
     if (bookingDraftCreated && confirmedBooking) {
       console.log("[BookingFlow] Draft already created, going directly to payment.");
@@ -501,6 +504,7 @@ export const TripDetails = () => {
           children: 0,
           pickupLocation: trip.pickupLocation || "",
           contactEmail: accountEmail,
+          couponCode: couponCode || "",
         }),
       });
 
@@ -634,6 +638,7 @@ export const TripDetails = () => {
     setConfirmedBooking(null);
     setPassengers([]);
     setSelectedSeats([]);
+    setAppliedCouponCode("");
     setShowBookingModal(false);
     toast.info("Booking cancelled. Seats have been released.");
   };
@@ -2231,10 +2236,26 @@ export const TripDetails = () => {
               onConfirm={(passengerList) => {
                 setPassengerSaved(true);
                 setPassengerCompleted(true);
-                handlePassengersConfirmed(passengerList, selectedSeats);
+                setPassengers(passengerList);
+                setBookingStage("redeem_code");
               }}
               onBack={() => setBookingStage("seat_select")}
               onClose={() => { releaseSelectedSeats(); setShowBookingModal(false); }}
+            />
+          )}
+
+          {showBookingModal && bookingStage === "redeem_code" && (
+            <RedeemCodeModal
+              trip={trip}
+              passengers={passengers}
+              onClose={() => {
+                releaseSelectedSeats();
+                setShowBookingModal(false);
+              }}
+              onConfirm={async (couponCode, discountAmount, finalTotal) => {
+                setAppliedCouponCode(couponCode);
+                await handlePassengersConfirmed(passengers, selectedSeats, couponCode);
+              }}
             />
           )}
 
@@ -2243,6 +2264,7 @@ export const TripDetails = () => {
               booking={confirmedBooking}
               passengers={passengers}
               trip={trip}
+              couponCode={appliedCouponCode}
               onSuccess={handlePaymentSuccess}
               onCancel={handleCancelBooking}
               onClose={() => { setShowBookingModal(false); }}

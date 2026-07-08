@@ -570,6 +570,16 @@ export class BookingService {
 
     await booking.save({ session });
 
+    // Increment Coupon usedCount if applied
+    if (booking.couponCode && booking.couponCode.trim()) {
+      const Coupon = mongoose.model("Coupon");
+      const normalizedCode = booking.couponCode.trim().toUpperCase();
+      await Coupon.updateOne(
+        { couponCode: normalizedCode },
+        { $inc: { usedCount: 1 } }
+      ).session(session);
+    }
+
     // Update Passengers and SeatBookings
     const createdPassengers = [];
     const Passenger = mongoose.model("Passenger");

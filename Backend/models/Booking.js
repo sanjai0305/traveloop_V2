@@ -206,6 +206,26 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    couponCode: {
+      type: String,
+      default: "",
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+    originalAmount: {
+      type: Number,
+      default: 0,
+    },
+    finalAmount: {
+      type: Number,
+      default: 0,
+    },
+    paymentAmount: {
+      type: Number,
+      default: 0,
+    },
     qrCode: {
       type: String,
       default: "",
