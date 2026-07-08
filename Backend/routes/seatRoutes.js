@@ -92,6 +92,14 @@ const seatLockKey = (tripId, seatNumber) =>
 const acquireSeatLock = async (tripId, seatNumber, userId) => {
   if (!redisClient) return true; // Graceful degradation if Redis is unavailable
   const key = seatLockKey(tripId, seatNumber);
+
+  // Re-entrant lock check: if the current user already owns the lock, refresh TTL and succeed
+  const currentLockOwner = await redisClient.get(key);
+  if (currentLockOwner === String(userId)) {
+    await redisClient.set(key, String(userId), "EX", SEAT_LOCK_TTL);
+    return true;
+  }
+
   // NX = only set if not exists, EX = expire in seconds
   const result = await redisClient.set(
     key,

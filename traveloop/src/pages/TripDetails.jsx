@@ -357,7 +357,7 @@ export const TripDetails = () => {
     }
     // New flow: open seat selection first — reset all flags for a fresh booking
     setBookingStage("seat_select");
-    setSelectedSeatsList([]);
+    setSelectedSeats([]);
     setPassengers([]);
     setConfirmedBooking(null);
     setTicketData(null);
@@ -375,7 +375,7 @@ export const TripDetails = () => {
   // so we skip PassengerFormModal and go directly to booking creation.
   const handleSeatsConfirmed = (seats, passengerList) => {
     console.log("Seat Selected:", seats);
-    setSelectedSeatsList(seats);
+    setSelectedSeats(seats);
     setSeatSelected(true);
     if (passengerList && passengerList.length > 0) {
       setPassengers(passengerList);
@@ -633,7 +633,7 @@ export const TripDetails = () => {
     setPaymentCompleted(false);
     setConfirmedBooking(null);
     setPassengers([]);
-    setSelectedSeatsList([]);
+    setSelectedSeats([]);
     setShowBookingModal(false);
     toast.info("Booking cancelled. Seats have been released.");
   };

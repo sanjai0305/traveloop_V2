@@ -86,13 +86,24 @@ apiClient.interceptors.response.use(
     }
 
     // 3. Normalize Error Message for UI consumption
-    let userMessage = "An unexpected error occurred. Please try again.";
-    if (error.code === "ECONNABORTED") {
-      userMessage = "Request timed out. Please check your internet connection.";
-    } else if (error.message.includes("Network Error")) {
-      userMessage = "Unable to connect to the server. Please check your internet connection.";
+    let userMessage = "Something went wrong. Please try again.";
+    if (error.code === "ECONNABORTED" || error.message.includes("Network Error") || !response) {
+      userMessage = "Unable to connect. Please try again later.";
     } else if (response && response.data && response.data.message) {
-      userMessage = response.data.message;
+      const msg = response.data.message;
+      if (
+        msg.toLowerCase().includes("database") || 
+        msg.toLowerCase().includes("mongoose") || 
+        msg.toLowerCase().includes("mongo") || 
+        msg.toLowerCase().includes("internal server error") || 
+        msg.toLowerCase().includes("stack") ||
+        msg.toLowerCase().includes("cast to objectid") ||
+        response.status >= 500
+      ) {
+        userMessage = "Something went wrong. Please try again.";
+      } else {
+        userMessage = msg;
+      }
     }
 
     error.userMessage = userMessage;

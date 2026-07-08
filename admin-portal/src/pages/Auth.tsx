@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
-import { Shield, KeyRound, AlertCircle, ArrowRight, Globe, Copy, Check } from "lucide-react";
+import { Shield, KeyRound, AlertCircle, ArrowRight } from "lucide-react";
 
 export const Auth: React.FC = () => {
   const navigate = useNavigate();
@@ -14,20 +14,6 @@ export const Auth: React.FC = () => {
   const [is2fa, setIs2fa] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [debugCode, setDebugCode] = useState<string | undefined>(undefined);
-  const [copiedEmail, setCopiedEmail] = useState(false);
-  const [copiedPassword, setCopiedPassword] = useState(false);
-
-  const handleCopy = (text: string, type: "email" | "password") => {
-    navigator.clipboard.writeText(text);
-    if (type === "email") {
-      setCopiedEmail(true);
-      setTimeout(() => setCopiedEmail(false), 2000);
-    } else {
-      setCopiedPassword(true);
-      setTimeout(() => setCopiedPassword(false), 2000);
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,10 +31,6 @@ export const Auth: React.FC = () => {
       if (res.data.success) {
         if (res.data.twoFactorRequired) {
           setIs2fa(true);
-          // Set debug OTP returned in dev mode for easy copying
-          if (res.data.debugOtp) {
-            setDebugCode(res.data.debugOtp);
-          }
         } else {
           // Direct login (if 2FA disabled)
           setAuth(res.data.token, res.data.admin);
@@ -84,14 +66,7 @@ export const Auth: React.FC = () => {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Simulate admin credentials for easy verification
-    setEmail("sanjaim0940r@gmail.com");
-    setPassword("Sanjai@2006");
-    setError(null);
-    // Notify user to click Submit to complete login flow
-    setError("Google Sign-In simulated. Please click 'Authenticate Admin' below.");
-  };
+  // Google Sign-In is not required for admin production login, handled via credentials.
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
@@ -144,16 +119,7 @@ export const Auth: React.FC = () => {
               </div>
             </div>
 
-            {debugCode && (
-              <div className="p-3 bg-teal-950/30 border border-teal-500/20 rounded-xl text-center">
-                <span className="text-[10px] text-teal-400 uppercase tracking-widest font-semibold block mb-1">
-                  Local Dev OTP Fallback
-                </span>
-                <span className="text-lg font-mono font-bold text-teal-400 tracking-wider">
-                  {debugCode}
-                </span>
-              </div>
-            )}
+            {/* 2FA code input */}
 
             <button
               type="submit"
@@ -203,68 +169,6 @@ export const Auth: React.FC = () => {
               {loading ? "Authenticating..." : "Authenticate Admin"}
             </button>
 
-            {/* Google Login Divider */}
-            <div className="relative my-6 flex items-center justify-center">
-              <div className="border-t border-slate-800 w-full absolute"></div>
-              <span className="bg-slate-900 px-3 text-[10px] text-slate-500 uppercase tracking-widest font-semibold z-10">
-                Or Continue With
-              </span>
-            </div>
-
-            {/* Simulated Google Login */}
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              className="w-full py-3 px-4 bg-slate-950/50 hover:bg-slate-800/80 border border-slate-800 text-slate-200 text-sm font-semibold rounded-xl flex items-center justify-center gap-2.5 transition-all duration-200"
-            >
-              <Globe className="w-4 h-4 text-teal-400" />
-              <span>Simulate Google Sign-In</span>
-            </button>
-
-            {/* Testing Hint */}
-            <div className="mt-6 p-3 bg-slate-950/40 rounded-xl text-center text-[10px] text-slate-500 border border-slate-800/40">
-              <p className="tracking-widest select-none text-slate-700">━━━━━━━━━━━━━━━━━━━━</p>
-              <p className="font-semibold text-slate-400 mt-1 mb-1">Demo Account</p>
-              
-              <div className="mt-2">
-                <p className="text-slate-500">Email:</p>
-                <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                  <span className="text-teal-500/80 font-mono select-all">sanjaim0940r@gmail.com</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("sanjaim0940r@gmail.com", "email")}
-                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-400 hover:text-teal-400 focus:outline-none flex items-center justify-center"
-                    title="Copy Email"
-                  >
-                    {copiedEmail ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-2">
-                <p className="text-slate-500">Password:</p>
-                <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                  <span className="text-teal-500/80 font-mono select-all">Sanjai@2006</span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("Sanjai@2006", "password")}
-                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-400 hover:text-teal-400 focus:outline-none flex items-center justify-center"
-                    title="Copy Password"
-                  >
-                    {copiedPassword ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                  </button>
-                </div>
-              </div>
-              <p className="tracking-widest select-none text-slate-700 mt-2">━━━━━━━━━━━━━━━━━━━━</p>
-            </div>
           </form>
         )}
 

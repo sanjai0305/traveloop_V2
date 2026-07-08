@@ -16,9 +16,8 @@ import { AuthProvider } from "./context/AuthContext";
 // THEME PROVIDER
 import { ThemeProvider } from "./context/ThemeContext";
 
-// ERROR BOUNDARY & OFFLINE INDICATOR
+// ERROR BOUNDARY
 import ErrorBoundary from "./components/common/ErrorBoundary";
-import OfflineIndicator from "./components/common/OfflineIndicator";
 
 // OTA UPDATE SYSTEM
 import UpdateModal from "./components/common/UpdateModal";
@@ -148,7 +147,6 @@ const App = () => {
             <AnimatePresence mode="wait">
               {showSplash && <SplashScreen />}
             </AnimatePresence>
-            <OfflineIndicator />
             <AppRoutes />
 
             {/* OTA Update Modal — shown post-splash when a newer version exists on GitHub */}

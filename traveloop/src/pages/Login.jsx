@@ -9,7 +9,6 @@ import AuthLayout from "../layouts/AuthLayout";
 
 // COMPONENTS
 import AuthCard from "../components/auth/AuthCard";
-import ServerStatusIndicator from "../components/common/ServerStatusIndicator";
 
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
@@ -39,7 +38,6 @@ const Login = () => {
       
       {/* LOGIN CARD */}
       <AuthCard />
-      <ServerStatusIndicator />
 
     </AuthLayout>
   );
