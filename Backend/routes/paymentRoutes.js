@@ -139,6 +139,7 @@ router.post("/create-order", protect, async (req, res) => {
       orderId: order.id,
       amount: finalAmount,
       currency: "INR",
+      razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
     });
   } catch (error) {
     console.error("[Razorpay Create Order] Error:", error);

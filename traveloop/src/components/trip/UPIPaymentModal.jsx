@@ -190,7 +190,7 @@ const UPIPaymentModal = ({
         return;
       }
 
-      order = { id: data.orderId, amount: data.amount, currency: data.currency || "INR" };
+      order = { id: data.orderId, amount: data.amount, currency: data.currency || "INR", razorpayKey: data.razorpayKey };
     } catch (err) {
       console.error("[Payment] create-order network error:", err);
       setError("Network error while creating order. Please check your connection.");
@@ -210,7 +210,7 @@ const UPIPaymentModal = ({
     // ISSUE 1 & 5: Open native Razorpay popup — NO fake wallet list
     const userData = JSON.parse(localStorage.getItem("user") || "{}");
     const rzpOptions = {
-      key: import.meta.env.VITE_RAZORPAY_KEY_ID || "",
+      key: order.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "",
       amount: Math.round((order.amount || amount) * 100), // paise
       currency: order.currency || "INR",
       name: "Traveloop",
