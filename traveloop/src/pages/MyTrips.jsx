@@ -15,6 +15,7 @@ import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
 import { useAuth } from "../context/AuthContext";
 import { subscribeUnreadCount } from "../services/chatService";
+import { socket } from "../utils/socket";
 
 // ─── GRADIENT COVERS ──────────────────────────────────────────
 const COVERS = [
@@ -56,7 +57,7 @@ const getTripLifeCycleState = (booking) => {
   if (isCancelled) {
     return {
       tripStatus: "Cancelled",
-      tripStatusColor: "bg-rose-100 text-rose-800 border border-rose-200",
+      tripStatusColor: "bg-rose-100 text-rose-850 border border-rose-200",
       qrStatus: "Expired",
       qrStatusColor: "bg-slate-105 text-slate-400 border border-slate-200",
       qrButtonText: "Cancelled",
@@ -68,7 +69,7 @@ const getTripLifeCycleState = (booking) => {
   if (trip.status === "completed") {
     return {
       tripStatus: "Completed",
-      tripStatusColor: "bg-slate-100 text-slate-600 border border-slate-200",
+      tripStatusColor: "bg-slate-100 text-slate-650 border border-slate-200",
       qrStatus: "Expired",
       qrStatusColor: "bg-slate-105 text-slate-400 border border-slate-200",
       qrButtonText: "Trip Completed",
@@ -102,13 +103,13 @@ const getTripLifeCycleState = (booking) => {
   const isPast = travelDate.getTime() < today.getTime();
 
   const departureDateTime = new Date(`${startDateStr}T${departureTimeStr}:00`);
-  const boardingStart = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
-  const boardingEnd = new Date(departureDateTime.getTime() + 30 * 60 * 1000);
+  const boardingStart = new Date(departureDateTime.getTime() - 120 * 60 * 1000); // 2 hours
+  const boardingEnd = new Date(departureDateTime.getTime() + 30 * 60 * 1000); // 30 mins
 
   let tripStatus = "Upcoming";
   let tripStatusColor = "bg-blue-100 text-blue-800 border border-blue-200";
   let qrStatus = "Locked";
-  let qrStatusColor = "bg-slate-100 text-slate-400 border border-slate-200";
+  let qrStatusColor = "bg-slate-105 text-slate-400 border border-slate-200";
   let qrButtonText = "Available on Travel Day";
   let qrButtonDisabled = true;
   let qrButtonClass = "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed";
@@ -117,7 +118,7 @@ const getTripLifeCycleState = (booking) => {
     tripStatus = "Upcoming";
     tripStatusColor = "bg-blue-100 text-blue-800 border border-blue-200";
     qrStatus = "Locked";
-    qrStatusColor = "bg-slate-100 text-slate-400 border border-slate-200";
+    qrStatusColor = "bg-slate-105 text-slate-400 border border-slate-200";
     qrButtonText = "Available on Travel Day";
     qrButtonDisabled = true;
     qrButtonClass = "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed";
@@ -125,45 +126,36 @@ const getTripLifeCycleState = (booking) => {
     tripStatus = "Expired";
     tripStatusColor = "bg-slate-100 text-slate-650 border border-slate-200";
     qrStatus = "Expired";
-    qrStatusColor = "bg-slate-100 text-slate-400 border border-slate-200";
+    qrStatusColor = "bg-slate-105 text-slate-400 border border-slate-200";
     qrButtonText = "Boarding Pass Expired";
     qrButtonDisabled = true;
     qrButtonClass = "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed";
   } else if (isToday) {
-    if (now < boardingStart) {
+    const bStatusUpper = (booking.boardingStatus || "").toUpperCase();
+    if (bStatusUpper === "BOARDED") {
+      tripStatus = "Boarded";
+      tripStatusColor = "bg-emerald-100 text-emerald-800 border border-emerald-200";
+      qrStatus = "Scanned";
+      qrStatusColor = "bg-emerald-100 text-emerald-850 border border-emerald-200";
+      qrButtonText = "Boarded";
+      qrButtonDisabled = true;
+      qrButtonClass = "bg-emerald-500 text-white font-bold cursor-not-allowed shadow-md shadow-emerald-500/20";
+    } else if (booking.qrUnlocked) {
+      tripStatus = "Boarding Open";
+      tripStatusColor = "bg-emerald-105 text-emerald-800 border border-emerald-200 animate-pulse";
+      const hasGenerated = localStorage.getItem(`qr_generated_${booking._id}`) === "true" || booking.qrCode;
+      qrStatus = hasGenerated ? "Generated" : "Available";
+      qrStatusColor = hasGenerated ? "bg-teal-100 text-teal-800 border border-teal-200" : "bg-blue-150 text-blue-800 border border-blue-200";
+      qrButtonText = hasGenerated ? "View QR" : "Generate QR";
+      qrButtonDisabled = false;
+      qrButtonClass = "bg-teal-500 text-white font-bold hover:bg-teal-600 shadow-lg shadow-teal-500/25";
+    } else {
+      // Today but not unlocked by driver yet
       tripStatus = "Today";
       tripStatusColor = "bg-teal-100 text-teal-800 border border-teal-200";
       qrStatus = "Locked";
-      qrStatusColor = "bg-slate-100 text-slate-400 border border-slate-200";
-      qrButtonText = "Available 1 hour before departure";
-      qrButtonDisabled = true;
-      qrButtonClass = "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed";
-    } else if (now >= boardingStart && now <= boardingEnd) {
-      if (booking.boardingStatus === "boarded") {
-        tripStatus = "Boarding Open";
-        tripStatusColor = "bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse";
-        qrStatus = "Scanned";
-        qrStatusColor = "bg-emerald-100 text-emerald-850 border border-emerald-200";
-        qrButtonText = "Boarded";
-        qrButtonDisabled = true;
-        qrButtonClass = "bg-emerald-500 text-white font-bold cursor-not-allowed shadow-md shadow-emerald-500/20";
-      } else {
-        tripStatus = "Boarding Open";
-        tripStatusColor = "bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse";
-        
-        const hasGenerated = localStorage.getItem(`qr_generated_${booking._id}`) === "true";
-        qrStatus = hasGenerated ? "Generated" : "Available";
-        qrStatusColor = hasGenerated ? "bg-teal-100 text-teal-800 border border-teal-200" : "bg-blue-100 text-blue-800 border border-blue-200";
-        qrButtonText = hasGenerated ? "View QR" : "Generate QR";
-        qrButtonDisabled = false;
-        qrButtonClass = "bg-teal-500 text-white font-bold hover:bg-teal-600 shadow-lg shadow-teal-500/25";
-      }
-    } else {
-      tripStatus = "Expired";
-      tripStatusColor = "bg-slate-100 text-slate-650 border border-slate-200";
-      qrStatus = "Expired";
-      qrStatusColor = "bg-slate-100 text-slate-400 border border-slate-200";
-      qrButtonText = "Boarding Pass Expired";
+      qrStatusColor = "bg-slate-105 text-slate-400 border border-slate-200";
+      qrButtonText = "🔒 Locked - Boarding not started";
       qrButtonDisabled = true;
       qrButtonClass = "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed";
     }
@@ -390,12 +382,19 @@ const BookedPackageCard = ({ booking, index }) => {
           </div>
           <div className="flex items-center gap-3">
             {booking.bookingId && (
-              <img 
-                src={getApiUrl(`bookings/${booking.bookingId}/qr`)} 
-                onError={(e) => { e.target.style.display = "none"; }} 
-                className="w-10 h-10 bg-white p-0.5 rounded-lg border border-slate-200" 
-                alt="QR Code" 
-              />
+              <div className="relative">
+                <img 
+                  src={getApiUrl(`bookings/${booking.bookingId}/qr`)} 
+                  onError={(e) => { e.target.style.display = "none"; }} 
+                  className={`w-10 h-10 bg-white p-0.5 rounded-lg border border-slate-200 ${!booking.qrUnlocked ? "opacity-30 blur-[0.5px]" : ""}`} 
+                  alt="QR Code" 
+                />
+                {!booking.qrUnlocked && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 rounded-lg border border-white/5 pointer-events-none">
+                    <span className="text-[10px] filter drop-shadow">🔒</span>
+                  </div>
+                )}
+              </div>
             )}
             {isCancellable ? (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-150 text-emerald-800 border border-emerald-200 uppercase">
@@ -842,6 +841,81 @@ const MyTrips = () => {
     window.addEventListener("refreshTrips", fetchAll);
     return () => window.removeEventListener("refreshTrips", fetchAll);
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (!bookedPackages || bookedPackages.length === 0) return;
+
+    // Join rooms for all trips
+    bookedPackages.forEach(booking => {
+      const tripId = booking.tripId || booking.agentTrip?._id;
+      if (tripId) {
+        console.log(`[Socket.io] Joining room for booking ${booking.bookingId}: trip_${tripId}`);
+        socket.emit("join_room", tripId.toString());
+      }
+    });
+
+    const handleBoardingOpened = (data) => {
+      console.log("[Socket.io] Boarding opened event received", data);
+      setBookedPackages(prev => prev.map(b => {
+        const tripId = b.tripId || b.agentTrip?._id;
+        if (tripId && tripId.toString() === data.tripId?.toString()) {
+          return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
+        }
+        return b;
+      }));
+    };
+
+    const handleBoardingClosed = (data) => {
+      console.log("[Socket.io] Boarding closed event received", data);
+      setBookedPackages(prev => prev.map(b => {
+        const tripId = b.tripId || b.agentTrip?._id;
+        if (tripId && tripId.toString() === data.tripId?.toString()) {
+          return { ...b, qrUnlocked: false, boardingStatus: "CLOSED" };
+        }
+        return b;
+      }));
+    };
+
+    const handlePassengerBoarded = (data) => {
+      console.log("[Socket.io] Passenger boarded event received", data);
+      setBookedPackages(prev => prev.map(b => {
+        if (b._id?.toString() === data.bookingId?.toString() || b.bookingId === data.bookingId) {
+          return { ...b, boardingStatus: "BOARDED" };
+        }
+        return b;
+      }));
+    };
+
+    socket.on("boarding-opened", handleBoardingOpened);
+    socket.on("boarding-closed", handleBoardingClosed);
+    socket.on("passenger-boarded", handlePassengerBoarded);
+    socket.on("passenger_boarded", handlePassengerBoarded);
+    socket.on("boarding_scanned", handlePassengerBoarded);
+    
+    socket.on("boarding_qr_unlocked", (data) => {
+      console.log("[Socket.io] QR Unlocked event received", data);
+      setBookedPackages(prev => prev.map(b => {
+        const tripId = b.tripId || b.agentTrip?._id;
+        if (tripId && tripId.toString() === data.tripId?.toString()) {
+          return { ...b, qrUnlocked: true, boardingStatus: "OPEN" };
+        }
+        return b;
+      }));
+    });
+    socket.on("boarding_closed", handleBoardingClosed);
+    socket.on("boarding_completed", handleBoardingClosed);
+
+    return () => {
+      socket.off("boarding-opened", handleBoardingOpened);
+      socket.off("boarding-closed", handleBoardingClosed);
+      socket.off("passenger-boarded", handlePassengerBoarded);
+      socket.off("passenger_boarded", handlePassengerBoarded);
+      socket.off("boarding_scanned", handlePassengerBoarded);
+      socket.off("boarding_qr_unlocked");
+      socket.off("boarding_closed", handleBoardingClosed);
+      socket.off("boarding_completed", handleBoardingClosed);
+    };
+  }, [bookedPackages]);
 
   // ── Helper to check if a travel date is today
   const isTripToday = (startDateStr) => {

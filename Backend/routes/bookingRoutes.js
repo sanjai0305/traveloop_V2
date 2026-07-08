@@ -1438,4 +1438,55 @@ router.post("/finalize", protect, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/bookings/boarding-status/:bookingId
+// Lightweight endpoint used by MyTrips (polling + socket fallback) to get the
+// current boarding & QR-unlock state without fetching the entire booking doc.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/boarding-status/:bookingId", protect, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    if (!bookingId || !mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    const booking = await Booking.findById(bookingId).select(
+      "boardingStatus qrUnlocked boardingWindowOpen tripId userId boardedAt"
+    );
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    // Ensure the requesting user owns this booking
+    if (booking.userId.toString() !== (req.user._id || req.user.id).toString()) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    // Also fetch the trip's boarding status so the frontend knows if driver
+    // has opened the window at the trip level.
+    const trip = await AgentTrip.findById(booking.tripId).select(
+      "boardingStatus boardingOpenedAt boardingClosesAt"
+    );
+
+    res.json({
+      success: true,
+      boardingStatus: booking.boardingStatus || "LOCKED",
+      qrUnlocked: booking.qrUnlocked || false,
+      boardingWindowOpen: booking.boardingWindowOpen || false,
+      boardedAt: booking.boardedAt || null,
+      trip: trip
+        ? {
+            boardingStatus: trip.boardingStatus || "CLOSED",
+            boardingOpenedAt: trip.boardingOpenedAt,
+            boardingClosesAt: trip.boardingClosesAt,
+          }
+        : null,
+    });
+  } catch (err) {
+    console.error("[Boarding Status]", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 export default router;

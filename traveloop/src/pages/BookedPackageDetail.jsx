@@ -304,13 +304,13 @@ const BookedPackageDetail = () => {
 
     const departureTimeStr = trip.departureTime || "00:00";
     const departureDateTime = new Date(`${trip.startDate}T${departureTimeStr}:00`);
-    const boardingStart = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
+    const boardingStart = new Date(departureDateTime.getTime() - 120 * 60 * 1000);
     const now = new Date();
 
     if (now < boardingStart) {
       const diffMs = boardingStart.getTime() - now.getTime();
       const mins = Math.ceil(diffMs / 60000);
-      if (mins <= 60) {
+      if (mins <= 120) {
         return { label: `Boarding opens in ${mins} minutes`, disabled: true, statusClass: "countdown" };
       }
     }
@@ -825,7 +825,7 @@ const BookedPackageDetail = () => {
       const departureTimeStr = trip.departureTime || "00:00";
       if (tripStartDateStr) {
         const departureDateTime = new Date(`${tripStartDateStr}T${departureTimeStr}:00`);
-        const boardingStart = new Date(departureDateTime.getTime() - 60 * 60 * 1000);
+        const boardingStart = new Date(departureDateTime.getTime() - 120 * 60 * 1000);
         const boardingEnd = new Date(departureDateTime.getTime() + 30 * 60 * 1000);
         const now = new Date();
         if (now >= boardingStart && now <= boardingEnd) {

@@ -108,7 +108,7 @@ router.post("/generate-qr", protect, async (req, res) => {
     // Update Booking fields in MongoDB
     const updatePayload = {
       token: qrToken,
-      boardingStatus: "not_boarded",
+      boardingStatus: "OPEN",
     };
 
     const updatedBooking = await Booking.findByIdAndUpdate(

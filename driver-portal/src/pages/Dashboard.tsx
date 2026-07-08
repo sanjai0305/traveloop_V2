@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { getDashboard, openBoarding, closeBoarding } from '../services/api'
 import { useDriverAuth } from '../context/DriverAuthContext'
+import socket from '../services/socket'
 
 interface Stats { total: number; boarded: number; pending: number; noShow: number; occupancyPct: number }
 interface Trip {
@@ -116,6 +117,37 @@ export default function Dashboard() {
     const interval = setInterval(fetchData, 30000) // refresh every 30s
     return () => clearInterval(interval)
   }, [fetchData])
+
+  useEffect(() => {
+    if (!trip?._id) return;
+
+    const tripIdStr = trip._id.toString();
+    console.log(`[Socket.io] Joining room: ${tripIdStr}`);
+    socket.emit("join_room", tripIdStr);
+
+    const handleUpdate = () => {
+      console.log("[Socket.io] Socket event received, refreshing dashboard data...");
+      fetchData();
+    };
+
+    socket.on("passenger-boarded", handleUpdate);
+    socket.on("passenger_boarded", handleUpdate);
+    socket.on("boarding_scanned", handleUpdate);
+    socket.on("boarding-opened", handleUpdate);
+    socket.on("boarding-closed", handleUpdate);
+    socket.on("boarding_closed", handleUpdate);
+    socket.on("boarding_completed", handleUpdate);
+
+    return () => {
+      socket.off("passenger-boarded", handleUpdate);
+      socket.off("passenger_boarded", handleUpdate);
+      socket.off("boarding_scanned", handleUpdate);
+      socket.off("boarding-opened", handleUpdate);
+      socket.off("boarding-closed", handleUpdate);
+      socket.off("boarding_closed", handleUpdate);
+      socket.off("boarding_completed", handleUpdate);
+    };
+  }, [trip?._id, fetchData])
 
   const fmtTime = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
