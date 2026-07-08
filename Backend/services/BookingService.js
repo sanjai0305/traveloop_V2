@@ -366,6 +366,13 @@ export class BookingService {
       contactNumber: contactPhone || travelersNormalized[0]?.contactPhone || travelersNormalized[0]?.phone || contactNumber || userObj?.phone || userObj?.phoneNumber || userObj?.primaryMobile || "",
       age: travelersNormalized[0]?.age || 0,
       travellers: travelersNormalized,
+      passengers: travelersNormalized.map((t, idx) => ({
+        name: t.name,
+        age: Number(t.age || 0),
+        gender: t.gender,
+        seat: seatNumbers[idx] || t.seatNumber || "",
+        seatNumber: seatNumbers[idx] || t.seatNumber || "",
+      })),
       maleCount: Number(maleCount || 0),
       femaleCount: Number(femaleCount || 0),
       adults: Number(adults || 1),
@@ -574,6 +581,17 @@ export class BookingService {
       seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime(),
     })).toString("base64");
+
+    // Ensure passengers array is fully populated in draft finalization
+    if (!booking.passengers || booking.passengers.length === 0) {
+      booking.passengers = (booking.travellers || []).map((t, idx) => ({
+        name: t.name,
+        age: Number(t.age || 0),
+        gender: t.gender,
+        seat: booking.seatNumbers?.[idx] || t.seatNumber || "",
+        seatNumber: booking.seatNumbers?.[idx] || t.seatNumber || "",
+      }));
+    }
 
     await booking.save({ session });
 

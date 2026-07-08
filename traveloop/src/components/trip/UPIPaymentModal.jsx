@@ -221,18 +221,19 @@ const UPIPaymentModal = ({
 
     // ISSUE 1 & 5: Open native Razorpay popup — NO fake wallet list
     const userData = JSON.parse(localStorage.getItem("user") || "{}");
+    const primaryPassenger = passengers?.[0] || {};
     const rzpOptions = {
       key: order.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "",
       amount: Math.round((order.amount || amount) * 100), // paise
       currency: order.currency || "INR",
-      name: "Traveloop",
-      description: `Booking: ${bookingRef || resolvedBookingId}`,
+      name: "Travelloop",
+      description: `${tripTitle} | ${passengers?.map(p => p.name).join(", ")} | Seats: ${seatNumbers}`.slice(0, 255),
       image: "/logo.png",
       order_id: order.id,
       prefill: {
-        name: `${userData.firstName || ""} ${userData.lastName || ""}`.trim(),
-        email: userData.email || "",
-        contact: userData.phone || userData.phoneNumber || "",
+        name: primaryPassenger.name || `${userData.firstName || ""} ${userData.lastName || ""}`.trim(),
+        email: primaryPassenger.email || primaryPassenger.contactEmail || userData.email || "",
+        contact: primaryPassenger.phone || primaryPassenger.travelerPhone || primaryPassenger.contactPhone || userData.phone || userData.phoneNumber || "",
       },
       notes: {
         bookingId: resolvedBookingId,

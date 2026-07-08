@@ -773,6 +773,10 @@ export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfB
             <td style="color: #14B8A6; padding: 8px 0; font-weight: 800; text-align: right; font-family: monospace;">Seats ${booking.seatNumbers?.join(", ") || booking.assignedSeat || "TBD"}</td>
           </tr>
           <tr>
+            <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Total Passengers</td>
+            <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${booking.seats || booking.travellers?.length || 1}</td>
+          </tr>
+          <tr>
             <td style="color: #64748B; padding: 8px 0; font-weight: 600;">Booking ID</td>
             <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right; font-family: monospace;">${booking.bookingId}</td>
           </tr>
@@ -789,6 +793,32 @@ export const sendBookingConfirmationEmail = async (to, name, booking, trip, pdfB
             <td style="color: #FFFFFF; padding: 8px 0; font-weight: 700; text-align: right;">${bookingDate}</td>
           </tr>
         </table>
+
+        <!-- PASSENGERS TABLE -->
+        ${(() => {
+          const travellerList = (booking.travellers && booking.travellers.length > 0) ? booking.travellers : (booking.passengers || []);
+          if (!travellerList.length) return '';
+          const rows = travellerList.map((t, idx) =>
+            `<tr style="border-bottom: 1px solid #1E293B;">
+              <td style="padding: 8px 6px; color: #14B8A6; font-family: monospace; font-size: 11px; font-weight: 700;">${booking.seatNumbers?.[idx] || t.seatNumber || `S${idx+1}`}</td>
+              <td style="padding: 8px 6px; color: #E2E8F0; font-size: 12px; font-weight: 600;">${t.name || "Passenger"}</td>
+              <td style="padding: 8px 6px; color: #94A3B8; font-size: 11px; text-align: center;">${t.gender === "Male" ? "M" : t.gender === "Female" ? "F" : "O"}</td>
+              <td style="padding: 8px 6px; color: #94A3B8; font-size: 11px; text-align: center;">${t.age || "—"} Yrs</td>
+            </tr>`
+          ).join('');
+          return `<div style="margin-top: 14px; border-top: 1px solid #1E293B; padding-top: 12px;">
+            <p style="color: #64748B; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 8px 0;">Passengers</p>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+              <tr style="border-bottom: 1px solid #334155;">
+                <th style="text-align: left; color: #475569; padding: 4px 6px; font-size: 10px; text-transform: uppercase;">Seat</th>
+                <th style="text-align: left; color: #475569; padding: 4px 6px; font-size: 10px; text-transform: uppercase;">Name</th>
+                <th style="text-align: center; color: #475569; padding: 4px 6px; font-size: 10px; text-transform: uppercase;">Gen</th>
+                <th style="text-align: center; color: #475569; padding: 4px 6px; font-size: 10px; text-transform: uppercase;">Age</th>
+              </tr>
+              ${rows}
+            </table>
+          </div>`;
+        })()}
       </div>
 
       <!-- IMPORTANT NOTICE -->

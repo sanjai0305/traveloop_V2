@@ -93,7 +93,7 @@ export const generateTicketPdf = (booking, trip, passengerName) => {
       doc.text("SEAT NUMBER", 450, 341);
 
       // Draw each traveler
-      const travellers = booking.travellers || [];
+      const travellers = (booking.travellers && booking.travellers.length > 0) ? booking.travellers : (booking.passengers || []);
       let yOffset = 365;
       travellers.forEach((t, idx) => {
         // Draw row background for alternating rows

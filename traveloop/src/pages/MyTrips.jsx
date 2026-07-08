@@ -334,6 +334,26 @@ const BookedPackageCard = ({ booking, index }) => {
           <span className="text-slate-400 font-medium">Pickup Point</span>
           <span className="font-bold text-slate-700 truncate">{booking.pickupLocation || trip.pickupLocation || "Main Station"}</span>
         </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-slate-400 font-medium">Passengers Count</span>
+          <span className="font-bold text-slate-700">{booking.seats || booking.travellers?.length || 1}</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-slate-400 font-medium">Seat Numbers</span>
+          <span className="font-bold text-teal-600 dark:text-teal-400 font-mono">
+            {booking.seatNumbers?.join(", ") || booking.assignedSeat || "—"}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 col-span-2 lg:col-span-3 mt-1.5 pt-2.5 border-t border-dashed border-slate-200">
+          <span className="text-slate-400 font-medium">Passenger List</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(booking.passengers && booking.passengers.length > 0 ? booking.passengers : booking.travellers || []).map((p, idx) => (
+              <span key={idx} className="bg-slate-100 dark:bg-slate-800 text-slate-750 dark:text-slate-300 px-2.5 py-1 rounded-lg font-semibold text-[10px] border border-slate-200/50">
+                {p.seatNumber || p.seat ? `[Seat ${p.seatNumber || p.seat}] ` : ""}{p.name || p.passengerName} ({p.gender === "Male" ? "M" : p.gender === "Female" ? "F" : "O"}, {p.age} Yrs)
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── STATUS BADGES ROW ── */}

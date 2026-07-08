@@ -10,6 +10,7 @@ import Budget from "../models/Budget.js";
 import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
 import Passenger from "../models/Passenger.js";
+import SeatBooking from "../models/SeatBooking.js";
 import redisClient from "../config/redis.js";
 
 const generateBookingId = () => {
@@ -1247,6 +1248,13 @@ router.post("/create-order", protect, async (req, res) => {
       contactNumber: req.user.phone || req.user.phoneNumber || userObj?.phone || "",
       age: travelersNormalized[0]?.age || 0,
       travellers: travelersNormalized,
+      passengers: travelersNormalized.map((t, idx) => ({
+        name: t.name,
+        age: Number(t.age || 0),
+        gender: t.gender,
+        seat: seatNumbers[idx] || t.seatNumber || "",
+        seatNumber: seatNumbers[idx] || t.seatNumber || "",
+      })),
       maleCount,
       femaleCount,
       adults,
@@ -1295,12 +1303,17 @@ router.post("/create-order", protect, async (req, res) => {
       amount: finalAmount,
       currency: "INR",
       bookingDraftId: booking._id,
+      key: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid",
       razorpayKey: process.env.RAZORPAY_KEY_ID || "rzp_test_dummykeyid"
     });
 
   } catch (error) {
-    console.error("[Create Order API] Error:", error);
-    res.status(500).json({ success: false, message: "Server error creating booking order." });
+    console.error("[Create Order API]", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      stack: error.stack
+    });
   }
 });
 

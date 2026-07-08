@@ -15,6 +15,7 @@ import PassengerFormModal from "../components/trip/PassengerFormModal";
 import UPIPaymentModal from "../components/trip/UPIPaymentModal";
 import TicketModal from "../components/trip/TicketModal";
 import RedeemCodeModal from "../components/trip/RedeemCodeModal";
+import PassengerCountModal from "../components/trip/PassengerCountModal";
 
 const PackingChecklistItem = ({ item }) => {
   const [checked, setChecked] = useState(false);
@@ -68,9 +69,11 @@ export const TripDetails = () => {
 
   // Booking Flow States
   const [showBookingModal, setShowBookingModal] = useState(false);
-  // stages: "seat_select" | "passenger_form" | "upi_payment" | "ticket" | "form" | "seats" | "confirm" | "payment" | "success"
-  const [bookingStage, setBookingStage] = useState("seat_select");
+  // stages: "count_select" | "seat_select" | "passenger_form" | "redeem_code" | "upi_payment" | "ticket" | "form" | "seats" | "confirm" | "payment" | "success"
+  const [bookingStage, setBookingStage] = useState("count_select");
   const [bookingDetails, setBookingDetails] = useState(null);
+  // Passenger count chosen in PassengerCountModal (step 0)
+  const [passengerCount, setPassengerCount] = useState(1);
   const [bookedSeats, setBookedSeats] = useState([]);
 
   // New seat-reservation flow state
@@ -357,8 +360,9 @@ export const TripDetails = () => {
       navigate("/login");
       return;
     }
-    // New flow: open seat selection first — reset all flags for a fresh booking
-    setBookingStage("seat_select");
+    // Reset all booking state for a fresh booking, open count selection first
+    setBookingStage("count_select");
+    setPassengerCount(1);
     setSelectedSeats([]);
     setPassengers([]);
     setConfirmedBooking(null);
@@ -371,6 +375,12 @@ export const TripDetails = () => {
     setPaymentCompleted(false);
     setAppliedCouponCode("");
     setShowBookingModal(true);
+  };
+
+  // Called when PassengerCountModal confirms the count
+  const handleCountConfirmed = (count) => {
+    setPassengerCount(count);
+    setBookingStage("seat_select");
   };
 
   // Called when SeatLayoutModal confirms seat selection
@@ -687,10 +697,10 @@ export const TripDetails = () => {
       return;
     }
 
-    // Case 3: Passenger form filled but no seats selected — go to seat selection in new flow
+    // Case 3: Passenger form filled but no seats selected — restart from count selection
     if (passengerSaved && selectedSeats.length === 0) {
-      console.log("[STEP 2] Passenger saved but no seats — redirecting to seat selection.");
-      setBookingStage("seat_select");
+      console.log("[STEP 2] Passenger saved but no seats — restarting from count select.");
+      setBookingStage("count_select");
       setShowBookingModal(true);
       return;
     }
@@ -1940,11 +1950,26 @@ export const TripDetails = () => {
                                   {bookingDetails.selectedSeats.join(", ")}
                                 </span>
                               </div>
-                              <div className="flex justify-between">
+                              <div className="flex justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
                                 <span className="text-slate-400">Total Travelers:</span>
                                 <span className="font-extrabold text-slate-800 dark:text-white">
                                   {bookingDetails.travellers.length} ({bookingDetails.adults} Adults, {bookingDetails.children} Children)
                                 </span>
+                              </div>
+                              <div className="pt-2">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">Passenger Details</span>
+                                <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                  {bookingDetails.travellers.map((t, idx) => (
+                                    <div key={idx} className="flex justify-between text-xs bg-slate-100 dark:bg-slate-800/40 p-1.5 rounded-lg">
+                                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        {bookingDetails.selectedSeats[idx] || `Seat ${idx+1}`} — {t.name || t.passengerName}
+                                      </span>
+                                      <span className="text-slate-500 dark:text-slate-400">
+                                        {t.gender} ({t.age} Yrs)
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             </div>
 
@@ -2229,10 +2254,18 @@ export const TripDetails = () => {
             NEW BOOKING FLOW: Seat Select â Passenger Form â UPI â Ticket
             âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
         <AnimatePresence>
+          {showBookingModal && bookingStage === "count_select" && trip && (
+            <PassengerCountModal
+              trip={trip}
+              onConfirm={handleCountConfirmed}
+              onClose={() => { setShowBookingModal(false); }}
+            />
+          )}
+
           {showBookingModal && bookingStage === "seat_select" && trip && (
             <SeatLayoutModal
               trip={trip}
-              requiredSeats={totalBookingSeats || 1}
+              requiredSeats={passengerCount || 1}
               initialSelected={selectedSeats}
               initialPassengerDetails={(() => {
                 const obj = {};
