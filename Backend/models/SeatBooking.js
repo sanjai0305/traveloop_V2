@@ -99,7 +99,6 @@ seatBookingSchema.virtual("lockExpires").get(function() {
   this.lockExpiresAt = val;
   this.reservedUntil = val;
 });
-);
 
 // Compound unique index per trip + seat
 seatBookingSchema.index({ tripId: 1, seatNumber: 1 }, { unique: true });
