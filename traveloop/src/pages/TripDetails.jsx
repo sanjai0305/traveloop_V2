@@ -489,7 +489,7 @@ export const TripDetails = () => {
         contactEmail: accountEmail,
       });
 
-      const bookingRes = await fetch(getApiUrl("bookings"), {
+      const bookingRes = await fetch(getApiUrl("bookings/create-order"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -515,8 +515,8 @@ export const TripDetails = () => {
         throw new Error(bookingData.message || "Failed to create booking on backend.");
       }
 
-      const bookingRef = bookingData.bookingId || bookingData.booking?.bookingId;
-      const bookingMongoId = bookingData.booking?._id || bookingData.bookingId;
+      const bookingRef = bookingData.bookingDraftId || bookingData.bookingId;
+      const bookingMongoId = bookingData.bookingDraftId || bookingData.booking?._id;
 
       if (!bookingRef || !bookingMongoId) {
         console.error("[BookingFlow] Invalid booking reference:", bookingData);
@@ -529,8 +529,10 @@ export const TripDetails = () => {
       const bookingObj = {
         bookingId: bookingRef,
         _id: bookingMongoId,
+        orderId: bookingData.orderId,
+        razorpayKey: bookingData.razorpayKey,
         tripTitle: trip.title,
-        totalAmount: total,
+        totalAmount: bookingData.amount || total,
         startDate: trip.startDate,
         pickupLocation: trip.pickupLocation || "",
       };

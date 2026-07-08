@@ -163,42 +163,52 @@ const UPIPaymentModal = ({
 
     // ISSUE 4: Create Razorpay order
     let order;
-    try {
-      const token = localStorage.getItem("token");
-      const payload = {
-        tripId: trip?._id,
-        seats: passengers?.length || 1,
-        bookingId: mongoId || bookingRef,  // Link Razorpay order to existing booking draft
-        couponCode: couponCode || "",
+    if (booking?.orderId) {
+      order = {
+        id: booking.orderId,
+        amount: booking.totalAmount || amount,
+        currency: "INR",
+        razorpayKey: booking.razorpayKey || import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_dummykeyid"
       };
-      console.log("[Payment] Calling create-order with payload:", payload);
+      console.log("[Payment] Using pre-created order from booking object:", order);
+    } else {
+      try {
+        const token = localStorage.getItem("token");
+        const payload = {
+          tripId: trip?._id,
+          seats: passengers?.length || 1,
+          bookingId: mongoId || bookingRef,  // Link Razorpay order to existing booking draft
+          couponCode: couponCode || "",
+        };
+        console.log("[Payment] Calling create-order with payload:", payload);
 
-      const res = await fetch(getApiUrl("payment/create-order"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+        const res = await fetch(getApiUrl("payment/create-order"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        });
 
-      const data = await res.json();
-      console.log("[Payment] create-order response:", data);
+        const data = await res.json();
+        console.log("[Payment] create-order response:", data);
 
-      if (!res.ok || !data.success || !data.orderId) {
-        setError(data.message || "Order creation failed. Please try again.");
+        if (!res.ok || !data.success || !data.orderId) {
+          setError(data.message || "Order creation failed. Please try again.");
+          setPhase("failed");
+          toast.error(data.message || "Could not create payment order.");
+          return;
+        }
+
+        order = { id: data.orderId, amount: data.amount, currency: data.currency || "INR", razorpayKey: data.razorpayKey };
+      } catch (err) {
+        console.error("[Payment] create-order network error:", err);
+        setError("Network error while creating order. Please check your connection.");
         setPhase("failed");
-        toast.error(data.message || "Could not create payment order.");
+        toast.error("Network error. Could not create order.");
         return;
       }
-
-      order = { id: data.orderId, amount: data.amount, currency: data.currency || "INR", razorpayKey: data.razorpayKey };
-    } catch (err) {
-      console.error("[Payment] create-order network error:", err);
-      setError("Network error while creating order. Please check your connection.");
-      setPhase("failed");
-      toast.error("Network error. Could not create order.");
-      return;
     }
 
     // ISSUE 7: Debug log — before Razorpay init

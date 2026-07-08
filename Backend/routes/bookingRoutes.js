@@ -196,6 +196,7 @@ router.post("/", protect, async (req, res) => {
     totalAmount = 0,
     seatNumbers = [],
     pickupLocation = "",
+    couponCode = "",
   } = req.body;
 
   if (!tripId) {
@@ -231,15 +232,16 @@ router.post("/", protect, async (req, res) => {
       seats: travellers.length,
       seatNumbers,
       totalAmount,
-      paymentStatus: "Paid",
-      bookingStatus: "confirmed",
-      paymentVerified: true,
-      paymentDate: new Date(),
+      paymentStatus: "PENDING",
+      bookingStatus: "draft",
+      paymentVerified: false,
+      paymentDate: null,
       maleCount,
       femaleCount,
       adults,
       children,
       pickupLocation,
+      couponCode,
       contactNumber: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
       contactEmail: req.user.email || "",
       contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
