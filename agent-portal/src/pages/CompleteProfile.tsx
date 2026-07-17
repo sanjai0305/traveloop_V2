@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Compass, Sparkles, Building2, ShieldCheck, ArrowRight, ArrowLeft, Loader2, Mail, Phone, MapPin, User, CheckCircle, Shield } from "lucide-react";
+import { Compass, Sparkles, Building2, ShieldCheck, ArrowRight, ArrowLeft, Loader2, Mail, Phone, MapPin, User, CheckCircle, Shield, Info } from "lucide-react";
 import { GlassCard, Button, Input } from "../components/ui";
 import { ImageUploadBox } from "../components/ui";
 import { OTPInput } from "../features/auth/components/OTPInput";
@@ -24,7 +24,7 @@ export const CompleteProfile: React.FC = () => {
   // Form Fields State
   const [name, setName] = useState("");
   const [dob, setDob] = useState("");
-  const [mobile, setMobile] = useState("");
+  const [mobile, setMobile] = useState("8637628773");
   const [state, setState] = useState("");
   const [country, setCountry] = useState("India");
   const [companyName, setCompanyName] = useState("");
@@ -50,7 +50,7 @@ export const CompleteProfile: React.FC = () => {
     if (agent) {
       setName(agent.displayName || "");
       setDob(agent.dob || "");
-      setMobile(agent.mobile || agent.phone || "");
+      setMobile(agent.mobile || agent.phone || "8637628773");
       setState(agent.state || "");
       setCountry(agent.country || "India");
       setCompanyName(agent.companyName || "");
@@ -395,6 +395,9 @@ export const CompleteProfile: React.FC = () => {
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, ""))}
                 />
+                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/5 border border-primary/10 w-fit text-[11px] text-primary/80 font-semibold">
+                  <span>📱 Demo Mobile Number: 8637628773</span>
+                </div>
 
                 <Button onClick={handleNext} className="w-full mt-4">
                   Next Step <ArrowRight className="w-4 h-4 ml-2" />
@@ -646,6 +649,57 @@ export const CompleteProfile: React.FC = () => {
                   </div>
                 )}
                 <div id="recaptcha-container" className="mt-2 flex justify-center"></div>
+
+                {/* Professional Demo Credentials Card */}
+                <div className="relative mt-8 p-5 bg-slate-950/65 backdrop-blur-md border border-cyan-500/30 rounded-2xl shadow-[0_0_15px_rgba(6,182,212,0.15)] text-left overflow-hidden">
+                  {/* Top-Right "Demo Only" Pill Badge */}
+                  <div className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400 uppercase tracking-widest">
+                    Demo Only
+                  </div>
+
+                  {/* Header Title with Info Icon */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <Info className="w-4 h-4 text-cyan-400 animate-pulse" />
+                    <span className="text-xs font-black text-white uppercase tracking-wider">
+                      🧪 Demo Credentials
+                    </span>
+                  </div>
+
+                  {/* Body Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Demo Mobile Number */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        📱 Demo Mobile Number
+                      </span>
+                      <span className="inline-block px-3 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-medium font-mono">
+                        +91 8637628773
+                      </span>
+                    </div>
+
+                    {/* Demo OTP */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        🔐 Demo OTP
+                      </span>
+                      <span className="inline-block px-4 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-medium font-mono tracking-widest">
+                        123456
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Guide Text */}
+                  <p className="text-[10px] text-slate-400 font-medium mt-4">
+                    Use the above demo OTP for testing the UI.
+                  </p>
+
+                  {/* Helper Text at the Bottom */}
+                  <div className="mt-4 pt-3 border-t border-slate-900">
+                    <p className="text-[9px] text-slate-500 leading-relaxed font-semibold">
+                      This demo OTP is displayed only for UI demonstration purposes. Actual OTP verification continues to use the existing Firebase Authentication flow.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
