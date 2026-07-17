@@ -397,6 +397,10 @@ const LegalConsent = () => {
                         className="w-full rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3.5 text-sm text-white outline-none focus:border-cyan-500 focus:bg-slate-900/60 transition-all font-bold tracking-wider"
                       />
                     </div>
+                    <div className="mt-2 text-left">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Credentials</div>
+                      <div className="text-xs text-slate-400 mt-0.5">Demo Mobile Number: 1234567890</div>
+                    </div>
                   </div>
 
                   <button
@@ -442,6 +446,10 @@ const LegalConsent = () => {
                         maxLength={6}
                         className="w-full text-center rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3.5 text-lg font-black tracking-[0.5em] text-cyan-400 outline-none focus:border-cyan-500 focus:bg-slate-900/60 transition-all"
                       />
+                      <div className="mt-2 text-left">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Credentials</div>
+                        <div className="text-xs text-slate-400 mt-0.5">Demo OTP: 123456</div>
+                      </div>
                     </div>
 
                     <button
