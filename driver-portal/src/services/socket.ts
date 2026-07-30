@@ -6,7 +6,7 @@ const getSocketUrl = (): string => {
     const clean = envUrl.replace(/\/+$/, '');
     return clean.endsWith('/api') ? clean.slice(0, -4) : clean;
   }
-  return 'https://traveloopv2.duckdns.org';
+  return 'http://localhost:5000';
 };
 
 const socketUrl = getSocketUrl();
@@ -18,7 +18,8 @@ export const socket: Socket = io(socketUrl, {
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
-  transports: ['polling', 'websocket'],
+  transports: ['websocket', 'polling'],
+  withCredentials: true,
 });
 
 export default socket;

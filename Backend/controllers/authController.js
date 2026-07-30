@@ -1125,3 +1125,33 @@ export const validateReferralCode = async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error validating referral code" });
   }
 };
+
+// @route   GET /api/v1/auth/firebase-test-phone
+// @route   GET /api/auth/firebase-test-phone
+// @desc    Retrieve Firebase test phone credentials for development demo UI
+// @access  Public (Only exposed in NODE_ENV === 'development')
+export const getFirebaseTestPhone = async (req, res) => {
+  try {
+    const isDevelopment = process.env.NODE_ENV === "development";
+
+    if (!isDevelopment) {
+      return res.status(200).json({
+        success: false
+      });
+    }
+
+    const phoneNumber = process.env.FIREBASE_TEST_PHONE_NUMBER || "+911234567890";
+    const otp = process.env.FIREBASE_TEST_PHONE_OTP || "123456";
+
+    return res.status(200).json({
+      success: true,
+      phoneNumber,
+      otp,
+    });
+  } catch (error) {
+    console.error("[getFirebaseTestPhone Error]:", error);
+    return res.status(500).json({
+      success: false
+    });
+  }
+};

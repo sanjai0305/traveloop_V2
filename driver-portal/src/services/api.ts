@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
     const clean = envUrl.replace(/\/+$/, '');
     return clean.endsWith('/api') ? clean : `${clean}/api`;
   }
-  return 'https://traveloopv2.duckdns.org/api';
+  return 'http://localhost:5000/api';
 };
 
 const api = axios.create({

@@ -155,6 +155,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    legalConsent: {
+      accepted: { type: Boolean, default: false },
+      acceptedTerms: { type: Boolean, default: false },
+      acceptedPrivacy: { type: Boolean, default: false },
+      acceptedAt: { type: Date, default: null },
+    },
     lastLogin: {
       type: Date,
       default: null,

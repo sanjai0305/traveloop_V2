@@ -11,11 +11,14 @@ import {
   sendOtp,
   verifyOtp,
   validateReferralCode,
+  getFirebaseTestPhone,
 } from "../controllers/authController.js";
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+// FIREBASE TEST PHONE (DEV ONLY)
+router.get("/firebase-test-phone", getFirebaseTestPhone);
 
 // SEND OTP
 router.post("/send-otp", sendOtp);

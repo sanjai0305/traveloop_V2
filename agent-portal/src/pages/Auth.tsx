@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Compass, Sparkles, ShieldCheck } from "lucide-react";
 import { getRedirectResult } from "firebase/auth";
-import { auth } from "../../../traveloop/src/services/firebase";
+import { auth } from "../config/firebase";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
 import { GlassCard } from "../components/ui";

@@ -1,5 +1,5 @@
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-import { auth } from "../../../../../traveloop/src/services/firebase";
+import { auth } from "../../../config/firebase";
 import api from "../../../services/api";
 import { Agent } from "../../../types";
 

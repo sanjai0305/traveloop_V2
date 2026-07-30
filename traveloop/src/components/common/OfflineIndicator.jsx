@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { WifiOff, Wifi, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const HEALTH_URL = `${import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org"}/api/health`;
+const HEALTH_URL = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/health`.replace(/\/api\/+health$/, "/api/health");
 const POLL_INTERVAL_MS  = 10_000; // check every 10 seconds
 const TIMEOUT_MS        = 6_000;  // treat as offline if no response in 6 s
 

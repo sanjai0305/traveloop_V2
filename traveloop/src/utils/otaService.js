@@ -19,7 +19,7 @@ import { compareVersions } from "./versionCompare";
 // Path inside Storage: updates/version.json
 const VERSION_MANIFEST_URL =
   import.meta.env.VITE_OTA_VERSION_URL ||
-  "https://updates.traveloopv2.duckdns.org/version.json";
+  "http://localhost:5000/updates/version.json";
 
 // Current installed version (bump this before every APK / OTA release)
 export const CURRENT_VERSION = import.meta.env.VITE_APP_VERSION || "1.0.0";

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
-import { auth as firebaseAuth } from "../../../traveloop/src/services/firebase";
+import { auth as firebaseAuth } from "../config/firebase";
 import {
   Compass,
   Users,

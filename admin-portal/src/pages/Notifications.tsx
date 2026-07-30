@@ -35,11 +35,12 @@ export const Notifications: React.FC = () => {
 
     let socket: any = null;
     try {
-      const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_SOCKET_URL;
-      const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "https://traveloopv2.duckdns.org";
+      const envUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL;
+      const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "http://localhost:5000";
       
       socket = io(socketUrl, {
-        transports: ["websocket"],
+        transports: ["websocket", "polling"],
+        withCredentials: true,
         autoConnect: true
       });
 

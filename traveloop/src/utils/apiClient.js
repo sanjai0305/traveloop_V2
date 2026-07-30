@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Determine absolute API base URL
 const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org";
+  const envUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
   const clean = envUrl.replace(/\/+$/, ""); // strip trailing slash
   return clean.endsWith("/api") ? clean : `${clean}/api`;
 };

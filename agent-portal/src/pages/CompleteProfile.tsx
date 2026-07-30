@@ -9,7 +9,7 @@ import { ImageUploadBox } from "../components/ui";
 import { OTPInput } from "../features/auth/components/OTPInput";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
-import { auth } from "../../../traveloop/src/services/firebase";
+import { auth } from "../config/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 
 export const CompleteProfile: React.FC = () => {
@@ -200,12 +200,22 @@ export const CompleteProfile: React.FC = () => {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      const response = await api.post("/legal/accept", {
-        userId: agent?._id,
+      // Resolve the most reliable userId available on the agent object
+      const userId = agent?._id || agent?.id || agent?.agentId || undefined;
+
+      const payload: Record<string, unknown> = {
         acceptedTerms: true,
+        acceptedPrivacy: true,       // ← was missing; backend requires both
         acceptedAt: new Date().toISOString(),
         termsVersion: "2026-07",
-      });
+      };
+
+      // Only include userId if we have one (backend also reads JWT from the header)
+      if (userId) payload.userId = userId;
+
+      console.log("[CompleteProfile] Submitting legal consent payload:", payload);
+
+      const response = await api.post("/legal/accept", payload);
 
       if (response.data?.success) {
         const updatedAgent = response.data.agent;
@@ -221,18 +231,55 @@ export const CompleteProfile: React.FC = () => {
         setErrorMsg(response.data?.message || "Failed to save legal consent");
       }
     } catch (err: any) {
-      setErrorMsg(err.response?.data?.message || "Error submitting legal consent");
+      const serverMsg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        "Error submitting legal consent";
+      console.error("[CompleteProfile] Legal consent error:", err.response?.data || err);
+      setErrorMsg(serverMsg);
     } finally {
       setLoading(false);
     }
   };
 
+
   // ── Step 6: Mobile OTP Actions ─────────────────────────────────────────────
+
+  /**
+   * Returns true if the number is a valid production Indian mobile number.
+   * Production rule: exactly 10 digits, starts with 6, 7, 8, or 9.
+   */
+  const isValidProductionNumber = (num: string): boolean =>
+    /^[6-9][0-9]{9}$/.test(num);
+
+  /**
+   * Returns true if the number matches the Firebase Test Phone Number
+   * configured in the environment (10-digit or E.164 form).
+   * e.g. VITE_FIREBASE_TEST_PHONE_NUMBER=+911234567890 or 1234567890
+   */
+  const isFirebaseTestNumber = (num: string): boolean => {
+    const raw = import.meta.env.VITE_FIREBASE_TEST_PHONE_NUMBER as string | undefined;
+    if (!raw) return false;
+    // Normalise both sides: strip leading +91 / 0 and compare the 10-digit core
+    const normalise = (n: string) => n.replace(/^\+?91/, "").replace(/^0/, "").trim();
+    return normalise(num) === normalise(raw);
+  };
+
   const sendMobileOtp = async () => {
-    if (!/^[6-9][0-9]{9}$/.test(mobile)) {
+    // ── Validation ─────────────────────────────────────────────────────────
+    const isDev = import.meta.env.DEV;
+
+    if (isDev && isFirebaseTestNumber(mobile)) {
+      // Firebase Test Phone Number detected in dev mode — bypass production rules
+      console.log("[DEV] Firebase Test Number detected:", mobile);
+      console.log("[DEV] Skipping production phone validation.");
+      console.log("[DEV] Proceeding with Firebase Test OTP.");
+    } else if (!isValidProductionNumber(mobile)) {
+      // Production (or dev with a non-test number) — enforce the real validation
       setErrorMsg("Please enter a valid 10-digit mobile number starting with 6-9");
       return;
     }
+
     setErrorMsg("");
     setSuccessMsg("");
     setLoading(true);
@@ -395,9 +442,47 @@ export const CompleteProfile: React.FC = () => {
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, ""))}
                 />
-                <div className="mt-1.5 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/5 border border-primary/10 w-fit text-[11px] text-primary/80 font-semibold">
-                  <span>📱 Demo Mobile Number: 8637628773</span>
-                </div>
+
+                {/* ── DEV-only Demo Credentials Card (Step 1) ───────────────── */}
+                {import.meta.env.DEV && (
+                  <div className="relative mt-1 p-4 bg-slate-950/60 backdrop-blur-md border border-cyan-500/25 rounded-xl shadow-[0_0_12px_rgba(6,182,212,0.10)] text-left overflow-hidden">
+                    {/* "Dev Only" pill */}
+                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400 uppercase tracking-widest">
+                      Dev Only
+                    </div>
+
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="text-[11px] font-black text-white uppercase tracking-wider">
+                        🧪 Demo Credentials
+                      </span>
+                    </div>
+
+                    {/* Credential rows */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">📱 Demo Mobile Number</span>
+                        <span className="inline-block px-3 py-1 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-bold font-mono">
+                          1234567890
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">🔐 Demo OTP</span>
+                        <span className="inline-block px-3 py-1 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-bold font-mono tracking-widest">
+                          123456
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Footer note */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+                      <p className="text-[9.5px] text-slate-500 leading-relaxed font-semibold">
+                        ℹ️ For development/testing only. These credentials work only with Firebase Test Phone Authentication.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <Button onClick={handleNext} className="w-full mt-4">
                   Next Step <ArrowRight className="w-4 h-4 ml-2" />
@@ -543,9 +628,7 @@ export const CompleteProfile: React.FC = () => {
                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Terms & Conditions</h4>
                     <p className="text-[11px] text-slate-400 mb-3">Review the TravelLoop Agent usage and guidelines.</p>
                     <a
-                      href="https://traveloop-v2-j88c.vercel.app/index.html?doc=terms"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href="/terms"
                       className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
                     >
                       Read Terms & Conditions
@@ -558,9 +641,7 @@ export const CompleteProfile: React.FC = () => {
                     <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Privacy Policy</h4>
                     <p className="text-[11px] text-slate-400 mb-3">Learn how we protect and process business data.</p>
                     <a
-                      href="https://traveloop-v2-j88c.vercel.app/index.html?doc=privacy"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href="/privacy"
                       className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
                     >
                       Read Privacy Policy
@@ -650,56 +731,46 @@ export const CompleteProfile: React.FC = () => {
                 )}
                 <div id="recaptcha-container" className="mt-2 flex justify-center"></div>
 
-                {/* Professional Demo Credentials Card */}
-                <div className="relative mt-8 p-5 bg-slate-950/65 backdrop-blur-md border border-cyan-500/30 rounded-2xl shadow-[0_0_15px_rgba(6,182,212,0.15)] text-left overflow-hidden">
-                  {/* Top-Right "Demo Only" Pill Badge */}
-                  <div className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400 uppercase tracking-widest">
-                    Demo Only
-                  </div>
+                {/* ── DEV-only Demo Credentials Card (Step 6 - Mobile OTP) ─── */}
+                {import.meta.env.DEV && (
+                  <div className="relative mt-6 p-5 bg-slate-950/65 backdrop-blur-md border border-cyan-500/30 rounded-2xl shadow-[0_0_15px_rgba(6,182,212,0.15)] text-left overflow-hidden">
+                    {/* "Dev Only" pill */}
+                    <div className="absolute top-3.5 right-3.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-black text-cyan-400 uppercase tracking-widest">
+                      Dev Only
+                    </div>
 
-                  {/* Header Title with Info Icon */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <Info className="w-4 h-4 text-cyan-400 animate-pulse" />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">
-                      🧪 Demo Credentials
-                    </span>
-                  </div>
-
-                  {/* Body Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Demo Mobile Number */}
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        📱 Demo Mobile Number
-                      </span>
-                      <span className="inline-block px-3 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-medium font-mono">
-                        +91 8637628773
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-4">
+                      <Info className="w-4 h-4 text-cyan-400 animate-pulse" />
+                      <span className="text-xs font-black text-white uppercase tracking-wider">
+                        🧪 Demo Credentials
                       </span>
                     </div>
 
-                    {/* Demo OTP */}
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        🔐 Demo OTP
-                      </span>
-                      <span className="inline-block px-4 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-medium font-mono tracking-widest">
-                        123456
-                      </span>
+                    {/* Credential grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">📱 Demo Mobile Number</span>
+                        <span className="inline-block px-3 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-bold font-mono">
+                          1234567890
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">🔐 Demo OTP</span>
+                        <span className="inline-block px-4 py-1.5 rounded-lg bg-slate-900 border border-cyan-500/20 text-xs text-cyan-400 font-bold font-mono tracking-widest">
+                          123456
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Footer note */}
+                    <div className="mt-4 pt-3 border-t border-slate-900">
+                      <p className="text-[9.5px] text-slate-500 leading-relaxed font-semibold">
+                        ℹ️ For development/testing only. These credentials work only with Firebase Test Phone Authentication.
+                      </p>
                     </div>
                   </div>
-
-                  {/* Guide Text */}
-                  <p className="text-[10px] text-slate-400 font-medium mt-4">
-                    Use the above demo OTP for testing the UI.
-                  </p>
-
-                  {/* Helper Text at the Bottom */}
-                  <div className="mt-4 pt-3 border-t border-slate-900">
-                    <p className="text-[9px] text-slate-500 leading-relaxed font-semibold">
-                      This demo OTP is displayed only for UI demonstration purposes. Actual OTP verification continues to use the existing Firebase Authentication flow.
-                    </p>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 

@@ -5,14 +5,14 @@ node_modules/
 Backend/node_modules/
 
 # =========================
-# ENV FILES
+# ENV FILES  (tracking enabled — lines below are commented out)
 # =========================
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-Backend/.env
+# .env
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
+# Backend/.env
 
 # =========================
 # BUILD FILES

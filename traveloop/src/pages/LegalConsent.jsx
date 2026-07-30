@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, Shield, ArrowRight, Loader2, Phone, FileText, ChevronRight } from "lucide-react";
+import { Check, Shield, ArrowRight, Loader2, Phone, FileText, ChevronRight, Info } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { getApiUrl } from "../utils/api";
 import { useToast } from "../components/mobile/MobileToast";
@@ -25,12 +25,48 @@ const LegalConsent = () => {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [demoCredentials, setDemoCredentials] = useState(null);
+  const [loadingDemo, setLoadingDemo] = useState(true);
 
   const canSubmit = termsAccepted && privacyAccepted;
   const canVerifyPhone = useMemo(() => {
     const clean = phoneNumber.replace(/\D/g, "");
     return clean.length === 10;
   }, [phoneNumber]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDemoCredentials = async () => {
+      try {
+        setLoadingDemo(true);
+        const res = await fetch(getApiUrl("v1/auth/firebase-test-phone"));
+        if (!res.ok) {
+          if (isMounted) setDemoCredentials(null);
+          return;
+        }
+        const data = await res.json();
+        if (isMounted) {
+          if (data.success && data.phoneNumber) {
+            const cleanPhone = data.phoneNumber.replace("+91", "").trim();
+            setDemoCredentials({
+              phoneNumber: data.phoneNumber,
+              cleanPhone,
+              otp: data.otp || "123456"
+            });
+          } else {
+            setDemoCredentials(null);
+          }
+        }
+      } catch (err) {
+        if (isMounted) setDemoCredentials(null);
+      } finally {
+        if (isMounted) setLoadingDemo(false);
+      }
+    };
+
+    fetchDemoCredentials();
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!loading && userRefreshed && !isAuthenticated) {
@@ -65,6 +101,7 @@ const LegalConsent = () => {
         body: JSON.stringify({
           userId: user?._id || user?.id,
           acceptedTerms: true,
+          acceptedPrivacy: true,
           acceptedAt: new Date().toISOString(),
           termsVersion: "2026-07",
         }),
@@ -268,9 +305,7 @@ const LegalConsent = () => {
                         Review the rules and guidelines governing the use of TravelLoop services.
                       </p>
                       <a
-                        href="https://traveloop-v2-j88c.vercel.app/index.html?doc=terms"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        href="/terms"
                         className="inline-flex items-center gap-1 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
                       >
                         Read Terms & Conditions
@@ -290,9 +325,7 @@ const LegalConsent = () => {
                         Learn how we securely collect, use, and process your personal travel details.
                       </p>
                       <a
-                        href="https://traveloop-v2-j88c.vercel.app/index.html?doc=privacy"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        href="/privacy"
                         className="inline-flex items-center gap-1 text-xs font-bold text-teal-400 hover:text-teal-300 transition-colors"
                       >
                         Read Privacy Policy
@@ -397,10 +430,44 @@ const LegalConsent = () => {
                         className="w-full rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3.5 text-sm text-white outline-none focus:border-cyan-500 focus:bg-slate-900/60 transition-all font-bold tracking-wider"
                       />
                     </div>
-                    <div className="mt-2 text-left">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Credentials</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Demo Mobile Number: 1234567890</div>
-                    </div>
+                    {/* Development Demo Credentials Box - Visible only in DEV mode */}
+                    {import.meta.env.DEV && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/30 text-left space-y-2.5 shadow-lg shadow-cyan-500/5">
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs">🧪</span>
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">
+                              Demo Credentials
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
+                            DEV ONLY
+                          </span>
+                        </div>
+
+                        <div className="space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Demo Mobile Number :</span>
+                            <span className="text-cyan-400 font-bold font-mono tracking-wider">
+                              {demoCredentials?.cleanPhone || demoCredentials?.phoneNumber || "1234567890"}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400 font-medium">Demo OTP :</span>
+                            <span className="text-cyan-400 font-bold font-mono tracking-wider">
+                              {demoCredentials?.otp || "123456"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pt-1.5 flex items-start gap-1.5 border-t border-slate-800/50">
+                          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-slate-400 leading-snug">
+                            For development/testing only. Works only with Firebase Test Phone Numbers.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -446,10 +513,12 @@ const LegalConsent = () => {
                         maxLength={6}
                         className="w-full text-center rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3.5 text-lg font-black tracking-[0.5em] text-cyan-400 outline-none focus:border-cyan-500 focus:bg-slate-900/60 transition-all"
                       />
-                      <div className="mt-2 text-left">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Demo Credentials</div>
-                        <div className="text-xs text-slate-400 mt-0.5">Demo OTP: 123456</div>
-                      </div>
+                      {import.meta.env.DEV && (
+                        <div className="mt-1.5 text-left flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-400">Demo Verification Code:</span>
+                          <span className="text-[11px] font-bold text-cyan-400 font-mono">{demoCredentials?.otp || "123456"}</span>
+                        </div>
+                      )}
                     </div>
 
                     <button

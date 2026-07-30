@@ -120,25 +120,25 @@ const portals = [
 title: "Traveler Portal",
 desc: "Book trips, manage bookings, payments, QR boarding, wallet, profile, and travel history.",
 icon: Globe,
-link: "https://traveloop-v2.vercel.app/"
+link: "http://localhost:5173/"
 },
 {
 title: "Agent Portal",
 desc: "Create and manage trips, itineraries, packages, passengers, pricing, and bookings.",
 icon: Briefcase,
-link: "https://traveloop-v2-x92b.vercel.app/"
+link: "http://localhost:5174/"
 },
 {
 title: "Driver Portal",
 desc: "Verify passengers using QR codes, manage boarding, attendance, and trip status.",
 icon: Smartphone,
-link: "https://agent-traveloop.vercel.app/"
+link: "http://localhost:5176/"
 },
 {
 title: "Admin Portal",
 desc: "Manage users, agents, drivers, approvals, analytics, reports, and platform administration.",
 icon: Shield,
-link: "https://traveloop-v2-yj2k.vercel.app/"
+link: "http://localhost:5175/"
 }
 ];
 

@@ -982,7 +982,7 @@ export const Bookings: React.FC = () => {
                             <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                               <button
                                 onClick={() => {
-                                  navigator.clipboard.writeText(`https://traveloopv2.duckdns.org/trips/${tripId}`);
+                                  navigator.clipboard.writeText(`http://localhost:5173/trips/${tripId}`);
                                   alert("Trip Link Copied!");
                                 }}
                                 className="px-3 py-1.5 rounded-lg bg-primary text-white text-[10px] font-black uppercase hover:opacity-90 transition-all flex items-center gap-1 shadow-sm"
@@ -991,7 +991,7 @@ export const Bookings: React.FC = () => {
                               </button>
                               <button
                                 onClick={() => {
-                                  navigator.clipboard.writeText(`https://traveloopv2.duckdns.org/trips/${tripId}`);
+                                  navigator.clipboard.writeText(`http://localhost:5173/trips/${tripId}`);
                                   alert("Trip Link Copied!");
                                 }}
                                 className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] text-slate-600 dark:text-slate-400 font-extrabold hover:bg-slate-50 dark:hover:bg-slate-850 transition-all"

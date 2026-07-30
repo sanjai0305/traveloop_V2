@@ -81,7 +81,7 @@ export default function Dashboard() {
     setUpdateSending(true)
     try {
       const token = localStorage.getItem('driver_token') || localStorage.getItem('token') || '';
-      const baseApiUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`) : 'https://traveloopv2.duckdns.org/api');
+      const baseApiUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.VITE_API_URL ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`) : 'http://localhost:5000/api');
       const res = await fetch(`${baseApiUrl}/driver-updates/${trip._id}`, {
         method: 'POST',
         headers: {

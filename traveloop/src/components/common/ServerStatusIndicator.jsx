@@ -14,7 +14,7 @@ const ServerStatusIndicator = () => {
       // Use the dedicated /api/health endpoint — it returns { success: true }
       // Use originalFetch (bypasses the Axios interceptor) with a hard 8-second timeout
       // so a CORS failure resolves quickly instead of hanging.
-      const healthUrl = `${import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org"}/api/health`;
+      const healthUrl = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/health`.replace(/\/api\/+health$/, "/api/health");
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);

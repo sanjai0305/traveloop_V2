@@ -63,21 +63,14 @@ import errorLogger from "./middleware/errorMiddleware.js";
 let dbConnected = true;
 
 const allowedOrigins = [
-  // ── Local development ─────────────────────────────────────────────────
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
   "http://localhost:3000",
   "http://localhost:5174",
-  // ── Capacitor Android / iOS WebView origins ───────────────────────────
-  // The Android WebView sends one of these depending on Capacitor version:
+  "http://localhost:5175",
+  "http://localhost:5176",
   "capacitor://localhost",
-  "https://localhost",
-  "http://localhost",
-  // ── Production web ───────────────────────────────────────────────────
-  "https://traveloop-v2.vercel.app",
-  "https://traveloop-v2-x92b.vercel.app",
-  "https://traveloop-v2-yj2k.vercel.app",
-  "https://agent-traveloop.vercel.app",
-  "https://traveloopv2.duckdns.org"
+  "http://localhost"
 ];
 
 if (process.env.ALLOWED_ORIGINS) {
@@ -98,14 +91,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      const isAllowed = !origin || 
-                        allowedOrigins.includes(origin) || 
-                        origin.endsWith(".vercel.app") || 
-                        origin.startsWith("http://localhost:") || 
-                        origin.startsWith("http://127.0.0.1:");
-      callback(null, isAllowed);
-    },
+    origin: [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:3000",
+      "http://localhost:5174",
+      "http://localhost:5175",
+      "http://localhost:5176"
+    ],
     credentials: true
   }
 });
@@ -218,12 +211,9 @@ const corsOptions = {
 
     const isAllowed =
       allowedOrigins.includes(origin) ||
-      origin.endsWith(".vercel.app") ||
       origin.startsWith("http://localhost:") ||
       origin.startsWith("http://127.0.0.1:") ||
-      // Capacitor WebView on Android emits one of these:
       origin === "capacitor://localhost" ||
-      origin === "https://localhost" ||
       origin === "http://localhost";
 
     if (isAllowed) return callback(null, true);
@@ -289,6 +279,7 @@ app.get("/", (req, res) => {
 ------------------------------ */
 
 app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/v1/auth", authLimiter, authRoutes);
 app.use("/api/legal", legalRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/itinerary", itineraryRoutes);

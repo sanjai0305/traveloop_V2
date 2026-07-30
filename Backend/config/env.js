@@ -5,5 +5,9 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env file from the backend root directory
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+const envPath = path.resolve(__dirname, "../.env");
+
+// Load .env file with override enabled
+dotenv.config({ path: envPath, override: true });
+
+export { envPath };

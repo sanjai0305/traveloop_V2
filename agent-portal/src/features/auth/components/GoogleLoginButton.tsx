@@ -1,6 +1,6 @@
 import React from "react";
 import { signInWithPopup, signInWithRedirect, GoogleAuthProvider } from "firebase/auth";
-import { auth } from "../../../../../traveloop/src/services/firebase";
+import { auth } from "../../../config/firebase";
 import { useAuthStore } from "../../../store/authStore";
 import api from "../../../services/api";
 import { Button } from "../../../components/ui";

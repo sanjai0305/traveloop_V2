@@ -178,6 +178,12 @@ const agentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    legalConsent: {
+      accepted: { type: Boolean, default: false },
+      acceptedTerms: { type: Boolean, default: false },
+      acceptedPrivacy: { type: Boolean, default: false },
+      acceptedAt: { type: Date, default: null },
+    },
     termsAcceptedAt: {
       type: Date,
       default: null,

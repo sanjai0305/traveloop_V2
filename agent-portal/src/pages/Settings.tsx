@@ -101,7 +101,7 @@ export const Settings: React.FC = () => {
             <div className="flex justify-between py-2">
               <span className="text-slate-500 dark:text-slate-450">API Base Connection</span>
               <span className="text-slate-700 dark:text-slate-300 font-mono text-[10px] bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded">
-                {import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org/api"}
+                {import.meta.env.VITE_API_URL || "http://localhost:5000/api"}
               </span>
             </div>
 

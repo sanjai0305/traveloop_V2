@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./store/authStore";
+import { IS_DEMO, isDemoToken } from "./lib/demoMode";
 import { MainLayout } from "./components/layout/MainLayout";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
@@ -18,7 +19,13 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
-  const { isAuthenticated, admin } = useAuthStore();
+  const { isAuthenticated, admin, token } = useAuthStore();
+
+  // Demo session: always allow access — no backend validation needed
+  const isDemoSession = IS_DEMO || isDemoToken(token);
+  if (isDemoSession && token) {
+    return <>{children}</>;
+  }
 
   if (!isAuthenticated || !admin) {
     return <Navigate to="/login" replace />;
@@ -30,6 +37,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
 
   return <>{children}</>;
 };
+
 
 export const App: React.FC = () => {
   return (

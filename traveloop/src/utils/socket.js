@@ -22,7 +22,8 @@ export const socket = io(socketUrl, {
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
-  transports: ["polling", "websocket"],
+  transports: ["websocket", "polling"],
+  withCredentials: true,
 });
 
 export default socket;

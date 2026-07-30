@@ -32,6 +32,7 @@ const LegalConsent: React.FC = () => {
       const response = await api.post("/legal/accept", {
         userId: agent?._id,
         acceptedTerms: true,
+        acceptedPrivacy: true,
         acceptedAt: new Date().toISOString(),
         termsVersion: "2026-07",
       });
@@ -95,9 +96,7 @@ const LegalConsent: React.FC = () => {
                     Review the rules and guidelines governing the use of TravelLoop Agent Portal services.
                   </p>
                   <a
-                    href="https://traveloop-v2-j88c.vercel.app/index.html?doc=terms"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/terms"
                     className="inline-flex items-center gap-1 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
                   >
                     Read Terms & Conditions
@@ -117,9 +116,7 @@ const LegalConsent: React.FC = () => {
                     Learn how we securely collect, use, and process your personal travel details.
                   </p>
                   <a
-                    href="https://traveloop-v2-j88c.vercel.app/index.html?doc=privacy"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/privacy"
                     className="inline-flex items-center gap-1 text-xs font-bold text-teal-400 hover:text-teal-300 transition-colors"
                   >
                     Read Privacy Policy

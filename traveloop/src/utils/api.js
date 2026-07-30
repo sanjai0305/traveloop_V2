@@ -7,7 +7,7 @@ const isNative = Capacitor.isNativePlatform();
 
 // ─── API BASE URL ─────────────────────────────────────────────────────────────
 const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL || "https://traveloopv2.duckdns.org";
+  const envUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
   if (envUrl) {
     const clean = envUrl.replace(/\/+$/, ""); // strip trailing slash
     return clean.endsWith("/api") ? clean : `${clean}/api`;
@@ -17,7 +17,7 @@ const getApiBaseUrl = () => {
     return "http://10.0.2.2:5000/api";
   }
 
-  return "/api";
+  return "http://localhost:5000/api";
 };
 
 const API_BASE_URL = getApiBaseUrl();

@@ -542,7 +542,7 @@ export const sendInvoiceEmail = async (to, invoiceData) => {
     </table>
 
     <div style="text-align: center; margin-top: 36px; padding-top: 20px; border-top: 1px solid #f1f5f9;">
-      <a href="https://traveloopv2.duckdns.org/api/bookings/ticket/${bookingId}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Download Ticket PDF</a>
+      <a href="http://localhost:5000/api/bookings/ticket/${bookingId}" style="background-color: ${BRAND_COLOR}; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Download Ticket PDF</a>
     </div>
   `);
 
