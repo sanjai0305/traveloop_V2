@@ -8,6 +8,7 @@ export { Avatar } from "./Avatar";
 export { Badge } from "./Badge";
 export { Dialog } from "./Dialog";
 export { Modal } from "./Modal";
+export { DesktopModal } from "./DesktopModal";
 export { default as Toast } from "./Toast";
 export { Table } from "./Table";
 export { default as Typography } from "./Typography";
@@ -32,6 +33,8 @@ export { Sidebar } from "../navigation/Sidebar";
 export { Navbar } from "../navigation/Navbar";
 export { Drawer } from "../navigation/Drawer";
 export { BottomTabs } from "../navigation/BottomTabs";
+export { BreadcrumbNav, BackButton } from "../navigation/BreadcrumbNav";
+export { PageHeader } from "../navigation/PageHeader";
 
 // Tokens
 export * from "../tokens";

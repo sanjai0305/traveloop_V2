@@ -42,6 +42,7 @@ export default defineConfig({
     }
   },
   server: {
+    port: 5182,
     fs: {
       allow: ['.', '..']
     }

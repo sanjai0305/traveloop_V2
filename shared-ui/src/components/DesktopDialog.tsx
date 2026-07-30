@@ -1,0 +1,138 @@
+import React, { useEffect } from "react";
+import { X, ArrowLeft } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+
+export interface DesktopDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  size?: "md" | "lg" | "xl" | "2xl" | "full";
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  onBack?: () => void;
+  backLabel?: string;
+  className?: string;
+}
+
+export const DesktopDialog: React.FC<DesktopDialogProps> = ({
+  isOpen,
+  onClose,
+  title,
+  subtitle,
+  icon,
+  size = "xl",
+  children,
+  footer,
+  onBack,
+  backLabel = "Back",
+  className = "",
+}) => {
+  // ESC key listener & body lock
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  const sizeClasses = {
+    md: "max-w-xl",        // ~576px
+    lg: "max-w-3xl",        // ~768px
+    xl: "max-w-5xl",        // ~1024px
+    "2xl": "max-w-6xl",     // ~1152px
+    full: "max-w-7xl",      // ~1280px
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-slate-950/75 backdrop-blur-md"
+          />
+
+          {/* Dialog Container */}
+          <motion.div
+            initial={{ scale: 0.96, opacity: 0, y: 16 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 300, damping: 28 }}
+            className={`relative w-full ${sizeClasses[size]} max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden z-10 ${className}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-title"
+          >
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 px-6 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold"
+                    aria-label={backLabel}
+                  >
+                    <ArrowLeft size={16} className="text-teal-500" />
+                    <span className="hidden sm:inline">{backLabel}</span>
+                  </button>
+                )}
+
+                {icon && (
+                  <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 flex items-center justify-center flex-shrink-0 text-xl font-bold">
+                    {icon}
+                  </div>
+                )}
+
+                <div className="min-w-0">
+                  <h2 id="dialog-title" className="text-lg sm:text-xl font-black text-slate-900 dark:text-white truncate">
+                    {title}
+                  </h2>
+                  {subtitle && (
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {children}
+            </div>
+
+            {/* Sticky Footer */}
+            {footer && (
+              <div className="sticky bottom-0 z-20 px-6 py-4 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3">
+                {footer}
+              </div>
+            )}
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};

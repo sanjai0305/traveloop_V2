@@ -9,6 +9,7 @@ import {
 import { getDashboard, openBoarding, closeBoarding } from '../services/api'
 import { useDriverAuth } from '../context/DriverAuthContext'
 import socket from '../services/socket'
+import { BreadcrumbNav, BackButton } from '@shared-ui/components'
 
 interface Stats { total: number; boarded: number; pending: number; noShow: number; occupancyPct: number }
 interface Trip {
@@ -163,8 +164,15 @@ export default function Dashboard() {
       style={{ background: 'radial-gradient(ellipse at top, #0d1f30 0%, #0B1325 70%)' }}>
 
       {/* ── Header ── */}
-      <div className="px-4 pt-6 pb-4 flex items-center justify-between">
+      <div className="px-4 pt-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10">
         <div className="flex items-center gap-3">
+          <BackButton />
+          <BreadcrumbNav
+            showBackButton={false}
+            items={[{ label: "Driver Portal", href: "/" }, { label: "Dashboard" }]}
+          />
+        </div>
+        <div className="flex items-center justify-between sm:justify-end gap-3">
           {driver?.photo
             ? <img src={driver.photo} alt={driver.name} className="w-10 h-10 rounded-full object-cover border-2 border-teal-500/30" />
             : <div className="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center text-lg">🧑‍✈️</div>
@@ -173,10 +181,10 @@ export default function Dashboard() {
             <p className="font-bold text-white text-sm leading-tight">{driver?.name || 'Driver'}</p>
             <p className="text-slate-400 text-xs">{driver?.vehicleNumber || driver?.licenseNumber || 'Driver Portal'}</p>
           </div>
+          <button onClick={logout} className="p-2 rounded-full bg-white/5 text-slate-400 hover:text-white transition-colors ml-2">
+            <LogOut size={16} />
+          </button>
         </div>
-        <button onClick={logout} className="p-2 rounded-full bg-white/5 text-slate-400 hover:text-white transition-colors">
-          <LogOut size={16} />
-        </button>
       </div>
 
       <div className="px-4 flex flex-col gap-5">

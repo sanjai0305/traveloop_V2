@@ -1,4 +1,5 @@
 // controllers/budgetController.js
+import mongoose from "mongoose";
 import Budget from "../models/Budget.js";
 import Trip from "../models/Trip.js";
 import Itinerary from "../models/Itinerary.js";
@@ -55,6 +56,10 @@ export const createBudget = async (req, res) => {
 export const getBudgets = async (req, res) => {
   try {
     const { tripId } = req.params;
+
+    if (!tripId || tripId === "undefined" || !mongoose.Types.ObjectId.isValid(tripId)) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
 
     const trip = await Trip.findById(tripId);
     if (!trip) {

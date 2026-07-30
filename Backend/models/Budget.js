@@ -68,6 +68,14 @@ const budgetSchema = new mongoose.Schema(
   }
 );
 
+// Virtual calculation for utilizationPercentage
+budgetSchema.virtual("utilizationPercentage").get(function () {
+  const total = Number(this.totalBudget) || 0;
+  if (total <= 0) return 0;
+  const spent = Number(this.actualExpense) || Number(this.plannedExpense) || 0;
+  return Number(((spent / total) * 100).toFixed(1));
+});
+
 // Keep trip/tripId and user/userId in sync before saving
 budgetSchema.pre("save", function () {
   const targetTripId = this.tripId || this.trip;

@@ -17,6 +17,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAuthStore } from "../store/authStore";
+import { BreadcrumbNav, BackButton } from "@shared-ui/components";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -276,6 +277,26 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             </div>
           </div>
         )}
+
+        {/* ── Desktop Header ── */}
+        <header className="hidden lg:flex h-16 items-center justify-between px-10 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10 shadow-xs">
+          <div className="flex items-center gap-4">
+            <BackButton />
+            <BreadcrumbNav
+              showBackButton={false}
+              items={[
+                { label: "Agent Portal", href: "/dashboard" },
+                { label: location.pathname === "/dashboard" ? "Dashboard" : location.pathname.slice(1).replace("-", " ").toUpperCase() }
+              ]}
+            />
+          </div>
+          {agent && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-slate-800 dark:text-white">{agent.name || agent.companyName}</span>
+              <span className="px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 text-[10px] font-extrabold">Verified Agent</span>
+            </div>
+          )}
+        </header>
 
         {/* ── Main Content Area ── */}
         <main className="flex-1 p-6 lg:p-10 pb-24 lg:pb-10 overflow-y-auto">

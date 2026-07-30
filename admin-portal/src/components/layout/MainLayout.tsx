@@ -18,6 +18,8 @@ import {
   Gift
 } from "lucide-react";
 
+import { BreadcrumbNav, BackButton } from "@shared-ui/components";
+
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -265,11 +267,15 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
         <header className="hidden md:flex h-16 items-center justify-between px-8 border-b border-[#E5E7EB] bg-white sticky top-0 z-10 shadow-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Environment:</span>
-            <span className="px-2 py-0.5 rounded bg-[#14B8A6]/10 text-[#14B8A6] text-[9px] font-black uppercase tracking-wider">
-              Local Development
-            </span>
+          <div className="flex items-center gap-4">
+            <BackButton />
+            <BreadcrumbNav
+              showBackButton={false}
+              items={[
+                { label: "Admin Portal", href: "/dashboard" },
+                { label: location.pathname === "/dashboard" ? "Dashboard" : location.pathname.slice(1).replace("-", " ").toUpperCase() }
+              ]}
+            />
           </div>
 
           <div className="flex items-center gap-6">
