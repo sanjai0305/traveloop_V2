@@ -39,7 +39,7 @@ export const Notifications: React.FC = () => {
       const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "http://localhost:5000";
       
       socket = io(socketUrl, {
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
         withCredentials: true,
         autoConnect: true
       });
@@ -99,6 +99,7 @@ export const Notifications: React.FC = () => {
   };
 
   const fmtTime = (dateStr: string) => {
+    if (!dateStr || isNaN(Date.parse(dateStr))) return "N/A";
     const d = new Date(dateStr);
     return d.toLocaleString("en-IN", {
       dateStyle: "medium",
@@ -151,15 +152,15 @@ export const Notifications: React.FC = () => {
             >
               <div className="flex items-center gap-4 min-w-0">
                 {/* Icon wrapper */}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getIconColor(n.type)}`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getIconColor(n.type || "info")}`}>
                   <Radio className="w-5 h-5 animate-pulse" />
                 </div>
 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2.5">
-                    <span className="font-semibold text-xs text-white truncate">{n.title}</span>
+                    <span className="font-semibold text-xs text-white truncate">{n.title || "Notification"}</span>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                      {n.type.replace("_", " ")}
+                      {String(n.type || "info").replace("_", " ")}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
@@ -173,15 +174,58 @@ export const Notifications: React.FC = () => {
               </div>
 
               {/* Actions */}
-              {!n.read && (
-                <button
-                  onClick={() => handleMarkAsRead(n._id)}
-                  className="p-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-xl font-bold shrink-0 shadow-lg shadow-teal-500/15"
-                  title="Mark as Read"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {(n.type === "AGENT_PUBLICATION_REQUEST" || n.type === "trip_published" || n.type === "publication_request") && !n.read && (
+                  <>
+                    <button
+                      onClick={async () => {
+                        const targetId = (n as any).tripId || (n as any).resourceId;
+                        if (!targetId) return alert("Trip ID not attached to notification.");
+                        try {
+                          await api.patch(`/admin/trips/${targetId}`, { approvalStatus: "approved" });
+                          await handleMarkAsRead(n._id);
+                          loadNotifications();
+                          alert("Trip approved and published live!");
+                        } catch (err: any) {
+                          alert(err.response?.data?.message || "Failed to approve trip.");
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs transition-colors shadow-sm"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const targetId = (n as any).tripId || (n as any).resourceId;
+                        if (!targetId) return alert("Trip ID not attached to notification.");
+                        const reason = window.prompt("Enter reason for rejection:", "Does not meet platform guidelines");
+                        if (reason === null) return; // User cancelled
+                        try {
+                          await api.patch(`/admin/trips/${targetId}`, { approvalStatus: "rejected", reason });
+                          await handleMarkAsRead(n._id);
+                          loadNotifications();
+                          alert("Trip rejected.");
+                        } catch (err: any) {
+                          alert(err.response?.data?.message || "Failed to reject trip.");
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-semibold text-xs transition-colors shadow-sm"
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+
+                {!n.read && (
+                  <button
+                    onClick={() => handleMarkAsRead(n._id)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold shrink-0 border border-slate-700"
+                    title="Mark as Read"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           ))
         )}

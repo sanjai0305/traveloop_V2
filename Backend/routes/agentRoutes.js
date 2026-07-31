@@ -1847,14 +1847,19 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
   }
 });
 
-// @route   PUT /api/agent/trip/:id/publish or /api/agent/trips/:id/publish
-// @desc    Publish a trip by ID
-router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgentKYC, async (req, res) => {
+// @route   PUT /api/agent/trip/:id/publish or /api/agent/trips/:id/publish or POST /api/agent/trips/publish
+// @desc    Submit a trip for Admin publication approval
+const handleTripPublishRequest = async (req, res) => {
   try {
+    const tripId = req.params.id || req.body.id || req.body.tripId;
+    if (!tripId) {
+      return res.status(400).json({ success: false, message: "Trip ID is required for publication." });
+    }
+
     let trip;
 
     if (isDbConnected()) {
-      trip = await AgentTrip.findById(req.params.id);
+      trip = await AgentTrip.findById(tripId);
       if (!trip) {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
@@ -1865,15 +1870,45 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgent
       }
 
       if (ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized publish request" });
+        return res.status(403).json({ success: false, message: "Unauthorized publish request. You can only publish your own trips." });
       }
 
-      trip.status = "published";
-      trip.publishStatus = "published";
-      trip.publishedAt = new Date();
+      // Idempotency check
+      if (trip.approvalStatus === "pending" && (trip.status === "pending_approval" || trip.publishStatus === "pending_approval")) {
+        return res.status(200).json({
+          success: true,
+          message: "Trip publication request is already pending Admin approval.",
+          trip,
+        });
+      }
+
+      trip.status = "pending_approval";
+      trip.publishStatus = "pending_approval";
+      trip.approvalStatus = "pending";
+      trip.published = false;
+      trip.submittedAt = new Date();
       await trip.save();
+
+      // Create persistent AdminNotification in MongoDB
+      try {
+        const AdminNotification = (await import("../models/AdminNotification.js")).default;
+        const agentName = req.agent.companyName || req.agent.displayName || req.agent.email || "Agent";
+        await AdminNotification.create({
+          title: "New Publication Request",
+          message: `${agentName} submitted trip '${trip.title}' for approval`,
+          type: "AGENT_PUBLICATION_REQUEST",
+          agentId: req.agent._id,
+          tripId: trip._id,
+          resourceId: trip._id.toString(),
+          resourceType: "trip",
+          read: false
+        });
+      } catch (notifErr) {
+        console.error("Failed to create AdminNotification on trip publish:", notifErr);
+      }
+
     } else {
-      trip = fallbackTrips.get(req.params.id);
+      trip = fallbackTrips.get(tripId);
       if (!trip) {
         return res.status(404).json({ success: false, message: "Trip not found" });
       }
@@ -1884,30 +1919,36 @@ router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgent
       }
 
       if (ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized publish request" });
+        return res.status(403).json({ success: false, message: "Unauthorized publish request." });
       }
 
-      trip.status = "published";
-      trip.publishStatus = "published";
-      trip.publishedAt = new Date();
-      fallbackTrips.set(req.params.id, trip);
+      trip.status = "pending_approval";
+      trip.publishStatus = "pending_approval";
+      trip.approvalStatus = "pending";
+      trip.published = false;
+      trip.submittedAt = new Date();
+      fallbackTrips.set(tripId, trip);
     }
 
     const io = req.app.get("io");
     if (io) {
-      io.emit("trip_published", trip._id || req.params.id);
+      io.emit("trip_published", trip._id || tripId);
+      io.emit("admin:publication-submitted", { tripId: trip._id || tripId, agentId: req.agent._id });
     }
 
     res.status(200).json({
       success: true,
-      message: "Trip published successfully",
+      message: "Trip submitted successfully for Admin approval.",
       trip,
     });
   } catch (error) {
     console.error("Publish trip error:", error);
     res.status(500).json({ success: false, message: "Server Error publishing trip" });
   }
-});
+};
+
+router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
+router.post(["/trips/publish", "/trip/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
 
 // @route   DELETE /api/agent/trip/:id or /api/agent/trips/:id
 // @desc    Delete trip by ID (Soft delete & Realtime sync, with Booking & Cancellation confirmations check)

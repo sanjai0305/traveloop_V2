@@ -2,6 +2,15 @@ import React, { useState, useEffect } from "react";
 import api from "../services/api";
 import { BookOpen, Search, Filter, ShieldCheck, DollarSign, Clock } from "lucide-react";
 
+interface BookingAgentTrip {
+  title: string;
+}
+
+interface BookingAgent {
+  companyName: string;
+  displayName: string;
+}
+
 interface Booking {
   _id: string;
   bookingId: string;
@@ -15,14 +24,74 @@ interface Booking {
   agentAmount: number;
   gatewayFee: number;
   createdAt: string;
-  agentTrip?: {
-    title: string;
-  };
-  agent?: {
-    companyName: string;
-    displayName: string;
-  };
+  agentTrip?: BookingAgentTrip;
+  agent?: BookingAgent;
 }
+
+export const normalizeBooking = (raw: any): Booking => {
+  if (!raw || typeof raw !== "object") {
+    return {
+      _id: String(Math.random()),
+      bookingId: "BK-UNKNOWN",
+      travelerName: "Traveler",
+      seats: 1,
+      paymentStatus: "PENDING",
+      status: "Pending",
+      pricePaid: 0,
+      amountPaid: 0,
+      commissionAmount: 0,
+      agentAmount: 0,
+      gatewayFee: 0,
+      createdAt: "",
+      agentTrip: { title: "Custom Trip" },
+      agent: { companyName: "Independent", displayName: "" },
+    };
+  }
+
+  const id = String(raw._id || raw.id || Math.random());
+  const bookingId = String(raw.bookingId || raw.id || `BK-${id.slice(-6).toUpperCase()}`);
+  const travelerName = String(raw.travelerName || raw.customerName || raw.userName || "Traveler");
+  const seats = Number(raw.seats || 1);
+
+  const pricePaid = Number(raw.pricePaid ?? raw.amountPaid ?? raw.amount ?? 0);
+  const amountPaid = Number(raw.amountPaid ?? pricePaid);
+  const commissionAmount = Number(raw.commissionAmount ?? Math.round(pricePaid * 0.1));
+  const gatewayFee = Number(raw.gatewayFee ?? Math.round(pricePaid * 0.02));
+  const agentAmount = Number(raw.agentAmount ?? Math.max(0, pricePaid - commissionAmount - gatewayFee));
+
+  let status: "Paid" | "Pending" | "Settled" | "Cancelled" = "Pending";
+  const rawStatusStr = String(raw.status || raw.paymentStatus || raw.bookingStatus || "").toLowerCase();
+  if (rawStatusStr.includes("paid") || rawStatusStr.includes("confirmed")) {
+    status = "Paid";
+  } else if (rawStatusStr.includes("settled")) {
+    status = "Settled";
+  } else if (rawStatusStr.includes("cancel") || rawStatusStr.includes("refund")) {
+    status = "Cancelled";
+  } else if (raw.status === "Paid" || raw.status === "Settled" || raw.status === "Cancelled" || raw.status === "Pending") {
+    status = raw.status;
+  }
+
+  const tripTitle = String(raw.agentTrip?.title || raw.tripTitle || "Custom Trip");
+  const agentCompany = String(raw.agent?.companyName || raw.agentName || "Independent");
+  const agentDisplay = String(raw.agent?.displayName || agentCompany);
+
+  return {
+    _id: id,
+    bookingId,
+    travelerName,
+    seats,
+    paymentStatus: String(raw.paymentStatus || status.toUpperCase()),
+    status,
+    pricePaid,
+    amountPaid,
+    commissionAmount,
+    agentAmount,
+    gatewayFee,
+    createdAt: String(raw.createdAt || raw.bookedAt || ""),
+    agentTrip: { title: tripTitle },
+    agent: { companyName: agentCompany, displayName: agentDisplay },
+  };
+};
 
 export const Bookings: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -36,8 +105,10 @@ export const Bookings: React.FC = () => {
       setLoading(true);
       const res = await api.get("/admin/bookings");
       if (res.data.success) {
-        setBookings(res.data.bookings);
-        setFilteredBookings(res.data.bookings);
+        const rawList = res.data.bookings || [];
+        const normalized = Array.isArray(rawList) ? rawList.map(normalizeBooking) : [];
+        setBookings(normalized);
+        setFilteredBookings(normalized);
       }
     } catch (err) {
       console.error("Failed to load bookings ledger", err);
@@ -52,16 +123,22 @@ export const Bookings: React.FC = () => {
 
   // Search & Status filters
   useEffect(() => {
-    const term = search.toLowerCase();
+    const term = search.trim().toLowerCase();
     const filtered = bookings.filter((b) => {
-      const matchSearch =
-        b.bookingId.toLowerCase().includes(term) ||
-        (b.travelerName || "").toLowerCase().includes(term) ||
-        (b.agentTrip?.title || "").toLowerCase().includes(term) ||
-        (b.agent?.companyName || "").toLowerCase().includes(term);
+      const bId = String(b.bookingId || "").toLowerCase();
+      const traveler = String(b.travelerName || "").toLowerCase();
+      const tripTitle = String(b.agentTrip?.title || "").toLowerCase();
+      const company = String(b.agent?.companyName || "").toLowerCase();
 
+      const matchSearch =
+        bId.includes(term) ||
+        traveler.includes(term) ||
+        tripTitle.includes(term) ||
+        company.includes(term);
+
+      const bStatus = String(b.status || "").toLowerCase();
       const matchStatus =
-        statusFilter === "all" || b.status.toLowerCase() === statusFilter.toLowerCase();
+        statusFilter === "all" || bStatus === statusFilter.toLowerCase();
 
       return matchSearch && matchStatus;
     });
@@ -73,7 +150,7 @@ export const Bookings: React.FC = () => {
       style: "currency",
       currency: "INR",
       maximumFractionDigits: 0
-    }).format(num);
+    }).format(num || 0);
   };
 
   if (loading) {
@@ -144,6 +221,7 @@ export const Bookings: React.FC = () => {
             const commAmt = b.commissionAmount !== undefined ? b.commissionAmount : (b.pricePaid * 0.1);
             const gateFee = b.gatewayFee !== undefined ? b.gatewayFee : (b.pricePaid * 0.02);
             const agentShare = b.agentAmount !== undefined ? b.agentAmount : (b.pricePaid - commAmt - gateFee);
+            const formattedDate = b.createdAt && !isNaN(Date.parse(b.createdAt)) ? new Date(b.createdAt).toLocaleDateString() : "N/A";
 
             return (
               <div key={b._id} className="glass-panel p-5 rounded-[20px] bg-white border border-slate-200 hover:shadow-md transition-all duration-300 flex flex-col justify-between">
@@ -152,7 +230,7 @@ export const Bookings: React.FC = () => {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-[9px] font-bold text-slate-400 uppercase block">Booking ID</span>
-                      <span className="text-xs font-black text-slate-800 font-mono">{b.bookingId}</span>
+                      <span className="text-xs font-black text-slate-800 font-mono">{b.bookingId || "BK-N/A"}</span>
                     </div>
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
                       b.status === "Settled"
@@ -169,7 +247,7 @@ export const Bookings: React.FC = () => {
                   <div className="space-y-0.5">
                     <span className="text-[9px] text-slate-400 font-bold uppercase block">Passenger</span>
                     <h4 className="text-xs font-bold text-slate-800">{b.travelerName || "Traveler"}</h4>
-                    <span className="text-[10px] text-slate-450 font-bold">{b.seats} seats reserved</span>
+                    <span className="text-[10px] text-slate-450 font-bold">{b.seats || 1} seats reserved</span>
                   </div>
 
                   {/* Trip Details */}
@@ -203,7 +281,7 @@ export const Bookings: React.FC = () => {
                 {/* Card Actions */}
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
                   <button
-                    onClick={() => alert(`Ledger Detail:\n\nBooking: ${b.bookingId}\nPassenger: ${b.travelerName}\nTrip: ${b.agentTrip?.title}\nSeats: ${b.seats}\nDate: ${new Date(b.createdAt).toLocaleDateString()}\nStatus: ${b.status}`)}
+                    onClick={() => alert(`Ledger Detail:\n\nBooking: ${b.bookingId || 'BK-N/A'}\nPassenger: ${b.travelerName || 'Traveler'}\nTrip: ${b.agentTrip?.title || 'N/A'}\nSeats: ${b.seats || 1}\nDate: ${formattedDate}\nStatus: ${b.status}`)}
                     className="flex-1 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold text-[10px] hover:bg-slate-50 transition-colors"
                   >
                     View

@@ -65,6 +65,14 @@ router.delete("/agents/:id", verifySuperAdmin, deleteAgent);
 // Trips Moderation
 router.get("/trips", verifyAdmin, getTrips);
 router.patch("/trips/:id", verifyAdmin, updateTrip);
+router.post("/trips/:id/approve", verifyAdmin, (req, res, next) => {
+  req.body.approvalStatus = "approved";
+  next();
+}, updateTrip);
+router.post("/trips/:id/reject", verifyAdmin, (req, res, next) => {
+  req.body.approvalStatus = "rejected";
+  next();
+}, updateTrip);
 router.delete("/trips/:id", verifyAdmin, deleteTrip);
 router.post("/trips/:id/restore", verifyAdmin, restoreTrip);
 router.delete("/trips/:id/purge", verifyAdmin, purgeTrip);

@@ -1,137 +1,149 @@
 # 🚀 Traveloop V2 - AI Powered Travel Ecosystem
 
-An enterprise-grade travel platform featuring AI itinerary planning, traveler booking, admin management, travel agent services, and driver operations.
+Traveloop V2 is a full-stack travel ecosystem consisting of a Traveler Application, Public Website, Admin Portal, Agent Portal, Driver Portal, and a centralized Backend API.
+
+---
+
+## 📂 Project Structure
+
+```text
+traveloop_V2/
+│
+├── Backend/                 # Node.js + Express API
+├── user-application/        # Main Traveler Application
+├── user-website/            # Public Website
+├── admin-portal/            # Admin Dashboard
+├── agent-portal/            # Travel Agent Portal
+├── driver-portal/           # Driver Portal
+│
+├── project-resources/
+│   ├── legal-site/
+│   └── shared-ui/
+│
+├── LICENSE
+└── README.md
+```
 
 ---
 
 # 📋 Prerequisites
 
-Before running the project, make sure you have installed:
+Install the following before running Traveloop V2:
 
 - Node.js 22+
 - npm
-- MongoDB (Local or Atlas)
 - Git
-- Docker Desktop (for Dockerized ecosystem execution)
+- MongoDB Atlas or MongoDB Local
 
----
+Check installation:
 
-# 🐳 Docker Quick Start
-
-The entire Traveloop V2 ecosystem (Backend, 5 Frontends, Redis, MongoDB) can be run with **one command**.
-
-### Start (Windows)
-```cmd
-.\start.bat
-```
-Or manually using Docker Compose:
-```bash
-docker compose up -d --build
-```
-
-### Stop
-```cmd
-.\stop.bat
-```
-Or manually:
-```bash
-docker compose down
-```
-
-### View Logs & Status
-```bash
-# Stream all service logs
-docker compose logs -f
-
-# Stream backend logs only
-docker compose logs -f backend
-
-# Check status of running containers
-docker compose ps
-```
-
-### Docker Ecosystem Port Mappings
-| Service | Host URL | Container Port |
-|---------|----------|----------------|
-| Backend API | http://localhost:5000 | `5000` |
-| Admin Portal | http://localhost:3001 | `5174` |
-| Agent Portal | http://localhost:3002 | `5182` |
-| Driver Portal | http://localhost:3003 | `5183` |
-| User Application | http://localhost:3004 | `5173` |
-| User Website | http://localhost:3005 | `5174` |
-| Redis | localhost:6379 | `6379` |
-| MongoDB | localhost:27017 | `27017` |
-
-
----
-
-# 📂 Project Structure
-
-```
-traveloop_V2
-│
-├── admin-portal
-├── agent-portal
-├── driver-portal
-├── project-resources
-│   ├── legal-site
-│   └── shared-ui
-├── user-application
-└── user-website
+```powershell
+node --version
+npm --version
+git --version
 ```
 
 ---
 
-# 🛠️ Development Services
+# ⚡ First-Time Setup
 
-| Service | Directory | Install | Run | URL |
-|----------|-----------|---------|-----|-----|
-| Backend API | `Backend` | `npm install` | `node server.js` | `http://localhost:5000` |
-| Traveler Application | `user-application` | `npm install --legacy-peer-deps` | `npm run dev` | `http://localhost:5173` |
-| Public Website | `user-website` | `npm install` | `npm run dev` | `http://localhost:5174` |
-| Admin Portal | `admin-portal` | `npm install` | `npm run dev` | `http://localhost:5175` |
-| Agent Portal | `agent-portal` | `npm install` | `npm run dev` | `http://localhost:5176` |
-| Driver Portal | `driver-portal` | `npm install` | `npm run dev` | `http://localhost:5177` |
+After cloning the repository:
 
----
+```powershell
+git clone https://github.com/sanjai0305/traveloop_V2.git
 
-# 💻 Local Development
+cd traveloop_V2
+```
 
-To run the complete platform, open **6 terminal windows**.
+Install dependencies for each application.
 
----
+## Backend
 
-## Terminal 1 — Backend
-
-```bash
+```powershell
 cd Backend
-
 npm install
+cd ..
+```
 
+## Traveler Application
+
+```powershell
+cd user-application
+npm install --legacy-peer-deps
+cd ..
+```
+
+## Public Website
+
+```powershell
+cd user-website
+npm install
+cd ..
+```
+
+## Admin Portal
+
+```powershell
+cd admin-portal
+npm install
+cd ..
+```
+
+## Agent Portal
+
+```powershell
+cd agent-portal
+npm install
+cd ..
+```
+
+## Driver Portal
+
+```powershell
+cd driver-portal
+npm install
+cd ..
+```
+
+> `npm install` is normally required only after cloning the repository or when dependencies/package files change.
+
+---
+
+# ▶️ Run Traveloop V2
+
+Traveloop consists of multiple independent services.
+
+For local development, open separate terminals from the repository root.
+
+---
+
+## Terminal 1 — Backend API
+
+```powershell
+cd Backend
 node server.js
 ```
 
-Backend API
+Backend:
 
-```
+```text
 http://localhost:5000
 ```
+
+The backend should normally be started first.
 
 ---
 
 ## Terminal 2 — Traveler Application
 
-```bash
+```powershell
 cd user-application
-
-npm install --legacy-peer-deps
-
 npm run dev
 ```
 
-Traveler Application
+Traveler Application:
 
-```
+```text
 http://localhost:5173
 ```
 
@@ -139,17 +151,14 @@ http://localhost:5173
 
 ## Terminal 3 — Public Website
 
-```bash
+```powershell
 cd user-website
-
-npm install
-
 npm run dev
 ```
 
-Public Website
+Public Website:
 
-```
+```text
 http://localhost:5174
 ```
 
@@ -157,17 +166,14 @@ http://localhost:5174
 
 ## Terminal 4 — Admin Portal
 
-```bash
+```powershell
 cd admin-portal
-
-npm install
-
 npm run dev
 ```
 
-Admin Portal
+Admin Portal:
 
-```
+```text
 http://localhost:5175
 ```
 
@@ -175,17 +181,14 @@ http://localhost:5175
 
 ## Terminal 5 — Agent Portal
 
-```bash
+```powershell
 cd agent-portal
-
-npm install
-
 npm run dev
 ```
 
-Agent Portal
+Agent Portal:
 
-```
+```text
 http://localhost:5176
 ```
 
@@ -193,111 +196,172 @@ http://localhost:5176
 
 ## Terminal 6 — Driver Portal
 
-```bash
+```powershell
 cd driver-portal
-
-npm install
-
 npm run dev
 ```
 
-Driver Portal
+Driver Portal:
 
-```
+```text
 http://localhost:5177
 ```
 
 ---
 
-# 🏗️ Production Build
+# 🌐 Local Development URLs
 
-## Traveler Application
+| Application | URL |
+|---|---|
+| Backend API | `http://localhost:5000` |
+| Traveler Application | `http://localhost:5173` |
+| Public Website | `http://localhost:5174` |
+| Admin Portal | `http://localhost:5175` |
+| Agent Portal | `http://localhost:5176` |
+| Driver Portal | `http://localhost:5177` |
 
-```bash
+---
+
+# ⚡ Daily Development
+
+After dependencies have already been installed, you DO NOT need to run `npm install` every time.
+
+Simply start the required services.
+
+### Backend
+
+```powershell
+cd Backend
+node server.js
+```
+
+### Traveler Application
+
+```powershell
 cd user-application
-
-npm run build
+npm run dev
 ```
 
-## Public Website
+### Public Website
 
-```bash
+```powershell
 cd user-website
-
-npm run build
+npm run dev
 ```
 
-## Admin Portal
+### Admin Portal
 
-```bash
+```powershell
 cd admin-portal
-
-npm run build
+npm run dev
 ```
 
-## Agent Portal
+### Agent Portal
 
-```bash
+```powershell
 cd agent-portal
-
-npm run build
+npm run dev
 ```
 
-## Driver Portal
+### Driver Portal
 
-```bash
+```powershell
 cd driver-portal
-
-npm run build
+npm run dev
 ```
 
 ---
 
-# 📦 Tech Stack
+# 🎯 Run Only What You Need
 
-- React.js
-- Vite
-- Node.js
-- Express.js
-- MongoDB
-- Firebase
-- Socket.io
-- Tailwind CSS
+You do not always need to run all six services.
+
+For example, to work only on the Traveler Application:
+
+### Terminal 1
+
+```powershell
+cd Backend
+node server.js
+```
+
+### Terminal 2
+
+```powershell
+cd user-application
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
 
 ---
 
-# ✨ Features
+If working on the Public Website:
 
-- 🤖 AI Trip Planner
-- 🧳 Traveler Booking Platform
-- 🌐 Public Marketing Website
-- 👨‍💼 Admin Dashboard
-- 🏢 Agent Portal
-- 🚖 Driver Portal
-- 🔐 Firebase Authentication
-- 📍 Google Maps Integration
-- 💬 Real-time Socket.io Communication
-- 📱 Responsive UI
-- ☁️ Cloud Ready Architecture
+```powershell
+cd Backend
+node server.js
+```
+
+and in another terminal:
+
+```powershell
+cd user-website
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5174
+```
+
+---
+
+# 🔄 Pull Latest Changes
+
+Before starting development on another machine or after repository updates:
+
+```powershell
+git pull origin main
+```
+
+If any `package.json` or `package-lock.json` files changed, reinstall dependencies for the affected application.
+
+Example:
+
+```powershell
+cd user-application
+npm install --legacy-peer-deps
+npm run dev
+```
 
 ---
 
 # 🔧 Environment Variables
 
-Create a `.env` file inside the required projects.
+Each application may contain its own `.env` configuration.
 
-### Backend
+Never commit production secrets or private credentials.
+
+## Backend Example
 
 ```env
 PORT=5000
+
 MONGO_URI=
 JWT_SECRET=
+
 FIREBASE_PROJECT_ID=
 FIREBASE_PRIVATE_KEY=
 FIREBASE_CLIENT_EMAIL=
 ```
 
-### Frontend
+## Frontend Example
 
 ```env
 VITE_API_URL=http://localhost:5000
@@ -310,16 +374,254 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
+Environment variable requirements may differ between individual frontend applications.
+
+---
+
+# 🏗️ Production Build
+
+Before deployment, verify that each frontend builds successfully.
+
+## Traveler Application
+
+```powershell
+cd user-application
+npm run build
+```
+
+## Public Website
+
+```powershell
+cd user-website
+npm run build
+```
+
+## Admin Portal
+
+```powershell
+cd admin-portal
+npm run build
+```
+
+## Agent Portal
+
+```powershell
+cd agent-portal
+npm run build
+```
+
+## Driver Portal
+
+```powershell
+cd driver-portal
+npm run build
+```
+
+Successful Vite builds are generated inside each application's:
+
+```text
+dist/
+```
+
+directory.
+
+---
+
+# 🧪 Troubleshooting
+
+## `Could not read package.json`
+
+Example:
+
+```text
+npm error code ENOENT
+npm error Could not read package.json
+```
+
+You are most likely running npm from the wrong directory.
+
+Check:
+
+```powershell
+Get-Location
+```
+
+Then enter the required application directory.
+
+Example:
+
+```powershell
+cd user-application
+npm run dev
+```
+
+---
+
+## `Missing script: dev`
+
+Verify that you are inside the correct project:
+
+```powershell
+Test-Path .\package.json
+```
+
+Expected:
+
+```text
+True
+```
+
+Then inspect available scripts:
+
+```powershell
+npm run
+```
+
+---
+
+## Module / Dependency Error
+
+For most applications:
+
+```powershell
+npm install
+```
+
+For the Traveler Application:
+
+```powershell
+npm install --legacy-peer-deps
+```
+
+Then:
+
+```powershell
+npm run dev
+```
+
+---
+
+## Port Already in Use
+
+Check which process is using a port.
+
+Example for port `5173`:
+
+```powershell
+netstat -ano | findstr :5173
+```
+
+Terminate the required process only if appropriate:
+
+```powershell
+taskkill /PID <PID> /F
+```
+
+---
+
+# 📦 Tech Stack
+
+### Frontend
+
+- React
+- Vite
+- Tailwind CSS
+- Firebase
+- Google Maps
+- Socket.io Client
+
+### Backend
+
+- Node.js
+- Express.js
+- MongoDB
+- Firebase Admin
+- Socket.io
+
+### Platform
+
+- Traveler Application
+- Public Website
+- Admin Portal
+- Agent Portal
+- Driver Portal
+
+---
+
+# ✨ Core Features
+
+- 🤖 AI Trip Planning
+- 🗺️ Itinerary Builder
+- 🧳 Traveler Booking
+- 🏨 Travel Services
+- 📍 Google Maps Integration
+- 💬 Real-Time Trip Communication
+- 👥 Trip Collaboration
+- 👨‍💼 Admin Management
+- 🏢 Travel Agent Portal
+- 🚖 Driver Portal
+- 🔐 Firebase Authentication
+- 📱 Mobile Responsive Traveler Application
+- 🌐 Public Travel Website
+
+---
+
+# 📁 Project Resources
+
+Supporting resources are located inside:
+
+```text
+project-resources/
+```
+
+Including:
+
+```text
+project-resources/
+├── legal-site/
+└── shared-ui/
+```
+
+These directories are supporting project resources and should not be confused with the primary runtime applications.
+
+---
+
+# 🚨 Important
+
+Do not run:
+
+```powershell
+npm install
+npm run dev
+```
+
+directly from:
+
+```text
+traveloop_V2/
+```
+
+unless a root-level npm workspace is intentionally configured.
+
+Always enter the required application directory first.
+
+Example:
+
+```powershell
+cd user-application
+npm run dev
+```
+
 ---
 
 # 👨‍💻 Author
 
 **Sanjai R**
 
-GitHub: https://github.com/sanjai0305
+GitHub: `sanjai0305`
 
 ---
 
 # 📄 License
 
-MIT License
+This project is licensed under the MIT License.

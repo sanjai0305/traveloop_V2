@@ -673,23 +673,39 @@ export const getTrips = async (req, res) => {
 
     const trips = (tripsData || []).map(t => {
       const obj = t.toObject ? t.toObject() : t;
+      const rawDestinations = Array.isArray(obj.destinations)
+        ? obj.destinations
+        : (obj.destination ? [obj.destination] : []);
+
+      const pricePerPerson = obj.pricePerPerson ?? obj.price ?? 0;
+      const totalSeats = obj.totalSeats ?? obj.seats ?? 0;
+      const bookedSeats = obj.bookedSeats ?? obj.bookedCount ?? 0;
+      const availableSeats = obj.availableSeats ?? Math.max(0, totalSeats - bookedSeats);
+      const approvalStatus = obj.approvalStatus || (obj.status === "approved" || obj.status === "published" || obj.status === "ACTIVE" ? "approved" : obj.status === "rejected" ? "rejected" : "pending");
+
       const mapped = {
         ...obj,
         _id: t._id,
+        destinations: rawDestinations,
+        pricePerPerson,
+        totalSeats,
+        bookedSeats,
+        availableSeats,
+        approvalStatus,
         agent: obj.agentId ? {
           _id: obj.agentId._id,
-          companyName: obj.agentId.companyName,
-          displayName: obj.agentId.companyName,
-          email: obj.agentId.email,
+          companyName: obj.agentId.companyName || "Independent",
+          displayName: obj.agentId.companyName || "",
+          email: obj.agentId.email || "",
           logo: "",
           phone: ""
-        } : null,
+        } : (obj.agent || null),
         driver: obj.driverId ? {
           _id: obj.driverId._id,
           name: obj.driverId.name,
           phone: obj.driverId.phone,
           vehicleNumber: obj.driverId.vehicleNumber
-        } : null
+        } : (obj.driver || null)
       };
       return mapped;
     });
@@ -721,9 +737,23 @@ export const updateTrip = async (req, res) => {
       if (approvalStatus === "approved") {
         trip.publishStatus = "published";
         trip.status = "published";
+        trip.published = true;
         trip.publishedAt = new Date();
         trip.approvedAt = new Date();
+        trip.reviewedAt = new Date();
         trip.approvedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+        trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+
+        // Mark associated AdminNotification as read
+        try {
+          const AdminNotification = (await import("../models/AdminNotification.js")).default;
+          await AdminNotification.updateMany(
+            { $or: [{ tripId: id }, { resourceId: id.toString() }] },
+            { $set: { read: true } }
+          );
+        } catch (notifErr) {
+          console.error("Failed to mark AdminNotification read on approval:", notifErr);
+        }
 
         // Referral bonus slot system award check
         try {
@@ -771,11 +801,38 @@ export const updateTrip = async (req, res) => {
           console.error("Error awarding referral bonus slots:", refErr);
         }
 
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("trip_approved", { tripId: id, agentId: trip.agentId });
+          io.emit("trip_updated", id);
+        }
+
         console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Approved | Message: Your trip has been approved and is now live.`);
       } else if (approvalStatus === "rejected") {
         trip.publishStatus = "rejected";
         trip.status = "rejected";
-        trip.rejectionReason = req.body.reason || req.body.rejectReason || "Does not comply with policies";
+        trip.published = false;
+        trip.rejectionReason = req.body.reason || req.body.rejectReason || req.body.rejectionReason || "Does not comply with policies";
+        trip.reviewedAt = new Date();
+        trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+
+        // Mark associated AdminNotification as read
+        try {
+          const AdminNotification = (await import("../models/AdminNotification.js")).default;
+          await AdminNotification.updateMany(
+            { $or: [{ tripId: id }, { resourceId: id.toString() }] },
+            { $set: { read: true } }
+          );
+        } catch (notifErr) {
+          console.error("Failed to mark AdminNotification read on rejection:", notifErr);
+        }
+
+        const io = req.app.get("io");
+        if (io) {
+          io.emit("trip_rejected", { tripId: id, agentId: trip.agentId, reason: trip.rejectionReason });
+          io.emit("trip_updated", id);
+        }
+
         console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Rejected | Message: Your trip has been rejected. Reason: ${trip.rejectionReason}`);
       }
     }
@@ -813,17 +870,7 @@ export const updateTrip = async (req, res) => {
       return res.status(200).json({ success: true, message: "Trip soft-deleted successfully" });
     }
 
-    await AgentTrip.findByIdAndUpdate(id, {
-      approvalStatus: trip.approvalStatus,
-      publishStatus: trip.publishStatus,
-      status: trip.status,
-      publishedAt: trip.publishedAt,
-      isHidden: trip.isHidden,
-      isFeatured: trip.isFeatured,
-      approvedAt: trip.approvedAt,
-      approvedBy: trip.approvedBy,
-      rejectionReason: trip.rejectionReason
-    });
+    await trip.save();
 
     const updatedTripData = await AgentTrip.findById(id).populate("agentId", "companyName email");
 
@@ -969,28 +1016,65 @@ export const getBookingsLedger = async (req, res) => {
 
     const bookings = await Promise.all((bookingsData || []).map(async (b) => {
       const obj = b.toObject ? b.toObject() : b;
-      const mapped = { ...obj, _id: b._id };
-      if (obj.tripId) {
-        mapped.agentTrip = { ...obj.tripId, _id: obj.tripId._id };
-        if (obj.tripId.agentId) {
-          const agentData = await Agent.findById(obj.tripId.agentId).select("companyName email");
-          if (agentData) {
-            mapped.agent = {
-              _id: obj.tripId.agentId,
-              companyName: agentData.companyName,
-              displayName: agentData.companyName,
-              email: agentData.email,
-              walletBalance: 0,
-              pendingRevenue: 0,
-              settledRevenue: 0,
-              commissionRate: 10
-            };
-          }
+      
+      const pricePaid = obj.pricePaid ?? obj.amountPaid ?? obj.amount ?? 0;
+      const amountPaid = obj.amountPaid ?? pricePaid;
+      const commAmt = obj.commissionAmount ?? Math.round(pricePaid * 0.1);
+      const gateFee = obj.gatewayFee ?? Math.round(pricePaid * 0.02);
+      const agentAmt = obj.agentAmount ?? Math.max(0, pricePaid - commAmt - gateFee);
+
+      let status = "Pending";
+      const rawStatus = (obj.status || obj.paymentStatus || obj.bookingStatus || "").toString().toLowerCase();
+      if (rawStatus.includes("paid") || rawStatus.includes("confirmed")) {
+        status = "Paid";
+      } else if (rawStatus.includes("settled")) {
+        status = "Settled";
+      } else if (rawStatus.includes("cancel") || rawStatus.includes("refund")) {
+        status = "Cancelled";
+      }
+
+      const userName = obj.userId ? `${obj.userId.firstName || ''} ${obj.userId.lastName || ''}`.trim() : "";
+      const travelerName = obj.travelerName || obj.customerName || userName || "Traveler";
+      const bookingId = obj.bookingId || `BK-${String(b._id).slice(-6).toUpperCase()}`;
+
+      const mapped = {
+        ...obj,
+        _id: b._id,
+        bookingId,
+        travelerName,
+        pricePaid,
+        amountPaid,
+        commissionAmount: commAmt,
+        gatewayFee: gateFee,
+        agentAmount: agentAmt,
+        status,
+        agentTrip: obj.tripId ? {
+          _id: obj.tripId._id,
+          title: obj.tripId.title || obj.tripTitle || "Custom Trip"
+        } : { title: obj.tripTitle || "Custom Trip" },
+        agent: obj.agent || null
+      };
+
+      if (obj.tripId && obj.tripId.agentId && !mapped.agent) {
+        const agentData = await Agent.findById(obj.tripId.agentId).select("companyName email");
+        if (agentData) {
+          mapped.agent = {
+            _id: obj.tripId.agentId,
+            companyName: agentData.companyName || "Independent",
+            displayName: agentData.companyName || "",
+            email: agentData.email || "",
+            walletBalance: 0,
+            pendingRevenue: 0,
+            settledRevenue: 0,
+            commissionRate: 10
+          };
         }
       }
+
       if (obj.userId) {
         mapped.userId = { ...obj.userId, _id: obj.userId._id };
       }
+
       return mapped;
     }));
 

@@ -26,8 +26,13 @@ export const useAuthStore = create<AuthState>((set) => {
 
   let parsedAdmin: Admin | null = null;
 
-  // Case 1: Demo token → reconstruct demo admin without hitting backend
-  if (savedToken && isDemoToken(savedToken)) {
+  // In real mode (IS_DEMO === false), if token is a demo token, clear it so user authenticates with real backend
+  if (!IS_DEMO && savedToken && isDemoToken(savedToken)) {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("admin_token");
+    localStorage.removeItem("admin_profile");
+    console.info("[AuthStore] Discarded demo session token for real backend authentication.");
+  } else if (savedToken && isDemoToken(savedToken)) {
     if (savedProfile) {
       try {
         parsedAdmin = JSON.parse(savedProfile);
@@ -56,10 +61,7 @@ export const useAuthStore = create<AuthState>((set) => {
     }
   }
 
-  // In demo mode, accept the session as valid if we have any token at all
-  const hasValidSession =
-    !!savedToken && !!parsedAdmin && (IS_DEMO || isDemoToken(savedToken) || true);
-  const isAuth = !!savedToken && !!parsedAdmin;
+  const isAuth = !!savedToken && (IS_DEMO || !isDemoToken(savedToken)) && !!parsedAdmin;
 
   return {
     token: savedToken,

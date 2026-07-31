@@ -56,7 +56,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "http://localhost:5000";
       
       socket = io(socketUrl, {
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
         withCredentials: true,
         autoConnect: true
       });

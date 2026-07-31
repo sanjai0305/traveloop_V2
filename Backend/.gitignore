@@ -6,6 +6,7 @@
 
 # NODE MODULES
 Backend/node_modules/
+node_modules
 
 # LOGS
 Backend/logs/

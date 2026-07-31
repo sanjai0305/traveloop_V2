@@ -23,9 +23,8 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("adminToken") || localStorage.getItem("admin_token");
 
-    // In demo mode: intercept ALL requests and return mock data immediately,
-    // preventing ANY network call to the backend.
-    if (IS_DEMO || isDemoToken(token)) {
+    // In demo mode: intercept requests and return mock data immediately
+    if (IS_DEMO) {
       const url = config.url || "";
       const method = config.method || "GET";
       const mock = getMockResponse(url, method);

@@ -18,6 +18,24 @@ const adminNotificationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    agentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
+      default: null,
+    },
+    tripId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AgentTrip",
+      default: null,
+    },
+    resourceId: {
+      type: String,
+      default: "",
+    },
+    resourceType: {
+      type: String,
+      default: "trip",
+    },
   },
   {
     timestamps: true,

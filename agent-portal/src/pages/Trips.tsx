@@ -301,6 +301,23 @@ export const Trips: React.FC = () => {
     queryFn: getMyTrips,
   });
 
+  useEffect(() => {
+    const handleRealtimeUpdate = () => {
+      queryClient.invalidateQueries({ queryKey: ["my-trips"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-slots"] });
+    };
+
+    socket.on("trip_approved", handleRealtimeUpdate);
+    socket.on("trip_rejected", handleRealtimeUpdate);
+    socket.on("trip_updated", handleRealtimeUpdate);
+
+    return () => {
+      socket.off("trip_approved", handleRealtimeUpdate);
+      socket.off("trip_rejected", handleRealtimeUpdate);
+      socket.off("trip_updated", handleRealtimeUpdate);
+    };
+  }, [queryClient]);
+
   const { data: slotData } = useQuery({
     queryKey: ["agent-slots"],
     queryFn: getAgentSlots,
@@ -2907,14 +2924,26 @@ export const Trips: React.FC = () => {
                       </div>
 
                       <div className="flex gap-2 pt-1 border-t border-slate-100 dark:border-slate-800 pt-3">
-                        {!isPublished && (
+                        {trip.approvalStatus === "approved" && (trip.published === true || trip.status === "published") ? (
+                          <div className="flex-1 text-center py-1.5 px-2 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200">
+                            ✓ Published Live
+                          </div>
+                        ) : trip.approvalStatus === "pending" || trip.status === "pending_approval" || trip.publishStatus === "pending_approval" ? (
+                          <button
+                            disabled
+                            className="flex-1 py-1.5 px-2 bg-amber-50 text-amber-700 font-bold text-xs rounded-lg border border-amber-200 cursor-not-allowed flex items-center justify-center gap-1"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            Pending Approval
+                          </button>
+                        ) : (
                           <Button
                             variant="primary"
                             size="sm"
                             onClick={() => handlePublishClick(trip)}
                             className="bg-emerald-500 hover:bg-emerald-600 text-white flex-1 font-bold text-xs py-2"
                           >
-                            Publish
+                            {trip.approvalStatus === "rejected" || trip.status === "rejected" ? "Edit & Resubmit" : "Publish"}
                           </Button>
                         )}
                         <Button

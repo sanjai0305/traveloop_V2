@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import api from "../services/api";
 import { Map, Search, Star, Eye, EyeOff, Check, X, Trash2, Calendar } from "lucide-react";
+
+interface TripAgent {
+  companyName: string;
+  displayName: string;
+  email: string;
+}
 
 interface Trip {
   _id: string;
@@ -20,12 +27,83 @@ interface Trip {
   isDeleted?: boolean;
   status?: string;
   createdAt?: string;
-  agent: {
-    companyName: string;
-    displayName: string;
-    email: string;
-  };
+  agent?: TripAgent;
 }
+
+export const normalizeTrip = (rawTrip: any): Trip => {
+  if (!rawTrip || typeof rawTrip !== "object") {
+    return {
+      _id: String(Math.random()),
+      title: "Unknown Package",
+      destinations: [],
+      duration: "N/A",
+      startDate: "N/A",
+      endDate: "N/A",
+      pricePerPerson: 0,
+      totalSeats: 0,
+      availableSeats: 0,
+      bookedSeats: 0,
+      coverImage: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600",
+      approvalStatus: "pending",
+      isHidden: false,
+      isFeatured: false,
+      isDeleted: false,
+      status: "pending",
+      createdAt: "",
+      agent: { companyName: "Independent", displayName: "", email: "" },
+    };
+  }
+
+  let destinations: string[] = [];
+  if (Array.isArray(rawTrip.destinations)) {
+    destinations = rawTrip.destinations.map((d: any) => String(d || "")).filter(Boolean);
+  } else if (typeof rawTrip.destination === "string" && rawTrip.destination.trim()) {
+    destinations = [rawTrip.destination.trim()];
+  } else if (typeof rawTrip.destinations === "string" && rawTrip.destinations.trim()) {
+    destinations = rawTrip.destinations.split(",").map((s: string) => s.trim()).filter(Boolean);
+  }
+
+  const pricePerPerson = Number(rawTrip.pricePerPerson ?? rawTrip.price ?? 0) || 0;
+  const totalSeats = Number(rawTrip.totalSeats ?? rawTrip.seats ?? 0) || 0;
+  const bookedSeats = Number(rawTrip.bookedSeats ?? rawTrip.bookedCount ?? 0) || 0;
+  const availableSeats = Number(rawTrip.availableSeats ?? Math.max(0, totalSeats - bookedSeats)) || 0;
+
+  let approvalStatus: "pending" | "approved" | "rejected" = "pending";
+  if (rawTrip.approvalStatus === "approved" || rawTrip.approvalStatus === "rejected" || rawTrip.approvalStatus === "pending") {
+    approvalStatus = rawTrip.approvalStatus;
+  } else if (rawTrip.status === "ACTIVE" || rawTrip.status === "approved" || rawTrip.status === "published") {
+    approvalStatus = "approved";
+  } else if (rawTrip.status === "rejected") {
+    approvalStatus = "rejected";
+  }
+
+  const agentName = rawTrip.agentName || rawTrip.agent?.companyName || "Independent";
+
+  return {
+    _id: String(rawTrip._id || Math.random()),
+    title: String(rawTrip.title || "Untitled Trip"),
+    destinations,
+    duration: String(rawTrip.duration || "N/A"),
+    startDate: String(rawTrip.startDate || "N/A"),
+    endDate: String(rawTrip.endDate || "N/A"),
+    pricePerPerson,
+    totalSeats,
+    availableSeats,
+    bookedSeats,
+    coverImage: String(rawTrip.coverImage || rawTrip.bannerImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600"),
+    approvalStatus,
+    isHidden: Boolean(rawTrip.isHidden),
+    isFeatured: Boolean(rawTrip.isFeatured),
+    isDeleted: Boolean(rawTrip.isDeleted || rawTrip.status === "deleted"),
+    status: String(rawTrip.status || approvalStatus),
+    createdAt: rawTrip.createdAt ? String(rawTrip.createdAt) : undefined,
+    agent: {
+      companyName: String(rawTrip.agent?.companyName || agentName),
+      displayName: String(rawTrip.agent?.displayName || agentName),
+      email: String(rawTrip.agent?.email || ""),
+    },
+  };
+};
 
 export const Trips: React.FC = () => {
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -39,8 +117,10 @@ export const Trips: React.FC = () => {
       setLoading(true);
       const res = await api.get("/admin/trips");
       if (res.data.success) {
-        setTrips(res.data.trips);
-        setFilteredTrips(res.data.trips);
+        const rawList = res.data.trips || [];
+        const normalized = Array.isArray(rawList) ? rawList.map(normalizeTrip) : [];
+        setTrips(normalized);
+        setFilteredTrips(normalized);
       }
     } catch (err) {
       console.error("Failed to load trips", err);
@@ -51,6 +131,34 @@ export const Trips: React.FC = () => {
 
   useEffect(() => {
     loadTrips();
+
+    let socket: any = null;
+    try {
+      const envUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL;
+      const socketUrl = envUrl ? envUrl.replace(/\/+$/, "").replace(/\/api$/, "") : "http://localhost:5000";
+      
+      socket = io(socketUrl, {
+        transports: ["polling", "websocket"],
+        withCredentials: true,
+        autoConnect: true
+      });
+
+      const handleRealtimeUpdate = () => {
+        loadTrips();
+      };
+
+      socket.on("admin:publication-submitted", handleRealtimeUpdate);
+      socket.on("trip_published", handleRealtimeUpdate);
+      socket.on("trip_approved", handleRealtimeUpdate);
+      socket.on("trip_rejected", handleRealtimeUpdate);
+      socket.on("trip_updated", handleRealtimeUpdate);
+    } catch (err) {
+      console.warn("[Socket.io] Admin Trips listener setup warning:", err);
+    }
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
   }, []);
 
   // Search filter
@@ -62,8 +170,8 @@ export const Trips: React.FC = () => {
           ? !t.isDeleted && t.status !== "deleted"
           : t.isDeleted || t.status === "deleted";
         const matchesSearch =
-          t.title.toLowerCase().includes(term) ||
-          t.destinations.join(" ").toLowerCase().includes(term) ||
+          (t.title || "").toLowerCase().includes(term) ||
+          (t.destinations || []).join(" ").toLowerCase().includes(term) ||
           (t.agent?.companyName || "").toLowerCase().includes(term);
         return matchesTab && matchesSearch;
       }
@@ -87,7 +195,7 @@ export const Trips: React.FC = () => {
         } else {
           setTrips(
             trips.map((t) =>
-              t._id === tripId ? { ...t, ...updates, ...res.data.trip } : t
+              t._id === tripId ? normalizeTrip({ ...t, ...updates, ...res.data.trip }) : t
             )
           );
         }
@@ -130,7 +238,7 @@ export const Trips: React.FC = () => {
       style: "currency",
       currency: "INR",
       maximumFractionDigits: 0
-    }).format(num);
+    }).format(num || 0);
   };
 
   if (loading) {
@@ -202,7 +310,8 @@ export const Trips: React.FC = () => {
           </div>
         ) : (
           filteredTrips.map((trip) => {
-            const isOverdue = trip.approvalStatus === "pending" && trip.createdAt && (Date.now() - new Date(trip.createdAt).getTime() > 60 * 60 * 1000);
+            const hasValidDate = trip.createdAt && !isNaN(Date.parse(trip.createdAt));
+            const isOverdue = trip.approvalStatus === "pending" && hasValidDate && (Date.now() - new Date(trip.createdAt!).getTime() > 60 * 60 * 1000);
             return (
               <div key={trip._id} className={`glass-panel overflow-hidden flex flex-col justify-between hover:shadow-md transition-all duration-300 bg-white border rounded-[20px] ${
                 isOverdue ? "border-orange-500 ring-2 ring-orange-550/20" : "border-slate-200"
@@ -212,7 +321,7 @@ export const Trips: React.FC = () => {
                   <div className="relative h-44 w-full bg-slate-50">
                     <img
                       src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600"}
-                      alt={trip.title}
+                      alt={trip.title || "Trip"}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600";
@@ -250,8 +359,10 @@ export const Trips: React.FC = () => {
                 {/* Card Content */}
                 <div className="p-5 space-y-4">
                   <div>
-                    <h3 className="text-xs font-bold text-slate-800 font-poppins line-clamp-1">{trip.title}</h3>
-                    <p className="text-[9px] text-[#14B8A6] font-extrabold uppercase mt-1 tracking-wider">{trip.destinations.join(" → ")}</p>
+                    <h3 className="text-xs font-bold text-slate-800 font-poppins line-clamp-1">{trip.title || "Untitled Trip"}</h3>
+                    <p className="text-[9px] text-[#14B8A6] font-extrabold uppercase mt-1 tracking-wider">
+                      {(trip.destinations ?? []).join(" → ") || "No destination specified"}
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-xs border-y border-slate-100 py-3">
@@ -263,10 +374,10 @@ export const Trips: React.FC = () => {
                     <div>
                       <span className="text-[9px] text-slate-400 font-bold uppercase block">Seats Occupied</span>
                       <span className="font-mono font-bold text-slate-700 block mt-0.5">
-                        {trip.bookedSeats || 0} / {trip.totalSeats}
+                        {trip.bookedSeats || 0} / {trip.totalSeats || 0}
                       </span>
                       <span className="text-[9px] text-[#14B8A6] font-bold block mt-0.5">
-                        {trip.totalSeats - (trip.bookedSeats || 0)} available
+                        {Math.max(0, (trip.totalSeats || 0) - (trip.bookedSeats || 0))} available
                       </span>
                     </div>
                   </div>
@@ -274,8 +385,8 @@ export const Trips: React.FC = () => {
                   <div className="flex justify-between items-center text-xs">
                     <div>
                       <span className="text-[9px] text-slate-400 font-bold uppercase block">Trip Dates</span>
-                      <span className="font-semibold text-slate-600 block mt-0.5">{trip.startDate}</span>
-                      <span className="text-[9px] text-slate-400 block">to {trip.endDate}</span>
+                      <span className="font-semibold text-slate-600 block mt-0.5">{trip.startDate || "N/A"}</span>
+                      <span className="text-[9px] text-slate-400 block">to {trip.endDate || "N/A"}</span>
                     </div>
                     <div className="text-right">
                       <span className="text-[9px] text-slate-400 font-bold uppercase block">Price Per Person</span>
@@ -288,7 +399,7 @@ export const Trips: React.FC = () => {
               {/* Actions Footer */}
               <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between gap-2 rounded-b-[20px]">
                 <button
-                  onClick={() => alert(`Itinerary detail for ${trip.title}:\n\n- Destinations: ${trip.destinations.join(", ")}\n- Duration: ${trip.duration}\n- Agent Email: ${trip.agent?.email || 'N/A'}`)}
+                  onClick={() => alert(`Itinerary detail for ${trip.title}:\n\n- Destinations: ${(trip.destinations ?? []).join(", ") || 'N/A'}\n- Duration: ${trip.duration || 'N/A'}\n- Agent Email: ${trip.agent?.email || 'N/A'}`)}
                   className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 font-bold text-[10px] hover:bg-slate-50 transition-colors flex items-center gap-1"
                 >
                   <Eye className="w-3.5 h-3.5" />
