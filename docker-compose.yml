@@ -29,7 +29,7 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
 
   backend:
     build:
@@ -44,6 +44,7 @@ services:
       - MONGODB_URI=mongodb://mongodb:27017/traveloop-website
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
       - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176
     volumes:
       - ./Backend:/app/Backend

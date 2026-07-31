@@ -1,19 +1,17 @@
 import Redis from "ioredis";
-import dotenv from "dotenv";
+import "./env.js";
 
-dotenv.config();
+const redisUrl =
+  process.env.REDIS_URL ||
+  `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`;
 
-const host = process.env.REDIS_HOST || "127.0.0.1";
-const port = parseInt(process.env.REDIS_PORT || "6379", 10);
 const password = process.env.REDIS_PASSWORD || undefined;
 
 let redisClient;
 
 try {
-  console.log(`[Redis Init] Connecting to self-hosted Redis instance at: ${host}:${port}`);
-  redisClient = new Redis({
-    host,
-    port,
+  console.log(`[Redis Init] Connecting to Redis instance at: ${redisUrl}`);
+  redisClient = new Redis(redisUrl, {
     password,
     maxRetriesPerRequest: null, // Required by BullMQ
     enableReadyCheck: true,
