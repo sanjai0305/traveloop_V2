@@ -34,14 +34,14 @@ traveloop_V2
 
 # 🛠️ Development Services
 
-| Service | Directory | Install | Run |
-|----------|-----------|---------|-----|
-| Backend API | `Backend` | `npm install` | `node server.js` |
-| Traveler Application | `traveloop-frontend-application` | `npm install --legacy-peer-deps` | `npm run dev` |
-| Public Website | `traveloop-frontend-websites` | `npm install` | `npm run dev` |
-| Admin Portal | `admin-portal` | `npm install` | `npm run dev` |
-| Agent Portal | `agent-portal` | `npm install` | `npm run dev` |
-| Driver Portal | `driver-portal` | `npm install` | `npm run dev` |
+| Service | Directory | Install | Run | URL |
+|----------|-----------|---------|-----|-----|
+| Backend API | `Backend` | `npm install` | `node server.js` | `http://localhost:5000` |
+| Traveler Application | `traveloop-frontend-application` | `npm install --legacy-peer-deps` | `npm run dev` | `http://localhost:5173` |
+| Public Website | `traveloop-frontend-websites` | `npm install` | `npm run dev` | `http://localhost:5174` |
+| Admin Portal | `admin-portal` | `npm install` | `npm run dev` | `http://localhost:5175` |
+| Agent Portal | `agent-portal` | `npm install` | `npm run dev` | `http://localhost:5176` |
+| Driver Portal | `driver-portal` | `npm install` | `npm run dev` | `http://localhost:5177` |
 
 ---
 
@@ -79,6 +79,12 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
+Traveler Application
+
+```
+http://localhost:5173
+```
+
 ---
 
 ## Terminal 3 — Public Website
@@ -89,6 +95,12 @@ cd traveloop-frontend-websites
 npm install
 
 npm run dev
+```
+
+Public Website
+
+```
+http://localhost:5174
 ```
 
 ---
@@ -103,6 +115,12 @@ npm install
 npm run dev
 ```
 
+Admin Portal
+
+```
+http://localhost:5175
+```
+
 ---
 
 ## Terminal 5 — Agent Portal
@@ -115,6 +133,12 @@ npm install
 npm run dev
 ```
 
+Agent Portal
+
+```
+http://localhost:5176
+```
+
 ---
 
 ## Terminal 6 — Driver Portal
@@ -125,6 +149,12 @@ cd driver-portal
 npm install
 
 npm run dev
+```
+
+Driver Portal
+
+```
+http://localhost:5177
 ```
 
 ---

@@ -122,7 +122,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5180,
+    port: 5173,
     fs: {
       allow: ['.', '..']
     }
