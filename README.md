@@ -12,6 +12,56 @@ Before running the project, make sure you have installed:
 - npm
 - MongoDB (Local or Atlas)
 - Git
+- Docker Desktop (for Dockerized ecosystem execution)
+
+---
+
+# 🐳 Docker Quick Start
+
+The entire Traveloop V2 ecosystem (Backend, 5 Frontends, Redis, MongoDB) can be run with **one command**.
+
+### Start (Windows)
+```cmd
+.\start.bat
+```
+Or manually using Docker Compose:
+```bash
+docker compose up -d --build
+```
+
+### Stop
+```cmd
+.\stop.bat
+```
+Or manually:
+```bash
+docker compose down
+```
+
+### View Logs & Status
+```bash
+# Stream all service logs
+docker compose logs -f
+
+# Stream backend logs only
+docker compose logs -f backend
+
+# Check status of running containers
+docker compose ps
+```
+
+### Docker Ecosystem Port Mappings
+| Service | Host URL | Container Port |
+|---------|----------|----------------|
+| Backend API | http://localhost:5000 | `5000` |
+| Admin Portal | http://localhost:3001 | `5174` |
+| Agent Portal | http://localhost:3002 | `5182` |
+| Driver Portal | http://localhost:3003 | `5183` |
+| User Application | http://localhost:3004 | `5173` |
+| User Website | http://localhost:3005 | `5174` |
+| Redis | localhost:6379 | `6379` |
+| MongoDB | localhost:27017 | `27017` |
+
 
 ---
 

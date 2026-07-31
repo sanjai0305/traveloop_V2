@@ -58,8 +58,6 @@ const couponSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
-couponSchema.index({ couponCode: 1 });
-
-const Coupon = mongoose.model("Coupon", couponSchema);
+const Coupon = mongoose.models.Coupon || mongoose.model("Coupon", couponSchema);
 export default Coupon;
+

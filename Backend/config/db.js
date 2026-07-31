@@ -1,3 +1,4 @@
+import "./env.js";
 import mongoose from "mongoose";
 import BusType from "../models/BusType.js";
 import BusAmenity from "../models/BusAmenity.js";
@@ -6,14 +7,30 @@ import TripActivity from "../models/TripActivity.js";
 
 export const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGODB_URI;
+    console.log(
+      "[MongoDB Init] URI:",
+      process.env.MONGODB_URI
+        ? process.env.MONGODB_URI.replace(/\/\/.*@/, "//***@")
+        : "MISSING"
+    );
+
+    const mongoUri = process.env.MONGODB_URI?.trim();
+
     if (!mongoUri) {
-      throw new Error("MONGODB_URI environment variable is missing.");
+      throw new Error("MONGODB_URI is missing from environment variables");
     }
-    const conn = await mongoose.connect(mongoUri, {
-      dbName: process.env.DATABASE_NAME || "traveloop",
-    });
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+
+    if (
+      !mongoUri.startsWith("mongodb://") &&
+      !mongoUri.startsWith("mongodb+srv://")
+    ) {
+      throw new Error(
+        `Invalid MONGODB_URI scheme. Expected mongodb:// or mongodb+srv://`
+      );
+    }
+
+    const conn = await mongoose.connect(mongoUri);
+    console.log(`✅ MongoDB Connected`);
 
     // Seed master data if empty
     const seedIfEmpty = async (Model, defaults) => {

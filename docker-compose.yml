@@ -1,0 +1,185 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: traveloop-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=traveloop-website
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: traveloop-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: traveloop-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/traveloop-website
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://localhost:3005,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176
+    volumes:
+      - ./Backend:/app/Backend
+      - /app/Backend/node_modules
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  admin-portal:
+    build:
+      context: .
+      dockerfile: admin-portal/Dockerfile
+    container_name: traveloop-admin-portal
+    restart: unless-stopped
+    ports:
+      - "3001:5174"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SOCKET_URL=http://localhost:5000
+    volumes:
+      - ./admin-portal:/app/admin-portal
+      - /app/admin-portal/node_modules
+      - ./project-resources:/app/project-resources
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5174').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  agent-portal:
+    build:
+      context: .
+      dockerfile: agent-portal/Dockerfile
+    container_name: traveloop-agent-portal
+    restart: unless-stopped
+    ports:
+      - "3002:5182"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SOCKET_URL=http://localhost:5000
+    volumes:
+      - ./agent-portal:/app/agent-portal
+      - /app/agent-portal/node_modules
+      - ./project-resources:/app/project-resources
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5182').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  driver-portal:
+    build:
+      context: .
+      dockerfile: driver-portal/Dockerfile
+    container_name: traveloop-driver-portal
+    restart: unless-stopped
+    ports:
+      - "3003:5183"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SOCKET_URL=http://localhost:5000
+    volumes:
+      - ./driver-portal:/app/driver-portal
+      - /app/driver-portal/node_modules
+      - ./project-resources:/app/project-resources
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5183').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-application:
+    build:
+      context: .
+      dockerfile: user-application/Dockerfile
+    container_name: traveloop-user-application
+    restart: unless-stopped
+    ports:
+      - "3004:5173"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SOCKET_URL=http://localhost:5000
+    volumes:
+      - ./user-application:/app/user-application
+      - /app/user-application/node_modules
+      - ./project-resources:/app/project-resources
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-website:
+    build:
+      context: .
+      dockerfile: user-website/Dockerfile
+    container_name: traveloop-user-website
+    restart: unless-stopped
+    ports:
+      - "3005:5174"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SOCKET_URL=http://localhost:5000
+    volumes:
+      - ./user-website:/app/user-website
+      - /app/user-website/node_modules
+      - ./project-resources:/app/project-resources
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5174').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
+  redis_data:
