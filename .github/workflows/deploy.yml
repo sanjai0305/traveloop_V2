@@ -1,12 +1,9 @@
-name: Deploy Traveloop Backend to EC2
+name: Deploy Traveloop V2 to EC2
 
 on:
   push:
     branches:
       - main
-    paths:
-      - "Backend/**"
-      - ".github/workflows/deploy.yml"
 
   workflow_dispatch:
 
@@ -15,7 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Backend to EC2
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -26,72 +26,41 @@ jobs:
             set -e
 
             echo "================================"
-            echo "Starting Traveloop Backend Deployment"
+            echo "Starting Traveloop V2 deployment"
             echo "================================"
 
-            # ---------------------------------
-            # 1. Go to project repository
-            # ---------------------------------
+            # Go to project root
             cd ~/traveloop_V2
 
             echo "Pulling latest code..."
-
             git fetch origin
             git reset --hard origin/main
 
-            # ---------------------------------
-            # 2. Go to Backend only
-            # ---------------------------------
-            cd Backend
-
-            echo "Backend directory:"
+            echo "Current project directory:"
             pwd
 
-            # ---------------------------------
-            # 3. Clean previous dependencies
-            # ---------------------------------
-            echo "Cleaning old node_modules..."
+            echo "Project files:"
+            ls -la
 
-            rm -rf node_modules
-
-            # ---------------------------------
-            # 4. Install production dependencies
-            # ---------------------------------
             echo "Installing backend dependencies..."
 
+            # Backend is in project root
             npm ci --omit=dev
 
-            # ---------------------------------
-            # 5. Restart backend using PM2
-            # ---------------------------------
-            echo "Restarting Traveloop Backend..."
+            echo "Restarting backend..."
 
             if pm2 describe traveloop-backend > /dev/null 2>&1; then
-
-              echo "Existing PM2 process found."
               pm2 restart traveloop-backend --update-env
-
             else
-
-              echo "Starting backend for first time."
               pm2 start server.js --name traveloop-backend
-
             fi
 
-            # ---------------------------------
-            # 6. Save PM2 process
-            # ---------------------------------
-            echo "Saving PM2 configuration..."
-
+            echo "Saving PM2 process list..."
             pm2 save
 
-            # ---------------------------------
-            # 7. Show deployment status
-            # ---------------------------------
-            echo "Backend status:"
-
+            echo "Checking backend status..."
             pm2 status
 
             echo "================================"
-            echo "Traveloop Backend Deployment Successful"
+            echo "Deployment completed successfully"
             echo "================================"
