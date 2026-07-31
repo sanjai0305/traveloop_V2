@@ -26,24 +26,40 @@ jobs:
             set -e
 
             echo "================================"
-            echo "Starting Traveloop deployment"
+            echo "Starting Traveloop V2 deployment"
             echo "================================"
 
+            # Go to project root
             cd ~/traveloop_V2
 
             echo "Pulling latest code..."
             git fetch origin
             git reset --hard origin/main
 
+            echo "Current project directory:"
+            pwd
+
+            echo "Project files:"
+            ls -la
+
             echo "Installing backend dependencies..."
-            cd backend
+
+            # Backend is in project root
             npm ci --omit=dev
 
             echo "Restarting backend..."
-            pm2 restart traveloop-backend || pm2 start server.js --name traveloop-backend
 
-            echo "Saving PM2..."
+            if pm2 describe traveloop-backend > /dev/null 2>&1; then
+              pm2 restart traveloop-backend --update-env
+            else
+              pm2 start server.js --name traveloop-backend
+            fi
+
+            echo "Saving PM2 process list..."
             pm2 save
+
+            echo "Checking backend status..."
+            pm2 status
 
             echo "================================"
             echo "Deployment completed successfully"
