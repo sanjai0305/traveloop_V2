@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "Backend/**"
+      - ".github/workflows/deploy.yml"
 
   workflow_dispatch:
 
@@ -26,36 +29,69 @@ jobs:
             echo "Starting Traveloop Backend Deployment"
             echo "================================"
 
-            # Go to repository
+            # ---------------------------------
+            # 1. Go to project repository
+            # ---------------------------------
             cd ~/traveloop_V2
 
             echo "Pulling latest code..."
+
             git fetch origin
             git reset --hard origin/main
 
-            # Go ONLY to backend
+            # ---------------------------------
+            # 2. Go to Backend only
+            # ---------------------------------
             cd Backend
 
-            echo "Current directory:"
+            echo "Backend directory:"
             pwd
 
+            # ---------------------------------
+            # 3. Clean previous dependencies
+            # ---------------------------------
+            echo "Cleaning old node_modules..."
+
+            rm -rf node_modules
+
+            # ---------------------------------
+            # 4. Install production dependencies
+            # ---------------------------------
             echo "Installing backend dependencies..."
+
             npm ci --omit=dev
 
-            echo "Restarting backend..."
+            # ---------------------------------
+            # 5. Restart backend using PM2
+            # ---------------------------------
+            echo "Restarting Traveloop Backend..."
 
             if pm2 describe traveloop-backend > /dev/null 2>&1; then
+
+              echo "Existing PM2 process found."
               pm2 restart traveloop-backend --update-env
+
             else
+
+              echo "Starting backend for first time."
               pm2 start server.js --name traveloop-backend
+
             fi
 
+            # ---------------------------------
+            # 6. Save PM2 process
+            # ---------------------------------
             echo "Saving PM2 configuration..."
+
             pm2 save
 
+            # ---------------------------------
+            # 7. Show deployment status
+            # ---------------------------------
             echo "Backend status:"
+
             pm2 status
 
             echo "================================"
-            echo "Backend Deployment Successful"
+            echo "Traveloop Backend Deployment Successful"
             echo "================================"
