@@ -34,13 +34,17 @@ interface ErrorBoundaryState {
   error?: Error;
 }
 
-class ProfileErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  ErrorBoundaryState
-> {
-  constructor(props: { children: React.ReactNode }) {
+interface ProfileErrorBoundaryProps {
+  children?: React.ReactNode;
+}
+
+class ProfileErrorBoundary extends React.Component<ProfileErrorBoundaryProps, ErrorBoundaryState> {
+  props: ProfileErrorBoundaryProps;
+  state: ErrorBoundaryState = { hasError: false };
+
+  constructor(props: ProfileErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.props = props;
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {

@@ -20,14 +20,14 @@ Before running the project, make sure you have installed:
 ```
 traveloop_V2
 │
-├── Backend
-├── traveloop-frontend-application
-├── traveloop-frontend-websites
 ├── admin-portal
 ├── agent-portal
 ├── driver-portal
-├── shared-ui
-└── project-resources
+├── project-resources
+│   ├── legal-site
+│   └── shared-ui
+├── user-application
+└── user-website
 ```
 
 ---
@@ -37,8 +37,8 @@ traveloop_V2
 | Service | Directory | Install | Run | URL |
 |----------|-----------|---------|-----|-----|
 | Backend API | `Backend` | `npm install` | `node server.js` | `http://localhost:5000` |
-| Traveler Application | `traveloop-frontend-application` | `npm install --legacy-peer-deps` | `npm run dev` | `http://localhost:5173` |
-| Public Website | `traveloop-frontend-websites` | `npm install` | `npm run dev` | `http://localhost:5174` |
+| Traveler Application | `user-application` | `npm install --legacy-peer-deps` | `npm run dev` | `http://localhost:5173` |
+| Public Website | `user-website` | `npm install` | `npm run dev` | `http://localhost:5174` |
 | Admin Portal | `admin-portal` | `npm install` | `npm run dev` | `http://localhost:5175` |
 | Agent Portal | `agent-portal` | `npm install` | `npm run dev` | `http://localhost:5176` |
 | Driver Portal | `driver-portal` | `npm install` | `npm run dev` | `http://localhost:5177` |
@@ -72,7 +72,7 @@ http://localhost:5000
 ## Terminal 2 — Traveler Application
 
 ```bash
-cd traveloop-frontend-application
+cd user-application
 
 npm install --legacy-peer-deps
 
@@ -90,7 +90,7 @@ http://localhost:5173
 ## Terminal 3 — Public Website
 
 ```bash
-cd traveloop-frontend-websites
+cd user-website
 
 npm install
 
@@ -164,7 +164,7 @@ http://localhost:5177
 ## Traveler Application
 
 ```bash
-cd traveloop-frontend-application
+cd user-application
 
 npm run build
 ```
@@ -172,7 +172,7 @@ npm run build
 ## Public Website
 
 ```bash
-cd traveloop-frontend-websites
+cd user-website
 
 npm run build
 ```

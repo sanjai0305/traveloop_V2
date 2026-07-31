@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-import traveloopPreset from "../shared-ui/tailwind.preset.js";
+import traveloopPreset from "../project-resources/shared-ui/tailwind.preset.js";
 
 export default {
   content: [

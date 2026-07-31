@@ -22,7 +22,8 @@
 
     "baseUrl": ".",
     "paths": {
-      "@shared-ui/*": ["../shared-ui/src/*"]
+      "@shared-ui/*": ["../project-resources/shared-ui/src/*"],
+      "*": ["node_modules/*"]
     }
   },
   "include": ["src"]

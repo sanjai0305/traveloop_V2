@@ -11,10 +11,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     resolve: {
       alias: {
-        '@shared-ui': path.resolve(__dirname, '../shared-ui/src'),
+        '@shared-ui': path.resolve(__dirname, '../project-resources/shared-ui/src'),
         'react': path.resolve(__dirname, 'node_modules/react'),
         'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
         'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
+        'framer-motion': path.resolve(__dirname, 'node_modules/framer-motion'),
       }
     },
     server: {

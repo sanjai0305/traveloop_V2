@@ -14,10 +14,11 @@ export default defineConfig({
       'firebase/auth': path.resolve(__dirname, 'node_modules/firebase/auth'),
       'firebase/database': path.resolve(__dirname, 'node_modules/firebase/database'),
       'firebase': path.resolve(__dirname, 'node_modules/firebase'),
-      '@shared-ui': path.resolve(__dirname, '../shared-ui/src'),
+      '@shared-ui': path.resolve(__dirname, '../project-resources/shared-ui/src'),
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
+      'framer-motion': path.resolve(__dirname, 'node_modules/framer-motion'),
     }
   },
   server: {

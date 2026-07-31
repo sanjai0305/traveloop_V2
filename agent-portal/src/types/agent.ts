@@ -37,6 +37,9 @@ export interface Agent {
 
 
   // Legacy compat fields
+  id?: string;
+  agentId?: string;
+  name?: string;
   agentName?: string;
   description?: string;
   logoUrl?: string;

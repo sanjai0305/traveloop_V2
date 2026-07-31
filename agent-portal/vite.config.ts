@@ -16,7 +16,7 @@ export default defineConfig({
         server.middlewares.use((req, res, next) => {
           if (req.url && req.url.startsWith('/legal-site/')) {
             const cleanUrl = req.url.split('?')[0].split('#')[0];
-            const filePath = path.resolve(__dirname, '..', cleanUrl.startsWith('/') ? cleanUrl.slice(1) : cleanUrl);
+            const filePath = path.resolve(__dirname, '../project-resources', cleanUrl.startsWith('/') ? cleanUrl.slice(1) : cleanUrl);
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
               res.setHeader('Content-Type', 'text/html');
               res.end(fs.readFileSync(filePath));
@@ -35,10 +35,11 @@ export default defineConfig({
       'firebase/auth': path.resolve(__dirname, 'node_modules/firebase/auth'),
       'firebase/database': path.resolve(__dirname, 'node_modules/firebase/database'),
       'firebase': path.resolve(__dirname, 'node_modules/firebase'),
-      '@shared-ui': path.resolve(__dirname, '../shared-ui/src'),
+      '@shared-ui': path.resolve(__dirname, '../project-resources/shared-ui/src'),
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
+      'framer-motion': path.resolve(__dirname, 'node_modules/framer-motion'),
     }
   },
   server: {
