@@ -1,4 +1,4 @@
-name: Deploy Traveloop V2 to EC2
+name: Deploy Traveloop Backend to EC2
 
 on:
   push:
@@ -12,10 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Deploy to EC2
+      - name: Deploy Backend to EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -26,25 +23,23 @@ jobs:
             set -e
 
             echo "================================"
-            echo "Starting Traveloop V2 deployment"
+            echo "Starting Traveloop Backend Deployment"
             echo "================================"
 
-            # Go to project root
+            # Go to repository
             cd ~/traveloop_V2
 
             echo "Pulling latest code..."
             git fetch origin
             git reset --hard origin/main
 
-            echo "Current project directory:"
+            # Go ONLY to backend
+            cd Backend
+
+            echo "Current directory:"
             pwd
 
-            echo "Project files:"
-            ls -la
-
             echo "Installing backend dependencies..."
-
-            # Backend is in project root
             npm ci --omit=dev
 
             echo "Restarting backend..."
@@ -55,12 +50,12 @@ jobs:
               pm2 start server.js --name traveloop-backend
             fi
 
-            echo "Saving PM2 process list..."
+            echo "Saving PM2 configuration..."
             pm2 save
 
-            echo "Checking backend status..."
+            echo "Backend status:"
             pm2 status
 
             echo "================================"
-            echo "Deployment completed successfully"
+            echo "Backend Deployment Successful"
             echo "================================"
