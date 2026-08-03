@@ -70,10 +70,34 @@ const RESULT_GRADIENTS = [
 
 // ─── QUICK ACTIONS ────────────────────────────────────────────────────────────
 const QUICK_ACTIONS = [
-  { label: "nav.trips",   emoji: "✈️",  path: "/my-trips",    color: "#14B8B5", bg: "rgba(20,184,181,0.1)"  },
-  { label: "nav.create",  emoji: "➕",  path: "/create-trip", color: "#8B5CF6", bg: "rgba(139,92,246,0.1)"  },
-  { label: "home.packing", emoji: "🧳",  path: "/my-trips",    color: "#F59E0B", bg: "rgba(245,158,11,0.1)"  },
-  { label: "home.notes",   emoji: "📝",  path: "/my-trips",    color: "#EF4444", bg: "rgba(239,68,68,0.1)"   },
+  {
+    title: "My Trips",
+    subtitle: "View & organize itineraries",
+    badge: "✈️ Trips",
+    path: "/my-trips",
+    image: "/assets/cards/trips_card.png",
+  },
+  {
+    title: "Booked Trips",
+    subtitle: "Purchased package tickets",
+    badge: "🎫 Booked",
+    path: "/booked-trips",
+    image: "/assets/cards/trips_card.png",
+  },
+  {
+    title: "Create Trip",
+    subtitle: "AI journey planner",
+    badge: "➕ Create",
+    path: "/create-trip",
+    image: "/assets/cards/create_trip_card.png",
+  },
+  {
+    title: "Packing List",
+    subtitle: "Smart travel checklist",
+    badge: "🧳 Packing",
+    path: "/my-trips",
+    image: "/assets/cards/packing_card.png",
+  },
 ];
 
 const Dashboard = () => {

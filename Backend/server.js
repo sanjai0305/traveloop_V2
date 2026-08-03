@@ -44,6 +44,7 @@ import boardingRoutes from "./routes/boardingRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import driverUpdatesRoutes from "./routes/driverUpdatesRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import rewardRoutes from "./routes/rewardRoutes.js";
 import tripMembersRoutes from "./routes/tripMembersRoutes.js";
 import masterRoutes from "./routes/masterRoutes.js";
 import seatRoutes from "./routes/seatRoutes.js";
@@ -310,6 +311,7 @@ app.use("/api/seats", seatRoutes);
 app.use("/api/referrals", referralRoutes);
 app.use("/api/passenger", passengerVerificationRoutes);
 app.use("/api/coupons", couponRoutes);
+app.use("/api/rewards", rewardRoutes);
 
 // Direct QR status route
 app.get("/api/qr/:bookingId", async (req, res) => {

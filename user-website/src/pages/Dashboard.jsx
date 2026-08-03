@@ -86,6 +86,13 @@ const QUICK_ACTIONS = [
     image: "/assets/cards/trips_card.png",
   },
   {
+    title: "Booked Trips",
+    subtitle: "Purchased package tickets",
+    badge: "🎫 Booked",
+    path: "/booked-trips",
+    image: "/assets/cards/trips_card.png",
+  },
+  {
     title: "Create Trip",
     subtitle: "AI journey planner",
     badge: "➕ Create",
@@ -98,13 +105,6 @@ const QUICK_ACTIONS = [
     badge: "🧳 Packing",
     path: "/my-trips",
     image: "/assets/cards/packing_card.png",
-  },
-  {
-    title: "Travel Notes",
-    subtitle: "Memories & diary log",
-    badge: "📝 Notes",
-    path: "/my-trips",
-    image: "/assets/cards/notes_card.png",
   },
 ];
 

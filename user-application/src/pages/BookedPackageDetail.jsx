@@ -583,17 +583,29 @@ const BookedPackageDetail = () => {
     }
   };
 
-  // Fetch booking
+  // Fetch booking with dual endpoint fallback
   const fetchBooking = useCallback(async () => {
     try {
+      setLoading(true);
       const token = localStorage.getItem("token");
-      const res = await fetch(getApiUrl(`bookings/${bookingId}/user-trip`), {
+      
+      // Try primary endpoint GET /api/bookings/:bookingId
+      let res = await fetch(getApiUrl(`bookings/${bookingId}`), {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      let data = await res.json();
+
+      if (!data.success || !data.booking) {
+        // Fallback to GET /api/bookings/:bookingId/user-trip
+        res = await fetch(getApiUrl(`bookings/${bookingId}/user-trip`), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        data = await res.json();
+      }
+
       if (data.success && data.booking) {
         setBooking(data.booking);
-        setBoardingPass(data.boardingPass);
+        setBoardingPass(data.boardingPass || data.booking.boardingPass);
         setAgency(data.agency || data.booking.agent);
         setNotes(data.booking.personalNotes || "");
         
@@ -610,13 +622,11 @@ const BookedPackageDetail = () => {
           setUserTripId(data.userTrip._id || data.userTrip);
         }
       } else {
-        alert(data.message || "Booking not found");
-        navigate("/my-trips");
+        setBooking(null);
       }
     } catch (err) {
       console.error("Error fetching booking details:", err);
-      alert("Error fetching booking details");
-      navigate("/my-trips");
+      setBooking(null);
     } finally {
       setLoading(false);
     }
@@ -954,13 +964,29 @@ const BookedPackageDetail = () => {
 
   if (!booking) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <p className="text-4xl mb-4">🎫</p>
-          <p className="text-slate-700 font-bold">Booking not found</p>
-          <button onClick={() => navigate("/my-trips")} className="mt-4 text-teal-600 font-semibold text-sm">
-            ← Back to My Trips
-          </button>
+      <div className="min-h-screen bg-[#05111E] text-white flex items-center justify-center p-6">
+        <div className="text-center p-8 max-w-md bg-slate-900/80 rounded-3xl shadow-2xl border border-white/10 backdrop-blur-md space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto text-3xl font-black">
+            🎫
+          </div>
+          <h2 className="text-2xl font-black text-white">Booking Not Found</h2>
+          <p className="text-slate-400 text-xs font-semibold leading-relaxed">
+            We couldn't locate a valid package reservation matching ID <span className="font-mono text-teal-400 font-bold">{bookingId}</span>. Please check your booking code or browse your confirmed trips.
+          </p>
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              onClick={() => navigate("/booked-trips")}
+              className="w-full py-3.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-teal-500/20 hover:from-teal-400 hover:to-cyan-400 active:scale-95 transition-all"
+            >
+              ← Back to Booked Trips
+            </button>
+            <button
+              onClick={() => navigate("/explore")}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs rounded-2xl transition-all"
+            >
+              Explore Tour Packages
+            </button>
+          </div>
         </div>
       </div>
     );

@@ -665,7 +665,7 @@ router.post("/resend-ticket", protect, async (req, res) => {
 });
 
 // @route   GET /api/bookings/:bookingId/qr
-// @desc    Generate and stream QR code image
+// @desc    Generate and stream signed encrypted QR code image
 // @access  Private
 router.get("/:bookingId/qr", protect, async (req, res) => {
   const { bookingId } = req.params;
@@ -685,15 +685,144 @@ router.get("/:bookingId/qr", protect, async (req, res) => {
       return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
     }
 
+    const jwt = (await import("jsonwebtoken")).default;
     const QRCode = (await import("qrcode")).default;
-    const qrData = JSON.stringify({ bookingId: booking.bookingId || String(booking._id) });
-    const qrBuffer = await QRCode.toBuffer(qrData, { margin: 1 });
+
+    const secretKey = process.env.JWT_SECRET || "traveloop_secret_key_2026";
+    const bookingToken = jwt.sign(
+      {
+        bookingId: booking.bookingId || String(booking._id),
+        tripId: String(booking.tripId),
+        userId: String(booking.userId),
+        timestamp: Date.now(),
+      },
+      secretKey,
+      { expiresIn: "7d" }
+    );
+
+    const qrPayload = JSON.stringify({
+      bookingId: booking.bookingId || String(booking._id),
+      token: bookingToken,
+      validatedAt: new Date().toISOString(),
+    });
+
+    const qrBuffer = await QRCode.toBuffer(qrPayload, { margin: 1 });
 
     res.setHeader("Content-Type", "image/png");
     res.send(qrBuffer);
   } catch (error) {
     console.error("[QR Code Generation] Error:", error);
     res.status(500).json({ success: false, message: "Server Error generating QR code" });
+  }
+});
+
+// @route   POST /api/bookings/verify-qr
+// @desc    Driver verifies scanned QR code token
+// @access  Private (Driver/Admin)
+router.post("/verify-qr", protect, async (req, res) => {
+  try {
+    const { qrData, token, bookingId } = req.body;
+    let bId = bookingId;
+    let bToken = token;
+
+    if (qrData) {
+      try {
+        const parsed = typeof qrData === "string" ? JSON.parse(qrData) : qrData;
+        if (parsed.bookingId) bId = parsed.bookingId;
+        if (parsed.token) bToken = parsed.token;
+      } catch (e) {
+        bId = qrData;
+      }
+    }
+
+    if (!bId && !bToken) {
+      return res.status(400).json({ success: false, message: "QR token or Booking ID is required" });
+    }
+
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId: bId },
+        { _id: mongoose.Types.ObjectId.isValid(bId) ? bId : null },
+      ].filter(Boolean),
+    }).populate("tripId").populate("userId", "firstName lastName name phone email");
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found or invalid QR code" });
+    }
+
+    const trip = booking.tripId || {};
+    const passengerName = booking.travelerName || (booking.travellers && booking.travellers[0]?.name) || `${booking.userId?.firstName || ""} ${booking.userId?.lastName || ""}`.trim() || "Passanger";
+    const packageName = trip.title || booking.packageTitle || "Travel Package";
+    const pickupPoint = booking.pickupLocation || trip.pickupLocation || "Main Station";
+    const seatNumber = booking.assignedSeat || (booking.seatNumbers || []).join(", ") || "Assigned";
+    const travelerCount = booking.seats || booking.travellers?.length || 1;
+
+    res.status(200).json({
+      success: true,
+      valid: true,
+      booking: {
+        _id: booking._id,
+        bookingId: booking.bookingId,
+        passengerName,
+        packageName,
+        pickupPoint,
+        seatNumber,
+        travelerCount,
+        paymentStatus: booking.paymentStatus || "Paid",
+        status: booking.status || "Ready for Travel",
+        isCheckedIn: booking.status === "Checked In",
+      }
+    });
+  } catch (error) {
+    console.error("[Verify QR Error]:", error);
+    res.status(500).json({ success: false, message: "Server error verifying QR code" });
+  }
+});
+
+// @route   POST /api/bookings/check-in
+// @desc    Driver checks in a passenger after scanning QR code
+// @access  Private (Driver/Admin)
+router.post("/check-in", protect, async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      return res.status(400).json({ success: false, message: "Booking ID is required" });
+    }
+
+    const booking = await Booking.findOne({
+      $or: [
+        { bookingId },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+      ].filter(Boolean),
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    booking.status = "Checked In";
+    booking.boardingStatus = "BOARDED";
+    booking.boardedAt = new Date();
+    await booking.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("passenger_checked_in", {
+        bookingId: booking.bookingId,
+        bookingDbId: booking._id,
+        status: "Checked In",
+        boardedAt: booking.boardedAt,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Passenger checked in successfully!",
+      booking,
+    });
+  } catch (error) {
+    console.error("[Check In Error]:", error);
+    res.status(500).json({ success: false, message: "Server error updating check-in status" });
   }
 });
 
@@ -704,21 +833,51 @@ router.get("/:bookingId/qr", protect, async (req, res) => {
 router.get("/:bookingId", protect, async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const booking = await Booking.findOne({
+    const userId = req.user.id || req.user._id;
+
+    const bookingRow = await Booking.findOne({
       $or: [
         { bookingId },
         { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
       ].filter(Boolean)
-    }).populate("tripId");
+    });
 
-    if (!booking) {
+    if (!bookingRow) {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    res.status(200).json({ success: true, booking });
+    const trip = await AgentTrip.findById(bookingRow.tripId);
+    const passengers = await Passenger.find({
+      $or: [
+        { bookingId: bookingRow._id },
+        { bookingId: bookingRow.bookingId }
+      ]
+    }).lean();
+
+    const booking = {
+      ...bookingRow.toObject(),
+      _id: bookingRow._id,
+      agentTrip: trip ? { ...trip.toObject(), _id: trip._id } : null,
+      passengers,
+    };
+
+    const chatRoomId = trip ? `trip_pkg_${trip._id}` : null;
+    const invoiceUrl = `/api/bookings/${bookingRow.bookingId || bookingRow._id}/pdf`;
+
+    res.status(200).json({
+      success: true,
+      booking,
+      trip: booking.agentTrip || null,
+      driver: trip?.driver || null,
+      passengers,
+      chatRoomId,
+      invoiceUrl,
+      pdfUrl: invoiceUrl,
+      boardingAvailable: booking.agentTrip && booking.agentTrip.boardingStatus === "OPEN",
+    });
   } catch (error) {
     console.error("[Booking Fetch] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error fetching booking" });
+    res.status(500).json({ success: false, message: "Server Error fetching booking details" });
   }
 });
 

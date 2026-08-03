@@ -35,10 +35,13 @@ import MapPreview from "../components/trip/MapPreview";
 import { calculateBudgetSummary, validateExpenseAmount } from "../utils/budgetHelper";
 import logoImg from "../assets/logo.jpg";
 
+const DEFAULT_CATEGORY_CONFIG = { icon: MapPin, color: "#14B8B5", bg: "#CCFBF1" };
+
 const CATEGORY_ICONS = {
   "Food":        { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
   "Sightseeing": { icon: Camera,   color: "#3B82F6", bg: "#DBEAFE" },
   "Stay":        { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Hotel":       { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
   "Transport":   { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
   "Coffee":      { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
   "Shopping":    { icon: Ticket,   color: "#EC4899", bg: "#FCE7F3" },
@@ -46,9 +49,40 @@ const CATEGORY_ICONS = {
   "Museum":      { icon: BookOpen, color: "#6366F1", bg: "#E0E7FF" },
   "Nature":      { icon: MapPin,   color: "#059669", bg: "#D1FAE5" },
   "Beach":       { icon: Sun,      color: "#F59E0B", bg: "#FEF3C7" },
+  "Activity":    { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+  "Flight":      { icon: Plane,    color: "#0284C7", bg: "#E0F2FE" },
 };
 
 const CATEGORY_LIST = Object.keys(CATEGORY_ICONS);
+
+const getCategoryConfig = (category) => {
+  if (!category) return CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+  return CATEGORY_ICONS[category] || CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+};
+
+const normalizeItineraryItem = (item) => {
+  if (!item || typeof item !== "object") {
+    console.error("Invalid itinerary item:", item);
+    return null;
+  }
+  const category = item.category || "Activity";
+  const catConfig = getCategoryConfig(category);
+  const iconComp = item.icon || catConfig.icon || MapPin;
+
+  return {
+    ...item,
+    _id: item._id || item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id: item.id || item._id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    title: item.title || "Untitled Activity",
+    category,
+    icon: iconComp,
+    time: item.time || "10:00 AM",
+    place: item.place || "",
+    note: item.note || "",
+    budget: Number(item.budget) || 0,
+    day: Number(item.day) || 1,
+  };
+};
 
 const COVERS = [
   "linear-gradient(135deg,#14B8B5,#0D9488)",
@@ -1119,7 +1153,9 @@ const BuildItinerary = () => {
         });
       }
       if (itinData.success) {
-        setItems(itinData.itinerary || []);
+        const rawList = Array.isArray(itinData.itinerary) ? itinData.itinerary : [];
+        const normalized = rawList.map(normalizeItineraryItem).filter(Boolean);
+        setItems(normalized);
       }
       if (flightsData.success) {
         setFlights(flightsData.flights || []);
@@ -1750,11 +1786,18 @@ const BuildItinerary = () => {
     );
   };
 
-  const dayItems = items.filter(i => i.day === activeDay);
-  const totalBudget = items.reduce((s, i) => s + (i.budget || 0), 0);
-  const otherItemsExpenses = items.reduce((s, i) => {
-    if (editingItem && i._id === editingItem._id) return s;
-    return s + (i.budget || 0);
+  const validAllItems = (items || []).filter(item => {
+    if (!item) {
+      console.error("Invalid itinerary item:", item);
+      return false;
+    }
+    return true;
+  });
+  const dayItems = validAllItems.filter(i => i && Number(i.day) === Number(activeDay));
+  const totalBudget = validAllItems.reduce((s, i) => s + (Number(i.budget) || 0), 0);
+  const otherItemsExpenses = validAllItems.reduce((s, i) => {
+    if (editingItem && (i._id === editingItem._id || i.id === editingItem.id)) return s;
+    return s + (Number(i.budget) || 0);
   }, 0);
 
   const addItem = async () => {
@@ -1790,8 +1833,9 @@ const BuildItinerary = () => {
       });
 
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => [...prev, data.itinerary]);
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => [...(prev || []).filter(Boolean), normalized]);
         setNewItem(makeActivity(activeDay));
         setShowAdd(false);
         toast.success("Activity added successfully!");
@@ -1834,8 +1878,9 @@ const BuildItinerary = () => {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => prev.map(i => i._id === editingItem._id ? data.itinerary : i));
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => (prev || []).filter(Boolean).map(i => (i._id === editingItem._id || i.id === editingItem.id) ? normalized : i));
         setShowAdd(false);
         setEditingItem(null);
         setNewItem(makeActivity(activeDay));
@@ -1874,8 +1919,9 @@ const BuildItinerary = () => {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => [...prev, data.itinerary]);
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => [...(prev || []).filter(Boolean), normalized]);
         toast.success("Activity duplicated!");
       } else {
         toast.error(data.message || "Failed to duplicate activity");
@@ -2239,19 +2285,34 @@ const BuildItinerary = () => {
                 </div>
               </div>
 
-              {/* Budget */}
-              <div
-                onClick={() => navigate(`/trip-budget/${id}`)}
-                className="p-5 rounded-[24px] bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
-                  <DollarSign size={20} />
+              {/* Budget / Group Chat depending on trip type */}
+              {(trip?.type === "BOOKING" || trip?.tripType === "booked" || trip?.isBooked) ? (
+                <div
+                  onClick={() => navigate(`/trip-chat/${id}`)}
+                  className="p-5 rounded-[24px] bg-gradient-to-br from-teal-500/10 to-cyan-500/5 border border-teal-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-teal-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                    💬
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#0F172A]">Trip Group Chat</h4>
+                    <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Driver, Guide and Agency announcements</p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-[#0F172A]">Budget & Costs</h4>
-                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Expense breakdown</p>
+              ) : (
+                <div
+                  onClick={() => navigate(`/trip-budget/${id}`)}
+                  className="p-5 rounded-[24px] bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                    <DollarSign size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#0F172A]">Budget & Costs</h4>
+                    <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Expense breakdown</p>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Horizontal Timeline & Day Selector Bar */}
@@ -2356,18 +2417,27 @@ const BuildItinerary = () => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {dayItems.map((item, idx) => {
-                    const cat = CATEGORY_ICONS[item.category] || CATEGORY_ICONS["Activity"];
-                    const CatIcon = cat.icon;
-                    return (
-                      <div
-                        key={item._id || idx}
-                        className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/70 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                      >
-                        <div className="flex items-start gap-4">
-                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-xs" style={{ background: cat.bg }}>
-                            <CatIcon size={20} style={{ color: cat.color }} />
-                          </div>
+                  {(() => {
+                    if (!dayItems || !Array.isArray(dayItems)) return null;
+                    const validItems = dayItems.filter(item => {
+                      if (!item) {
+                        console.error("Invalid itinerary item:", item);
+                        return false;
+                      }
+                      return true;
+                    });
+                    return validItems.map((item, idx) => {
+                      const cat = getCategoryConfig(item?.category);
+                      const CatIcon = item?.icon || cat?.icon || MapPin;
+                      return (
+                        <div
+                          key={item._id || item.id || idx}
+                          className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/70 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-xs" style={{ background: cat.bg }}>
+                              <CatIcon size={20} style={{ color: cat.color }} />
+                            </div>
 
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
@@ -2413,7 +2483,8 @@ const BuildItinerary = () => {
                         </div>
                       </div>
                     );
-                  })}
+                  });
+                })()}
                 </div>
               )}
             </div>
@@ -2446,39 +2517,78 @@ const BuildItinerary = () => {
               </div>
             )}
 
-            {/* Trip Budget Overview Widget */}
-            <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-emerald-500" />
-                  <h3 className="text-base font-black text-[#0F172A]">Budget Summary</h3>
+            {/* Trip Budget / Package Summary Widget */}
+            {(trip?.type === "BOOKING" || trip?.tripType === "booked" || trip?.isBooked) ? (
+              <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🎫</span>
+                    <h3 className="text-base font-black text-[#0F172A]">Package Booking Details</h3>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/booked-package/${id}`)}
+                    className="text-xs font-extrabold text-teal-600 hover:underline"
+                  >
+                    View Details
+                  </button>
                 </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Booking Status:</span>
+                    <span className="font-black text-emerald-600">Confirmed / Paid</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Agency:</span>
+                    <span className="font-black text-[#0F172A]">{trip.agent?.companyName || trip.agency || "Traveloop Partner"}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Total Amount:</span>
+                    <span className="font-black text-teal-600">₹{(trip.pricePaid || trip.budget || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+
                 <button
-                  onClick={() => navigate(`/trip-budget/${id}`)}
-                  className="text-xs font-extrabold text-cyan-600 hover:underline"
+                  onClick={() => navigate(`/trip-chat/${id}`)}
+                  className="w-full py-3 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
                 >
-                  Manage
+                  💬 Open Package Group Chat
                 </button>
               </div>
-
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between font-bold">
-                  <span className="text-[#64748B]">Total Allocation:</span>
-                  <span className="font-black text-[#0F172A]">₹{(trip.budget || 0).toLocaleString()}</span>
+            ) : (
+              <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-emerald-500" />
+                    <h3 className="text-base font-black text-[#0F172A]">Budget Summary</h3>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/trip-budget/${id}`)}
+                    className="text-xs font-extrabold text-cyan-600 hover:underline"
+                  >
+                    Manage
+                  </button>
                 </div>
-                <div className="flex justify-between font-bold">
-                  <span className="text-[#64748B]">Planned Expenses:</span>
-                  <span className="font-black text-cyan-600">₹{totalBudget.toLocaleString()}</span>
-                </div>
 
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-cyan-500 h-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, ((totalBudget / (trip.budget || 1)) * 100))}%` }}
-                  />
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Total Allocation:</span>
+                    <span className="font-black text-[#0F172A]">₹{(trip.budget || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Planned Expenses:</span>
+                    <span className="font-black text-cyan-600">₹{totalBudget.toLocaleString()}</span>
+                  </div>
+
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-cyan-500 h-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, ((totalBudget / (trip.budget || 1)) * 100))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Members Quick Widget */}
             <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
@@ -2637,8 +2747,8 @@ const BuildItinerary = () => {
                         </label>
                         <div className="flex flex-wrap gap-2">
                           {CATEGORY_LIST.map(cat => {
-                            const cfg = CATEGORY_ICONS[cat];
-                            const Icon = cfg.icon;
+                            const cfg = getCategoryConfig(cat);
+                            const Icon = cfg?.icon || MapPin;
                             const isSelected = newItem.category === cat;
                             return (
                               <button

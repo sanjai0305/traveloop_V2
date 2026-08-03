@@ -372,11 +372,13 @@ export const getTripById = async (req, res) => {
 
     const acceptedCollaborators = trip.collaborators?.filter(c => c.acceptedAt !== null) || [];
     const unreadCount = 0;
+    const tripTypeCategory = (trip.tripType === "booked" || trip.isBooked || trip.type === "BOOKING") ? "BOOKING" : "PERSONAL";
 
     res.json({
       success: true,
       trip: {
         ...trip,
+        type: tripTypeCategory,
         collaborators: acceptedCollaborators,
         role,
         unreadCount
@@ -1061,33 +1063,42 @@ export const getDestinationDetails = async (req, res) => {
 export const inviteCollaborator = async (req, res) => {
   try {
     const { email, role } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: "Email is required" });
+    }
+
     const trip = await Trip.findById(req.params.id);
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
-    // Resolve owner from canonical userId field first, then legacy owner/user fields
+    const authUserId = (req.user._id || req.user.id)?.toString();
     const ownerId = (trip.userId || trip.owner?._id || trip.owner || trip.user)?.toString();
-    console.log("[Invite] ownerId:", ownerId, "| req.user.id:", req.user.id, "| match:", ownerId === req.user.id);
-    const isOwner = ownerId === req.user.id;
+    const isOwner = ownerId === authUserId;
+
     if (!isOwner) {
-      return res.status(403).json({ success: false, message: "Forbidden: Only the Owner can invite collaborators" });
+      return res.status(403).json({ success: false, message: "Forbidden: Only the trip owner can invite collaborators" });
     }
 
     const invitee = await User.findOne({ email: email.trim().toLowerCase() });
     if (!invitee) {
-      return res.status(404).json({ success: false, message: "User with this email address does not exist." });
+      return res.status(404).json({ success: false, message: "User with this email is not registered on Traveloop" });
     }
 
-    if (invitee._id.toString() === req.user.id.toString()) {
-      return res.status(400).json({ success: false, message: "You cannot invite yourself." });
+    if (invitee._id.toString() === authUserId) {
+      return res.status(400).json({ success: false, message: "You cannot invite yourself" });
     }
 
-    const alreadyCollaborator = trip.collaborators?.some(
-      (c) => c.userId && c.userId.toString() === invitee._id.toString()
+    const existingCollab = trip.collaborators?.find(
+      (c) => c.userId && (c.userId._id || c.userId).toString() === invitee._id.toString()
     );
-    if (alreadyCollaborator) {
-      return res.status(400).json({ success: false, message: "User is already invited or is a collaborator." });
+
+    if (existingCollab) {
+      if (existingCollab.acceptedAt !== null) {
+        return res.status(409).json({ success: false, message: "User is already a collaborator on this trip" });
+      } else {
+        return res.status(409).json({ success: false, message: "User already has a pending invitation for this trip" });
+      }
     }
 
     trip.collaborators.push({
@@ -1098,16 +1109,24 @@ export const inviteCollaborator = async (req, res) => {
     });
     await trip.save();
 
-    const inviterName = req.user.firstName || req.user.email;
-    await Notification.create({
+    const inviterName = req.user.firstName ? `${req.user.firstName} ${req.user.lastName || ""}`.trim() : req.user.email;
+    const notification = await Notification.create({
       user: invitee._id,
-      title: "Trip Invitation ✈️",
+      title: "Collaboration Invite ✈️",
       message: `${inviterName} invited you to collaborate on "${trip.title}"`,
       type: "trip",
       trip: trip._id,
       isInvite: true,
       inviteStatus: "pending",
+      role: role || "viewer",
     });
+
+    // Realtime notification via socket
+    try {
+      if (req.io) {
+        req.io.to(invitee._id.toString()).emit("notification", notification);
+      }
+    } catch (_) {}
 
     // Send Gmail Invitation Email
     try {
@@ -1125,10 +1144,12 @@ export const inviteCollaborator = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Invitation sent successfully!",
+      message: `Invitation sent to ${invitee.email} successfully!`,
+      notification,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Invite Collaborator Error:", error);
+    res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
   }
 };
 

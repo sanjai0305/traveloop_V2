@@ -604,13 +604,20 @@ export class BookingService {
 
     await booking.save(sessionOpts);
 
-    // Increment Coupon usedCount if applied
+    // Increment Coupon usedCount if applied and update userStatus
     if (booking.couponCode && booking.couponCode.trim()) {
       const Coupon = mongoose.model("Coupon");
       const normalizedCode = booking.couponCode.trim().toUpperCase();
       await Coupon.updateOne(
         { couponCode: normalizedCode },
-        { $inc: { usedCount: 1 } },
+        { 
+          $inc: { usedCount: 1 },
+          $set: { 
+            userStatus: "Used",
+            usedAt: new Date(),
+            usedOnBookingId: booking._id
+          }
+        },
         sessionOpts
       );
     }

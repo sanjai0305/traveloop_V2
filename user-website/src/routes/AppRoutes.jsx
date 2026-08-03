@@ -20,6 +20,7 @@ import VerifyPhone from "../pages/VerifyPhone";
 // LAZY LOADED PAGES
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const MyTrips = lazy(() => import("../pages/MyTrips"));
+const BookedTrips = lazy(() => import("../pages/BookedTrips"));
 const CreateTrip = lazy(() => import("../pages/CreateTrip"));
 const BuildItinerary = lazy(() => import("../pages/BuildItinerary"));
 const PackingChecklist = lazy(() => import("../pages/PackingChecklist"));
@@ -127,6 +128,16 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <MyTrips />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* BOOKED TRIPS */}
+          <Route
+            path="/booked-trips"
+            element={
+              <ProtectedRoute>
+                <BookedTrips />
               </ProtectedRoute>
             }
           />
@@ -307,7 +318,31 @@ const AppRoutes = () => {
             }
           />
 
-          {/* BOOKED PACKAGE DETAIL */}
+          {/* BOOKED PACKAGE DETAIL / BOOKING DETAILS */}
+          <Route
+            path="/booking/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/booked-package/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/booked-trips/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/my-bookings/:bookingId"
             element={

@@ -18,6 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 const ROUTE_META = {
   "/dashboard":        { title: null,               showLocation: true  },
   "/my-trips":         { title: "My Trips",          showBack: false     },
+  "/booked-trips":     { title: "Booked Trips",      showBack: false     },
   "/create-trip":      { title: "Plan a Trip",       showBack: true      },
   "/profile":          { title: "Profile",           showBack: false     },
   "/admin":            { title: "Admin",             showBack: false     },

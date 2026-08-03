@@ -10,13 +10,21 @@ import {
 import { getApiUrl } from "../utils/api";
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
+const DEFAULT_CATEGORY_CONFIG = { icon: MapPin, color: "#14B8B5", bg: "#CCFBF1" };
+
 const CATEGORY_ICONS = {
-  "Food":      { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
-  "Sightseeing":{ icon: Camera,  color: "#3B82F6", bg: "#DBEAFE" },
-  "Stay":      { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
-  "Transport": { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
-  "Coffee":    { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
-  "Activity":  { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+  "Food":        { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
+  "Sightseeing": { icon: Camera,   color: "#3B82F6", bg: "#DBEAFE" },
+  "Stay":        { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Hotel":       { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Transport":   { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
+  "Coffee":      { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
+  "Activity":    { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+};
+
+const getCategoryConfig = (category) => {
+  if (!category) return CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+  return CATEGORY_ICONS[category] || CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
 };
 
 const COVERS = [
@@ -259,10 +267,19 @@ const SharedItinerary = () => {
                 <div className="absolute left-[19px] top-2 bottom-2 w-0.5 bg-slate-100" />
 
                 <div className="space-y-4">
-                  {dayItems.map((item, idx) => {
-                    const cfg = CATEGORY_ICONS[item.category] || CATEGORY_ICONS["Activity"];
-                    const CatIcon = cfg.icon;
-                    return (
+                  {(() => {
+                    if (!dayItems || !Array.isArray(dayItems)) return null;
+                    const validItems = dayItems.filter(item => {
+                      if (!item) {
+                        console.error("Invalid itinerary item:", item);
+                        return false;
+                      }
+                      return true;
+                    });
+                    return validItems.map((item, idx) => {
+                      const cfg = getCategoryConfig(item?.category);
+                      const CatIcon = item?.icon || cfg?.icon || MapPin;
+                      return (
                       <div key={item._id || idx} className="flex gap-3 relative">
                         {/* Circle Pin Icon */}
                         <div
@@ -299,9 +316,10 @@ const SharedItinerary = () => {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  });
+                })()}
               </div>
+            </div>
             )}
           </>
         )}

@@ -47,26 +47,34 @@ export const validateCoupon = async (req, res) => {
     // 2. Search Coupon Collection
     const coupon = await Coupon.findOne({ couponCode: normalizedCode });
     if (!coupon) {
-      return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
+      return res.status(400).json({ success: false, message: "Coupon not found" });
+    }
+
+    if (coupon.userId && String(coupon.userId) !== String(userId)) {
+      return res.status(400).json({ success: false, message: "Coupon belongs to another user" });
     }
 
     if (coupon.status === "INACTIVE") {
-      return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
+      return res.status(400).json({ success: false, message: "Coupon is inactive" });
+    }
+
+    if (coupon.userStatus === "Used") {
+      return res.status(400).json({ success: false, message: "Coupon already used" });
     }
 
     if (coupon.expiryDate && new Date() > new Date(coupon.expiryDate)) {
-      return res.status(400).json({ success: false, message: "Coupon Expired" });
+      return res.status(400).json({ success: false, message: "Coupon expired" });
     }
 
     if (bookingAmount < coupon.minimumAmount) {
       return res.status(400).json({
         success: false,
-        message: `Minimum Booking Amount Not Met`
+        message: `Minimum booking amount not met (Min ₹${coupon.minimumAmount} required)`
       });
     }
 
     if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
-      return res.status(400).json({ success: false, message: "Coupon Limit Reached" });
+      return res.status(400).json({ success: false, message: "Coupon limit reached" });
     }
 
     // User Eligibility Check (max 1 usage per user of a coupon)
@@ -76,7 +84,7 @@ export const validateCoupon = async (req, res) => {
       paymentStatus: "Paid"
     });
     if (userUsage > 0) {
-      return res.status(400).json({ success: false, message: "Coupon Already Used" });
+      return res.status(400).json({ success: false, message: "Coupon already used" });
     }
 
     // Calculate discount
@@ -109,6 +117,46 @@ export const validateCoupon = async (req, res) => {
   } catch (error) {
     console.error("[Coupon Validate] Error:", error);
     return res.status(500).json({ success: false, message: "Server Error validating coupon" });
+  }
+};
+
+// GET /api/coupons/my (User Coupons)
+export const getMyCoupons = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const now = new Date();
+
+    const coupons = await Coupon.find({
+      $or: [
+        { userId },
+        { userId: null, status: "ACTIVE" }
+      ]
+    }).populate("usedOnBookingId", "bookingId tripTitle finalAmount pricePaid").sort({ createdAt: -1 });
+
+    const available = [];
+    const used = [];
+    const expired = [];
+
+    coupons.forEach(c => {
+      const isExpired = c.expiryDate && new Date(c.expiryDate) < now;
+      if (c.userStatus === "Used" || c.status === "INACTIVE") {
+        used.push(c);
+      } else if (isExpired || c.userStatus === "Expired") {
+        expired.push({ ...c.toObject(), userStatus: "Expired" });
+      } else {
+        available.push(c);
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      available,
+      used,
+      expired,
+      coupons: available,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 

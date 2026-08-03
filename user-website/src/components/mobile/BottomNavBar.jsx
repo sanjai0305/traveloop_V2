@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Home, Map, Plus, Compass, User } from "lucide-react";
+import { Home, Map, Ticket, Plus, Compass, User } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import BottomSheet from "./BottomSheet";
@@ -12,6 +12,7 @@ import { getApiUrl } from "../../utils/api";
 const NAV_ITEMS = [
   { id: "home",     label: "nav.home",     icon: Home,    path: "/dashboard" },
   { id: "trips",    label: "nav.trips",    icon: Map,     path: "/my-trips" },
+  { id: "booked",   label: "nav.booked",   icon: Ticket,  path: "/booked-trips" },
   { id: "new",      label: "nav.create",   icon: Plus,    path: "/create-trip", isFab: true },
   { id: "activity", label: "nav.explore",  icon: Compass, path: "/activities" },
   { id: "profile",  label: "nav.profile",  icon: User,    path: "/profile" },

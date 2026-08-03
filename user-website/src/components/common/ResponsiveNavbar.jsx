@@ -4,7 +4,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
   Bell, Sun, Moon, Menu, X, ChevronDown, LogOut, User,
   MapPin, CheckCheck, Trash2, AlertTriangle, CheckCircle2,
-  Info, CalendarDays, Compass, Map, Home, PlusCircle, Sparkles
+  Info, CalendarDays, Compass, Map, Home, PlusCircle, Sparkles, Ticket
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getApiUrl } from "../../utils/api";
@@ -233,6 +233,7 @@ const ResponsiveNavbar = () => {
   const navLinks = [
     { label: "Home", path: "/dashboard", icon: <Home size={16} /> },
     { label: "My Trips", path: "/my-trips", icon: <Map size={16} /> },
+    { label: "Booked Trips", path: "/booked-trips", icon: <Ticket size={16} /> },
     { label: "Create Trip", path: "/create-trip", icon: <PlusCircle size={16} /> },
     { label: "Explore", path: "/activities", icon: <Compass size={16} /> },
   ];

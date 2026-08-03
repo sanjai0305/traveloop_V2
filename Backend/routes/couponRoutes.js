@@ -1,6 +1,7 @@
 import express from "express";
 import {
   validateCoupon,
+  getMyCoupons,
   getCoupons,
   createCoupon,
   updateCoupon,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 // Public/Traveler endpoints
 router.post("/validate", protect, validateCoupon);
+router.get("/my", protect, getMyCoupons);
 
 // Admin / management endpoints
 router.get("/", protect, getCoupons);

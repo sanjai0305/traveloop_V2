@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import MainLayout from "../layouts/MainLayout";
+import PageHeader from "../components/common/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import ChatTransport from "../utils/ChatTransport";
 import { auth } from "../services/firebase";
@@ -22,29 +23,66 @@ import {
   Share2, Check, Download, AlertTriangle,
   Coffee, Utensils, Camera, Hotel, Car, Ticket,
   Pencil, Copy, BookOpen, ShieldCheck, ShieldAlert, ShieldX, Plane,
-  Search, ArrowRight, Mic, Square, Play, Pause, Pin
+  Search, ArrowRight, Mic, Square, Play, Pause, Pin,
+  Users, Sun, Sparkles
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
 import { useToast } from "../components/mobile/MobileToast";
 import { signInAnonymously } from "firebase/auth";
 import BottomSheet from "../components/mobile/BottomSheet";
 import html2canvas from "html2canvas";
-import { Capacitor } from "@capacitor/core";
-import { Filesystem, Directory } from "@capacitor/filesystem";
 import MapPreview from "../components/trip/MapPreview";
 import { calculateBudgetSummary, validateExpenseAmount } from "../utils/budgetHelper";
 import logoImg from "../assets/logo.jpg";
 
+const DEFAULT_CATEGORY_CONFIG = { icon: MapPin, color: "#14B8B5", bg: "#CCFBF1" };
+
 const CATEGORY_ICONS = {
-  "Food":      { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
-  "Sightseeing":{ icon: Camera,  color: "#3B82F6", bg: "#DBEAFE" },
-  "Stay":      { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
-  "Transport": { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
-  "Coffee":    { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
-  "Activity":  { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+  "Food":        { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
+  "Sightseeing": { icon: Camera,   color: "#3B82F6", bg: "#DBEAFE" },
+  "Stay":        { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Hotel":       { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Transport":   { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
+  "Coffee":      { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
+  "Shopping":    { icon: Ticket,   color: "#EC4899", bg: "#FCE7F3" },
+  "Adventure":   { icon: Ticket,   color: "#10B981", bg: "#D1FAE5" },
+  "Museum":      { icon: BookOpen, color: "#6366F1", bg: "#E0E7FF" },
+  "Nature":      { icon: MapPin,   color: "#059669", bg: "#D1FAE5" },
+  "Beach":       { icon: Sun,      color: "#F59E0B", bg: "#FEF3C7" },
+  "Activity":    { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+  "Flight":      { icon: Plane,    color: "#0284C7", bg: "#E0F2FE" },
 };
 
 const CATEGORY_LIST = Object.keys(CATEGORY_ICONS);
+
+const getCategoryConfig = (category) => {
+  if (!category) return CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+  return CATEGORY_ICONS[category] || CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+};
+
+const normalizeItineraryItem = (item) => {
+  if (!item || typeof item !== "object") {
+    console.error("Invalid itinerary item:", item);
+    return null;
+  }
+  const category = item.category || "Activity";
+  const catConfig = getCategoryConfig(category);
+  const iconComp = item.icon || catConfig.icon || MapPin;
+
+  return {
+    ...item,
+    _id: item._id || item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id: item.id || item._id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    title: item.title || "Untitled Activity",
+    category,
+    icon: iconComp,
+    time: item.time || "10:00 AM",
+    place: item.place || "",
+    note: item.note || "",
+    budget: Number(item.budget) || 0,
+    day: Number(item.day) || 1,
+  };
+};
 
 const COVERS = [
   "linear-gradient(135deg,#14B8B5,#0D9488)",
@@ -108,13 +146,26 @@ const BuildItinerary = () => {
 
   const [budgetError, setBudgetError] = useState("");
   const [budgetTouched, setBudgetTouched] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
     if (!showAdd) {
       setBudgetError("");
       setBudgetTouched(false);
+      setFormErrors({});
     }
   }, [showAdd]);
+
+  const validateForm = () => {
+    const errors = {};
+    if (!newItem.title?.trim()) errors.title = "Activity name is required";
+    if (!newItem.place?.trim()) errors.place = "Location is required";
+    if (!newItem.category?.trim()) errors.category = "Category is required";
+    if (!newItem.time?.trim()) errors.time = "Time is required";
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleTouchStart = (msgId) => {
     longPressTimeoutRef.current[msgId] = setTimeout(() => {
@@ -1039,38 +1090,16 @@ const BuildItinerary = () => {
       const blob = await response.blob();
       const filename = `${(trip?.title || "Trip").replace(/\s+/g, "_")}_Report.pdf`;
 
-      if (Capacitor.isNativePlatform()) {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = async () => {
-          try {
-            const base64data = reader.result.split(',')[1];
-            
-            await Filesystem.writeFile({
-              path: filename,
-              data: base64data,
-              directory: Directory.Documents,
-              recursive: true
-            });
-            
-            toast.success(`PDF saved to Documents: ${filename} ✈️`);
-          } catch (fsErr) {
-            console.error("Capacitor save failed:", fsErr);
-            toast.error("Failed to save PDF on device.");
-          }
-        };
-      } else {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        toast.success("Itinerary PDF exported successfully! ✈️");
-      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success("Itinerary PDF exported successfully! ✈️");
     } catch (err) {
       console.error("PDF export failed:", err);
       toast.error("Failed to generate PDF.");
@@ -1124,7 +1153,9 @@ const BuildItinerary = () => {
         });
       }
       if (itinData.success) {
-        setItems(itinData.itinerary || []);
+        const rawList = Array.isArray(itinData.itinerary) ? itinData.itinerary : [];
+        const normalized = rawList.map(normalizeItineraryItem).filter(Boolean);
+        setItems(normalized);
       }
       if (flightsData.success) {
         setFlights(flightsData.flights || []);
@@ -1755,11 +1786,18 @@ const BuildItinerary = () => {
     );
   };
 
-  const dayItems = items.filter(i => i.day === activeDay);
-  const totalBudget = items.reduce((s, i) => s + (i.budget || 0), 0);
-  const otherItemsExpenses = items.reduce((s, i) => {
-    if (editingItem && i._id === editingItem._id) return s;
-    return s + (i.budget || 0);
+  const validAllItems = (items || []).filter(item => {
+    if (!item) {
+      console.error("Invalid itinerary item:", item);
+      return false;
+    }
+    return true;
+  });
+  const dayItems = validAllItems.filter(i => i && Number(i.day) === Number(activeDay));
+  const totalBudget = validAllItems.reduce((s, i) => s + (Number(i.budget) || 0), 0);
+  const otherItemsExpenses = validAllItems.reduce((s, i) => {
+    if (editingItem && (i._id === editingItem._id || i.id === editingItem.id)) return s;
+    return s + (Number(i.budget) || 0);
   }, 0);
 
   const addItem = async () => {
@@ -1795,8 +1833,9 @@ const BuildItinerary = () => {
       });
 
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => [...prev, data.itinerary]);
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => [...(prev || []).filter(Boolean), normalized]);
         setNewItem(makeActivity(activeDay));
         setShowAdd(false);
         toast.success("Activity added successfully!");
@@ -1839,8 +1878,9 @@ const BuildItinerary = () => {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => prev.map(i => i._id === editingItem._id ? data.itinerary : i));
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => (prev || []).filter(Boolean).map(i => (i._id === editingItem._id || i.id === editingItem.id) ? normalized : i));
         setShowAdd(false);
         setEditingItem(null);
         setNewItem(makeActivity(activeDay));
@@ -1879,8 +1919,9 @@ const BuildItinerary = () => {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setItems(prev => [...prev, data.itinerary]);
+      if (data.success && data.itinerary) {
+        const normalized = normalizeItineraryItem(data.itinerary);
+        if (normalized) setItems(prev => [...(prev || []).filter(Boolean), normalized]);
         toast.success("Activity duplicated!");
       } else {
         toast.error(data.message || "Failed to duplicate activity");
@@ -2051,6 +2092,7 @@ const BuildItinerary = () => {
       </MainLayout>
     );
   }
+  const tripDays = days || (trip?.startDate && trip?.endDate ? Math.max(1, Math.ceil((new Date(trip.endDate) - new Date(trip.startDate)) / 86400000)) : (trip?.days?.length || trip?.duration || 1));
 
   const STATUS_CONFIG = {
     planning:  { label: "Planning",  bg: "bg-amber-500",   text: "text-white" },
@@ -2063,785 +2105,780 @@ const BuildItinerary = () => {
 
   return (
     <MainLayout>
-      {/* ── HERO COVER ── */}
-      <div
-        className="relative h-44 mx-4 mt-4 rounded-[24px] overflow-hidden"
-        style={{ background: COVERS[0] }}
-      >
-        {/* Fallback layer in background */}
-        <div className="absolute inset-0 flex items-center justify-center text-7xl">✈️</div>
-
-        {/* Custom Image layer on top */}
-        {trip.image && !imageError && (
-          <img
-            src={trip.image}
-            alt={trip.title}
-            className="absolute inset-0 w-full h-full object-cover z-10"
-            onError={() => setImageError(true)}
-          />
-        )}
-        <div
-          className="absolute inset-0 z-20"
-          style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65), transparent 60%)" }}
-        />
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 font-sans">
         
-        {/* Status Badge top left */}
-        <button
-          onClick={() => !isViewer && setStatusSheetOpen(true)}
-          className={`absolute top-4 left-4 z-30 px-3 py-1.5 rounded-full text-[10px] font-extrabold shadow-md transition-all ${isViewer ? "cursor-default opacity-90" : "active:scale-95 cursor-pointer"} ${status.bg} ${status.text}`}
-        >
-          {status.label}
-        </button>
-
-        {/* PDF Export Button */}
-        <button
-          onClick={handleExportPDF}
-          disabled={exporting}
-          className="absolute top-4 right-14 z-30 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-md active:scale-95 transition-all disabled:opacity-50"
-          title="Export Itinerary PDF"
-        >
-          <Download size={16} className="text-slate-600" />
-        </button>
-
-        {/* Share Button top right */}
-        <button
-          onClick={handleShareTrip}
-          className="absolute top-4 right-4 z-30 w-9 h-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-md active:scale-95 transition-all"
-        >
-          {copiedLink ? <Check size={16} className="text-emerald-500" /> : <Share2 size={16} className="text-slate-600" />}
-        </button>
-
-        <div className="absolute bottom-0 left-0 right-0 p-4 z-30">
-          <h2 className="text-white font-extrabold text-xl leading-tight truncate max-w-[85%]">{trip.title}</h2>
-          <div className="flex items-center justify-between mt-1">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <MapPin size={12} className="text-white/70 flex-shrink-0" />
-              <span className="text-white/70 text-xs truncate max-w-[200px]">{trip.destination}</span>
-            </div>
-            <div className="flex flex-col items-end gap-1 flex-shrink-0 text-white select-none">
-              <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">
-                <span className="text-[9px] text-white/80 font-bold uppercase tracking-wider">Budget:</span>
-                <span className="text-xs font-black">₹{(trip.budget || 0).toLocaleString()}</span>
-              </div>
-              <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-sm">
-                <span className="text-[9px] text-white/80 font-bold uppercase tracking-wider">Planned:</span>
-                <span className="text-xs font-black">₹{totalBudget.toLocaleString()}</span>
-              </div>
-              <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full backdrop-blur-sm ${trip.budget - totalBudget < 0 ? "bg-red-500/50 text-red-100 animate-pulse border border-red-500/30" : "bg-white/20"}`}>
-                <span className="text-[9px] text-white/80 font-bold uppercase tracking-wider">Remaining:</span>
-                <span className="text-xs font-black">₹{(trip.budget - totalBudget).toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── DESTINATION WEATHER CARD ── */}
-      {weather && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mx-4 mt-4 premium-card p-4 bg-white border border-slate-100 shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              🌤️ Destination Weather
-            </h3>
-            <span className="text-[9px] font-bold text-slate-400">Open-Meteo Live</span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-teal-50 flex items-center justify-center text-2xl">
-                {(() => {
-                  const lbl = weather.current.label;
-                  if (lbl.includes("Sunny")) return "☀️";
-                  if (lbl.includes("Cloudy") || lbl.includes("Overcast")) return "☁️";
-                  if (lbl.includes("Rain") || lbl.includes("Drizzle") || lbl.includes("Showers")) return "🌧️";
-                  if (lbl.includes("Storm")) return "⛈️";
-                  if (lbl.includes("Snow")) return "❄️";
-                  return "💨";
-                })()}
-              </div>
-              <div>
-                <span className="text-xl font-extrabold text-slate-800">{weather.current.temp}</span>
-                <span className="text-slate-400 text-[10px] font-bold block mt-0.5">
-                  {weather.current.label} · {weather.current.windspeed} wind
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] font-extrabold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">
-                {weather.city}
-              </span>
-            </div>
-          </div>
-
-          {/* Warnings */}
-          {weather.warning && (
-            <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-100 flex items-start gap-2 text-amber-800">
-              <AlertTriangle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
-              <p className="text-[10px] font-bold leading-normal">{weather.warning}</p>
-            </div>
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* ── 1. LARGE HERO CARD ────────────────────────────────────── */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <div className="relative rounded-[28px] overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl min-h-[300px] flex flex-col justify-between p-6 sm:p-8">
+          {/* Background Image Layer */}
+          {trip.image && !imageError ? (
+            <img
+              src={trip.image}
+              alt={trip.title}
+              className="absolute inset-0 w-full h-full object-cover z-0 opacity-50"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-r from-cyan-900/60 via-slate-900 to-blue-950 z-0" />
           )}
 
-          {/* Forecast divider */}
-          <div className="my-3 border-t border-slate-50" />
+          {/* Dark Overlay Gradient */}
+          <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent" />
 
-          {/* 3-Day Forecast */}
-          <div className="grid grid-cols-3 gap-2">
-            {weather.forecast.map((f, idx) => (
-              <div key={idx} className="flex flex-col items-center p-2 rounded-xl bg-slate-50 border border-slate-100 text-center">
-                <span className="text-[9px] font-bold text-slate-400 uppercase">{f.day}</span>
-                <span className="text-lg my-1">
-                  {(() => {
-                    if (f.label.includes("Sunny")) return "☀️";
-                    if (f.label.includes("Cloudy") || f.label.includes("Overcast")) return "☁️";
-                    if (f.label.includes("Rain") || f.label.includes("Drizzle") || f.label.includes("Showers")) return "🌧️";
-                    if (f.label.includes("Storm")) return "⛈️";
-                    if (f.label.includes("Snow")) return "❄️";
-                    return "💨";
-                  })()}
-                </span>
-                <span className="text-xs font-extrabold text-slate-700">{f.tempMax}</span>
-                <span className="text-[9px] text-slate-400 font-semibold mt-0.5">{f.tempMin} min</span>
+          {/* Hero Top Actions & Status */}
+          <div className="relative z-20 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => !isViewer && setStatusSheetOpen(true)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-black shadow-sm transition-all ${isViewer ? "cursor-default opacity-90" : "cursor-pointer hover:scale-105"} ${status.bg} ${status.text}`}
+              >
+                {status.label}
+              </button>
+
+              <span className="px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-white text-xs font-extrabold border border-white/20">
+                {tripDays} Days Journey
+              </span>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate(`/trips/${id}/edit`)}
+                className="h-10 px-4 rounded-xl bg-white/15 backdrop-blur-md hover:bg-white/25 text-white font-extrabold text-xs flex items-center gap-1.5 border border-white/20 transition-all cursor-pointer"
+              >
+                <Pencil size={14} />
+                <span>Edit Trip</span>
+              </button>
+
+              <button
+                onClick={handleShareTrip}
+                className="h-10 px-4 rounded-xl bg-white/15 backdrop-blur-md hover:bg-white/25 text-white font-extrabold text-xs flex items-center gap-1.5 border border-white/20 transition-all cursor-pointer"
+              >
+                {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Share2 size={14} />}
+                <span>{copiedLink ? "Copied!" : "Share"}</span>
+              </button>
+
+              <button
+                onClick={handleExportPDF}
+                disabled={exporting}
+                className="h-10 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Download size={14} />
+                <span>{exporting ? "Exporting..." : "PDF Report"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Hero Bottom Meta Info */}
+          <div className="relative z-20 space-y-4 pt-12">
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-black text-white leading-tight tracking-tight">{trip.title}</h1>
+              <div className="flex items-center gap-2 text-slate-300 text-sm font-semibold mt-1">
+                <MapPin size={16} className="text-cyan-400" />
+                <span>{trip.destination}</span>
+                <span>•</span>
+                <Calendar size={14} className="text-cyan-400" />
+                <span>{trip.startDate ? new Date(trip.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Flexible"}</span>
               </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
+            </div>
 
-      {/* ── MAP PREVIEW CARD ── */}
-      {trip && trip.latitude !== undefined && trip.longitude !== undefined && trip.latitude !== null && trip.longitude !== null && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mx-4 mt-4 premium-card p-4 bg-white border border-slate-100 shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              🗺️ Destination Map
-            </h3>
-            <span className="text-[9px] font-bold text-slate-400">Interactive Preview</span>
-          </div>
-
-          <div className="mb-3 text-xs text-slate-600 font-semibold leading-relaxed">
-            <p className="font-bold text-slate-800">{trip.destinationName || trip.destination}</p>
-            {trip.formattedAddress && <p className="text-slate-500 font-medium mt-0.5">{trip.formattedAddress}</p>}
-            <p className="text-[10px] text-slate-400 font-mono mt-1">
-              Coordinates: {trip.latitude?.toFixed(5)}°, {trip.longitude?.toFixed(5)}°
-            </p>
-          </div>
-
-          <MapPreview
-            latitude={trip.latitude}
-            longitude={trip.longitude}
-            destinationName={trip.destinationName || trip.destination}
-          />
-        </motion.div>
-      )}
-
-      {/* ── VISA REQUIREMENTS CARD ── */}
-      {visa && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mx-4 mt-4 premium-card p-4 bg-white border border-slate-100 shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              {visa.advisory === "Safe" ? <ShieldCheck size={12} className="text-emerald-500" /> : <ShieldAlert size={12} className="text-amber-500" />}
-              Visa Requirements
-            </h3>
-            <button
-              onClick={() => setShowVisaDetails(v => !v)}
-              className="text-[10px] font-bold text-teal-600 underline"
-            >
-              {showVisaDetails ? "Show Less" : "Show More"}
-            </button>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">{visa.flag || "🌍"}</span>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className="text-[10px] font-extrabold px-2.5 py-1 rounded-full"
-                  style={{
-                    background: visa.visaType.includes("Free") ? "#D1FAE5" : visa.visaType.includes("Arrival") ? "#FEF3C7" : "#FEE2E2",
-                    color:      visa.visaType.includes("Free") ? "#065F46" : visa.visaType.includes("Arrival") ? "#92400E" : "#991B1B",
-                  }}
-                >
-                  {visa.visaType}
-                </span>
-                <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: visa.advisoryColor + "20", color: visa.advisoryColor }}
-                >
-                  {visa.advisory}
+            {/* Metrics Chips Bar */}
+            <div className="flex flex-wrap items-center gap-4 text-xs text-white/90 border-t border-white/15 pt-4">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Total Budget:</span>
+                <span className="font-black text-cyan-400 text-sm">₹{(trip.budget || 0).toLocaleString()}</span>
+              </div>
+              <span>•</span>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Planned Expenses:</span>
+                <span className="font-black text-white text-sm">₹{totalBudget.toLocaleString()}</span>
+              </div>
+              <span>•</span>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Remaining:</span>
+                <span className={`font-black text-sm ${trip.budget - totalBudget < 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                  ₹{(trip.budget - totalBudget).toLocaleString()}
                 </span>
               </div>
-              {visa.note && (
-                <p className="text-[11px] text-slate-600 leading-relaxed">{visa.note}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* ── 2. TWO-COLUMN DESKTOP SAAS WORKSPACE ──────────────────── */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* ── LEFT COLUMN (70% Width / 8 Cols) ── */}
+          <div className="lg:col-span-8 space-y-8">
+            
+            {/* Quick Access Feature Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {/* Journal */}
+              <div
+                onClick={() => navigate(`/travel-journal/${id}`)}
+                className="p-5 rounded-[24px] bg-gradient-to-br from-amber-500/10 to-orange-500/5 border border-amber-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[#0F172A]">Travel Journal</h4>
+                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Memories & daily logs</p>
+                </div>
+              </div>
+
+              {/* Flights */}
+              <div
+                onClick={() => navigate(`/trips/${id}/flights`)}
+                className="p-5 rounded-[24px] bg-gradient-to-br from-sky-500/10 to-blue-500/5 border border-sky-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                  <Plane size={20} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[#0F172A]">Flight Dashboard</h4>
+                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">{flights.length} flights attached</p>
+                </div>
+              </div>
+
+              {/* Chat */}
+              <div
+                onClick={() => navigate(`/trips/${id}/chat`)}
+                className="p-5 rounded-[24px] bg-gradient-to-br from-rose-500/10 to-pink-500/5 border border-rose-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group relative"
+              >
+                <div className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                  💬
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[#0F172A]">Trip Chat</h4>
+                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Live group workspace</p>
+                </div>
+              </div>
+
+              {/* Collaboration */}
+              <div
+                onClick={() => navigate(`/trips/${id}/collaboration`)}
+                className="p-5 rounded-[24px] bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                  <Share2 size={20} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[#0F172A]">Collaborators</h4>
+                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">{collaborators.length + 1} Members</p>
+                </div>
+              </div>
+
+              {/* AI Assistant */}
+              <div
+                onClick={() => navigate(`/trips/${id}/assistant`)}
+                className="p-5 rounded-[24px] bg-gradient-to-br from-cyan-500/10 to-teal-500/5 border border-cyan-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-cyan-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                  ✨
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[#0F172A]">AI Companion</h4>
+                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Smart recommendations</p>
+                </div>
+              </div>
+
+              {/* Budget / Group Chat depending on trip type */}
+              {(trip?.type === "BOOKING" || trip?.tripType === "booked" || trip?.isBooked) ? (
+                <div
+                  onClick={() => navigate(`/trip-chat/${id}`)}
+                  className="p-5 rounded-[24px] bg-gradient-to-br from-teal-500/10 to-cyan-500/5 border border-teal-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-teal-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                    💬
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#0F172A]">Trip Group Chat</h4>
+                    <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Driver, Guide and Agency announcements</p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => navigate(`/trip-budget/${id}`)}
+                  className="p-5 rounded-[24px] bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-200/60 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer space-y-3 group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                    <DollarSign size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[#0F172A]">Budget & Costs</h4>
+                    <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Expense breakdown</p>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
 
-          <AnimatePresence>
-            {showVisaDetails && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="overflow-hidden"
-              >
-                <div className="mt-3 pt-3 border-t border-slate-50 space-y-2">
-                  {visa.passportValidity && (
-                    <p className="text-[11px] text-slate-600"><span className="font-bold text-slate-700">Passport: </span>{visa.passportValidity}</p>
-                  )}
-                  {visa.entryRestrictions && (
-                    <p className="text-[11px] text-slate-600"><span className="font-bold text-slate-700">Note: </span>{visa.entryRestrictions}</p>
-                  )}
-                  {visa.requirements?.length > 0 && (
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-700 mb-1.5">Required Documents:</p>
-                      <div className="space-y-1">
-                        {visa.requirements.map((r, i) => (
-                          <div key={i} className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-teal-400 flex-shrink-0" />
-                            <p className="text-[11px] text-slate-600">{r}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+            {/* Horizontal Timeline & Day Selector Bar */}
+            <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-black text-[#0F172A]">Day-by-Day Timeline</h3>
+                  <p className="text-xs text-[#64748B] font-medium">Select a day to organize morning, afternoon, and evening activities</p>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      )}
 
-      {/* ── JOURNAL QUICK LINK ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-4 mt-4 premium-card p-4 bg-white border border-slate-100 shadow-sm flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all"
-        onClick={() => navigate(`/travel-journal/${id}`)}
-      >
-        <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: "rgba(20,184,181,0.1)" }}>
-          <BookOpen size={18} className="text-teal-600" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-slate-800">Travel Journal</p>
-          <p className="text-[11px] text-slate-400">Document your daily memories & highlights</p>
-        </div>
-        <span className="text-slate-400 text-xs">›</span>
-      </motion.div>
+                <div className="flex bg-slate-100 p-1 rounded-full border border-slate-200">
+                  <button
+                    onClick={() => setViewMode("daily")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-black transition-all ${
+                      viewMode === "daily" ? "bg-white text-cyan-600 shadow-sm" : "text-[#64748B]"
+                    }`}
+                  >
+                    Daily
+                  </button>
+                  <button
+                    onClick={() => setViewMode("calendar")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-black transition-all ${
+                      viewMode === "calendar" ? "bg-white text-cyan-600 shadow-sm" : "text-[#64748B]"
+                    }`}
+                  >
+                    Calendar
+                  </button>
+                  <button
+                    onClick={() => setViewMode("timeline")}
+                    className={`px-3 py-1.5 rounded-full text-xs font-black transition-all ${
+                      viewMode === "timeline" ? "bg-white text-cyan-600 shadow-sm" : "text-[#64748B]"
+                    }`}
+                  >
+                    Full Stream
+                  </button>
+                </div>
+              </div>
 
-      {/* ── COLLABORATORS QUICK LINK ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-4 mt-4 premium-card p-4 bg-white border border-slate-100 shadow-sm flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all"
-        onClick={() => setCollabSheetOpen(true)}
-      >
-        <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: "rgba(99,102,241,0.1)" }}>
-          <Share2 size={18} className="text-indigo-600" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-slate-800">Trip Collaborators</p>
-          <p className="text-[11px] text-slate-400">Invite friends & view activity log</p>
-        </div>
-        <span className="text-slate-400 text-xs">›</span>
-      </motion.div>
-
-      {/* ── FLIGHTS QUICK LINK ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-4 mt-4 premium-card p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all"
-        onClick={() => setFlightSheetOpen(true)}
-      >
-        <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: "rgba(14,165,233,0.1)" }}>
-          <Plane size={18} className="text-sky-600" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-slate-800 dark:text-white">Flights</p>
-          <p className="text-[11px] text-slate-400">Track delay status, terminal & gate details</p>
-        </div>
-        <span className="text-slate-400 text-xs">›</span>
-      </motion.div>
-
-      {/* ── CHAT QUICK LINK ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-4 mt-4 premium-card p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all"
-        onClick={() => setChatOpen(true)}
-      >
-        <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: "rgba(244,63,94,0.1)" }}>
-          <span className="text-lg">💬</span>
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-slate-800 dark:text-white">Trip Chat</p>
-            {trip?.unreadCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-500 text-white leading-none">
-                {trip.unreadCount}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-400">Discuss itinerary, budget, and coordinates live</p>
-        </div>
-        <span className="text-slate-400 text-xs">›</span>
-      </motion.div>
-
-      {/* ── AI TRAVEL ASSISTANT QUICK LINK ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-4 mt-4 premium-card p-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all"
-        onClick={() => setAiSheetOpen(true)}
-      >
-        <div className="w-10 h-10 rounded-[14px] flex items-center justify-center" style={{ background: "rgba(139,92,246,0.1)" }}>
-          <span className="text-lg">🤖</span>
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-slate-800 dark:text-white">AI Travel Assistant</p>
-          <p className="text-[11px] text-slate-400">Ask emergency info, local food, or day plans</p>
-        </div>
-        <span className="text-slate-400 text-xs">›</span>
-      </motion.div>
-
-      <div className="px-4">
-        {/* View switcher & stats */}
-        <div className="flex justify-between items-center mt-4">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Itinerary Schedule
-          </div>
-          <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-0.5 border border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setViewMode("daily")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === "daily" ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs" : "text-slate-400"
-              }`}
-            >
-              <ListTodo size={13} />
-              Daily
-            </button>
-            <button
-              onClick={() => setViewMode("calendar")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === "calendar" ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs" : "text-slate-400"
-              }`}
-            >
-              <Calendar size={13} />
-              Calendar
-            </button>
-            <button
-              onClick={() => setViewMode("timeline")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === "timeline" ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs" : "text-slate-400"
-              }`}
-            >
-              <Clock size={13} />
-              Timeline
-            </button>
-          </div>
-        </div>
-
-        {/* ── CALENDAR VIEW ── */}
-        {viewMode === "calendar" ? (
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            {Array.from({ length: days }, (_, i) => i + 1).map(d => {
-              const count = items.filter(item => item.day === d).length;
-              const isSelected = activeDay === d;
-              return (
-                <motion.div
-                  key={d}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => { setActiveDay(d); setViewMode("daily"); }}
-                  className={`p-4 rounded-[20px] border cursor-pointer flex flex-col justify-between h-28 relative ${
-                    isSelected ? "border-teal-500 bg-teal-50/20" : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Day {d}</span>
-                    <span className="text-xs font-bold text-slate-700 mt-1 block">{getDayDateString(d)}</span>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full self-start ${
-                    count > 0 ? "bg-teal-100 text-teal-700" : "bg-slate-100 text-slate-400"
-                  }`}>
-                    {count} {count === 1 ? "activity" : "activities"}
-                  </span>
-                </motion.div>
-              );
-            })}
-          </div>
-        ) : viewMode === "timeline" ? (
-          /* ── CHRONOLOGICAL TRAVEL TIMELINE VIEW ── */
-          <div className="mt-4">
-            {renderUnifiedTimeline()}
-          </div>
-        ) : (
-          /* ── DAILY ITINERARY VIEW ── */
-          <>
-            {/* Day tabs row */}
-            <div className="chip-row py-4 -mx-4 px-4">
-              {Array.from({ length: days }, (_, i) => i + 1).map(d => (
-                <motion.button
-                  key={d}
-                  whileTap={{ scale: 0.90 }}
-                  onClick={() => setActiveDay(d)}
-                  className={`flex-shrink-0 px-5 py-2.5 rounded-full text-xs font-bold transition-all ${
-                    activeDay === d
-                      ? "text-white shadow-brand"
-                      : "bg-white text-slate-500 border border-slate-200"
-                  }`}
-                  style={activeDay === d ? { background: "linear-gradient(135deg,#14B8B5,#0D9488)" } : {}}
-                >
-                  Day {d}
-                  {items.filter(i => i.day === d).length > 0 && (
-                    <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                      activeDay === d ? "bg-white/25 text-white" : "bg-teal-50 text-teal-600"
-                    }`}>
-                      {items.filter(i => i.day === d).length}
-                    </span>
-                  )}
-                </motion.button>
-              ))}
+              {/* Day Tabs horizontal bar */}
+              <div className="flex items-center gap-3 overflow-x-auto pb-2 hide-scrollbar">
+                {Array.from({ length: days }, (_, i) => i + 1).map(d => {
+                  const count = items.filter(i => i.day === d).length;
+                  const isSelected = activeDay === d;
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => setActiveDay(d)}
+                      className={`px-5 py-3 rounded-2xl text-xs font-black transition-all shrink-0 flex items-center gap-2 cursor-pointer ${
+                        isSelected
+                          ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20"
+                          : "bg-slate-100 text-[#0F172A] hover:bg-slate-200"
+                      }`}
+                    >
+                      <span>Day {d}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                        isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                      }`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Activities list */}
-            {dayItems.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/50 dark:bg-slate-800/20 dark:border-slate-800"
-              >
-                <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center text-3xl mb-2">
-                  📍
+            {/* Activities List Section */}
+            <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 sm:p-8 space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-2xl font-black text-[#0F172A]">Day {activeDay} Activities</h3>
+                  <p className="text-xs text-[#64748B] font-medium">{getDayDateString(activeDay)}</p>
                 </div>
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">No activities scheduled for Day {activeDay}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500 max-w-[280px] mb-4">
-                  {!isViewer ? "Add custom activities, duplicate your itinerary from the previous day, or get Gemini AI suggestions!" : "View the trip itinerary planned by your coordinators."}
-                </p>
-                <div className="flex flex-col gap-2.5 w-full max-w-[260px]">
-                  {!isViewer ? (
-                    <>
-                      <button
-                        onClick={() => { setEditingItem(null); setNewItem(makeActivity(activeDay)); setShowAdd(true); }}
-                        className="w-full py-3 rounded-full text-white font-bold text-xs shadow-brand bg-teal-500 active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                        style={{ background: "linear-gradient(135deg,#14B8B5,#0D9488)" }}
-                      >
-                        <Plus size={14} /> Add Activity
-                      </button>
 
-                      {activeDay > 1 && items.some(i => i.day === activeDay - 1) && (
-                        <button
-                          onClick={copyPreviousDay}
-                          className="w-full py-3 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs active:scale-95 transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                        >
-                          <Copy size={13} /> Copy Day {activeDay - 1} Itinerary
-                        </button>
-                      )}
+                {!isViewer && (
+                  <button
+                    onClick={() => { setEditingItem(null); setNewItem(makeActivity(activeDay)); setShowAdd(true); }}
+                    className="h-10 px-5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-extrabold text-xs shadow-md shadow-cyan-500/20 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={16} />
+                    <span>Add Activity</span>
+                  </button>
+                )}
+              </div>
 
-                      <button
-                        onClick={() => navigate(`/activities/${id}`)}
-                        className="w-full py-3 rounded-full bg-violet-500 hover:bg-violet-600 active:scale-95 transition-all text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-violet-500/20"
-                      >
-                        ✨ Generate AI Suggestions
-                      </button>
-                    </>
-                  ) : (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-bold">
-                      As a viewer, you cannot modify the itinerary.
-                    </p>
+              {dayItems.length === 0 ? (
+                <div className="py-12 text-center border-2 border-dashed border-slate-200 rounded-2xl space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-cyan-50 text-cyan-500 flex items-center justify-center mx-auto">
+                    <MapPin size={24} />
+                  </div>
+                  <h4 className="text-base font-black text-[#0F172A]">No activities added for Day {activeDay}</h4>
+                  <p className="text-xs text-[#64748B] font-medium max-w-sm mx-auto">
+                    Build your schedule by adding sights, places to eat, or local transport activities.
+                  </p>
+                  {!isViewer && (
+                    <button
+                      onClick={() => { setEditingItem(null); setNewItem(makeActivity(activeDay)); setShowAdd(true); }}
+                      className="px-6 py-2.5 rounded-full bg-cyan-500 text-white font-extrabold text-xs shadow-sm cursor-pointer"
+                    >
+                      + Add First Activity
+                    </button>
                   )}
                 </div>
-              </motion.div>
-            ) : (
-              <div className="relative">
-                {/* Vertical timeline line */}
-                <div className="absolute left-[19px] top-0 bottom-0 w-0.5 bg-slate-100" />
-
-                <AnimatePresence>
-                  {dayItems.map((item, idx) => {
-                    const cat = CATEGORY_ICONS[item.category] || CATEGORY_ICONS["Activity"];
-                    const CatIcon = cat.icon;
-                    return (
-                      <motion.div
-                        key={item._id || idx}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="flex gap-3 mb-4 relative"
-                      >
-                        {/* Timeline Circle Pin */}
+              ) : (
+                <div className="space-y-4">
+                  {(() => {
+                    if (!dayItems || !Array.isArray(dayItems)) return null;
+                    const validItems = dayItems.filter(item => {
+                      if (!item) {
+                        console.error("Invalid itinerary item:", item);
+                        return false;
+                      }
+                      return true;
+                    });
+                    return validItems.map((item, idx) => {
+                      const cat = getCategoryConfig(item?.category);
+                      const CatIcon = item?.icon || cat?.icon || MapPin;
+                      return (
                         <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 z-10 shadow-sm border border-white"
-                          style={{ background: cat.bg }}
+                          key={item._id || item.id || idx}
+                          className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/70 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                         >
-                          <CatIcon size={16} style={{ color: cat.color }} />
-                        </div>
+                          <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-xs" style={{ background: cat.bg }}>
+                              <CatIcon size={20} style={{ color: cat.color }} />
+                            </div>
 
-                        {/* Event Card — tap to edit */}
-                        <div
-                          className={`flex-1 premium-card p-4 ${isViewer ? "cursor-default" : "cursor-pointer"}`}
-                          onClick={() => !isViewer && openEditSheet(item)}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: cat.bg, color: cat.color }}>
-                                  {item.category}
-                                </span>
-                                <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                                  <Clock size={10} /> {item.time}
-                                </span>
-                              </div>
-                              <h4 className="text-sm font-bold text-slate-800 activity-title">{item.title || "Untitled"}</h4>
-                              {item.place && (
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <MapPin size={11} className="text-slate-400" />
-                                  <span className="text-xs text-slate-400 truncate">{item.place}</span>
-                                </div>
-                              )}
-                              {item.budget > 0 && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <DollarSign size={11} className="text-teal-500" />
-                                  <span className="text-xs font-semibold text-teal-600">₹{item.budget.toLocaleString()}</span>
-                                </div>
-                              )}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full" style={{ background: cat.bg, color: cat.color }}>
+                                {item.category}
+                              </span>
+                              <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                                <Clock size={12} /> {item.time}
+                              </span>
                             </div>
-                            {/* Action buttons */}
-                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                              <motion.button
-                                whileTap={{ scale: 0.88 }}
-                                onClick={() => handleShareActivityToChat(item)}
-                                className="w-7 h-7 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center animate-pulse"
-                                title="Share to chat"
-                              >
-                                <Share2 size={12} className="text-emerald-500" />
-                              </motion.button>
-                              {!isViewer && (
-                                <>
-                                  <motion.button
-                                    whileTap={{ scale: 0.88 }}
-                                    onClick={() => duplicateItem(item)}
-                                    className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center"
-                                    title="Duplicate activity"
-                                  >
-                                    <Copy size={12} className="text-blue-400" />
-                                  </motion.button>
-                                  <motion.button
-                                    whileTap={{ scale: 0.88 }}
-                                    onClick={() => openEditSheet(item)}
-                                    className="w-7 h-7 rounded-full bg-teal-50 flex items-center justify-center"
-                                    title="Edit activity"
-                                  >
-                                    <Pencil size={12} className="text-teal-500" />
-                                  </motion.button>
-                                  <motion.button
-                                    whileTap={{ scale: 0.88 }}
-                                    onClick={() => removeItem(item._id)}
-                                    className="w-7 h-7 rounded-full bg-red-50 flex items-center justify-center"
-                                    title="Delete activity"
-                                  >
-                                    <Trash2 size={13} className="text-red-400" />
-                                  </motion.button>
-                                </>
-                              )}
-                            </div>
+                            <h4 className="text-base font-black text-[#0F172A]">{item.title}</h4>
+                            {item.place && (
+                              <p className="text-xs text-[#64748B] font-medium flex items-center gap-1">
+                                <MapPin size={12} className="text-cyan-500" /> {item.place}
+                              </p>
+                            )}
                           </div>
                         </div>
-                      </motion.div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-200">
+                          {item.budget > 0 && (
+                            <span className="text-sm font-black text-cyan-600">₹{item.budget.toLocaleString()}</span>
+                          )}
+
+                          {!isViewer && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => openEditSheet(item)}
+                                className="p-2 rounded-xl text-slate-600 hover:bg-slate-200 transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                onClick={() => removeItem(item._id)}
+                                className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
-                  })}
-                </AnimatePresence>
+                  });
+                })()}
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* ── RIGHT COLUMN (30% Width / 4 Cols - Sticky Sidebar) ── */}
+          <div className="lg:col-span-4 space-y-6 sticky top-24">
+            
+            {/* Compact Weather Cards */}
+            {weather && (
+              <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sun className="w-5 h-5 text-amber-500" />
+                    <h3 className="text-base font-black text-[#0F172A]">Destination Weather</h3>
+                  </div>
+                  <span className="text-[10px] font-black text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full">{weather.city}</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {weather.forecast.slice(0, 3).map((f, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-slate-50 text-center space-y-1">
+                      <span className="text-[10px] font-black text-slate-400 uppercase">{f.day}</span>
+                      <p className="text-sm font-black text-[#0F172A]">{f.tempMax}</p>
+                      <span className="text-[9px] text-slate-400 font-bold block">{f.label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Add Activity Button */}
-            {!isViewer && (
-              <motion.button
-                whileTap={{ scale: 0.90 }}
-                onClick={() => { setEditingItem(null); setNewItem(makeActivity(activeDay)); setShowAdd(true); }}
-                className="fixed z-40 flex items-center gap-2 px-5 py-3.5 rounded-full text-white font-bold shadow-brand"
-                style={{
-                  background: "linear-gradient(135deg, #14B8B5, #0D9488)",
-                  bottom: "calc(var(--bottom-nav-height, 80px) + max(env(safe-area-inset-bottom), 12px) + 16px)",
-                  right: "16px",
-                }}
-              >
-                <Plus size={20} />
-                Add Activity
-              </motion.button>
+            {/* Trip Budget / Package Summary Widget */}
+            {(trip?.type === "BOOKING" || trip?.tripType === "booked" || trip?.isBooked) ? (
+              <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🎫</span>
+                    <h3 className="text-base font-black text-[#0F172A]">Package Booking Details</h3>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/booked-package/${id}`)}
+                    className="text-xs font-extrabold text-teal-600 hover:underline"
+                  >
+                    View Details
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Booking Status:</span>
+                    <span className="font-black text-emerald-600">Confirmed / Paid</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Agency:</span>
+                    <span className="font-black text-[#0F172A]">{trip.agent?.companyName || trip.agency || "Traveloop Partner"}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Total Amount:</span>
+                    <span className="font-black text-teal-600">₹{(trip.pricePaid || trip.budget || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => navigate(`/trip-chat/${id}`)}
+                  className="w-full py-3 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95 transition-all"
+                >
+                  💬 Open Package Group Chat
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-emerald-500" />
+                    <h3 className="text-base font-black text-[#0F172A]">Budget Summary</h3>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/trip-budget/${id}`)}
+                    className="text-xs font-extrabold text-cyan-600 hover:underline"
+                  >
+                    Manage
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Total Allocation:</span>
+                    <span className="font-black text-[#0F172A]">₹{(trip.budget || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-[#64748B]">Planned Expenses:</span>
+                    <span className="font-black text-cyan-600">₹{totalBudget.toLocaleString()}</span>
+                  </div>
+
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-cyan-500 h-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, ((totalBudget / (trip.budget || 1)) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
-          </>
-        )}
+
+            {/* Members Quick Widget */}
+            <div className="rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-500" />
+                  <h3 className="text-base font-black text-[#0F172A]">Trip Members</h3>
+                </div>
+                <button
+                  onClick={() => navigate(`/trips/${id}/collaboration`)}
+                  className="text-xs font-extrabold text-indigo-600 hover:underline"
+                >
+                  Invite
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center">
+                  👑
+                </div>
+                <div>
+                  <p className="text-xs font-extrabold text-[#0F172A]">{trip?.createdBy?.name || user?.name || "Trip Owner"}</p>
+                  <span className="text-[10px] text-indigo-600 font-black">Owner</span>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Companion CTA Widget */}
+            <div className="rounded-[24px] bg-gradient-to-br from-cyan-500 to-blue-600 p-6 text-white space-y-4 shadow-lg shadow-cyan-500/20">
+              <div className="flex items-center gap-2">
+                <Sparkles size={20} className="text-yellow-300" />
+                <h3 className="text-lg font-black">AI Travel Assistant</h3>
+              </div>
+              <p className="text-xs text-white/90 font-medium leading-relaxed">
+                Get route suggestions, weather advisories, and nearby hidden gems instantly.
+              </p>
+              <button
+                onClick={() => navigate(`/trips/${id}/assistant`)}
+                className="w-full py-2.5 rounded-xl bg-white text-cyan-700 font-black text-xs shadow-md hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Launch AI Assistant
+              </button>
+            </div>
+
+          </div>
+
+        </div>
       </div>
 
-      {/* ── ADD / EDIT ACTIVITY SHEET ── */}
+      {/* ── ADD / EDIT ACTIVITY RESPONSIVE MODAL ── */}
       <AnimatePresence>
         {showAdd && (
           <>
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closeSheet}
-              className="fixed inset-0 z-[998] bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 z-[998] bg-black/60 backdrop-blur-md transition-opacity"
             />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed bottom-0 left-0 right-0 z-[999] bg-white rounded-t-[32px] p-6 overflow-y-auto"
-              style={{ paddingBottom: "max(env(safe-area-inset-bottom), 24px)", maxHeight: "90vh" }}
-            >
-              <div className="flex justify-center mb-4">
-                <div className="w-10 h-1 rounded-full bg-slate-200" />
-              </div>
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-800">
-                    {editingItem ? "Edit Activity" : `Add to Day ${activeDay}`}
-                  </h3>
-                  {editingItem && (
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Day {editingItem.day}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {editingItem && (
-                    <motion.button
-                      whileTap={{ scale: 0.90 }}
-                      onClick={() => { removeItem(editingItem._id); closeSheet(); }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 text-red-500 text-xs font-bold"
-                    >
-                      <Trash2 size={12} /> Delete
-                    </motion.button>
-                  )}
-                  <button onClick={closeSheet} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                    <X size={16} className="text-slate-600" />
-                  </button>
-                </div>
-              </div>
 
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={newItem.title}
-                  onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))}
-                  placeholder="Activity name *"
-                  className="w-full px-4 py-3.5 rounded-[16px] bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 placeholder:text-slate-400 outline-none focus:border-teal-400 transition-colors"
-                  autoFocus
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="time"
-                    value={newItem.time}
-                    onChange={e => setNewItem(p => ({ ...p, time: e.target.value }))}
-                    className="px-4 py-3.5 rounded-[16px] bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 outline-none focus:border-teal-400 transition-colors"
-                  />
-                  <div className="flex flex-col">
-                    <input
-                      type="number"
-                      value={newItem.budget === "" ? "" : newItem.budget}
-                      onChange={e => {
-                        const valStr = e.target.value;
-                        const val = valStr === "" ? "" : (parseFloat(valStr) || 0);
-                        setNewItem(p => ({ ...p, budget: val }));
-                        
-                        const limitBudget = trip?.budget || 0;
-                        const valNum = Number(val) || 0;
-                        if (valStr !== "" && valNum < 0) {
-                          setBudgetError("Expense amount cannot be negative.");
-                        } else if (valStr !== "" && (valNum + otherItemsExpenses > limitBudget)) {
-                          setBudgetError("Expense exceeds available trip budget.");
-                        } else {
-                          setBudgetError("");
-                        }
-                      }}
-                      onBlur={e => {
-                        const valStr = e.target.value;
-                        const val = valStr === "" ? "" : (parseFloat(valStr) || 0);
-                        const limitBudget = trip?.budget || 0;
-                        const valNum = Number(val) || 0;
-                        if (valStr !== "" && valNum < 0) {
-                          setBudgetError("Expense amount cannot be negative.");
-                        } else if (valStr !== "" && (valNum + otherItemsExpenses > limitBudget)) {
-                          setBudgetError("Expense exceeds available trip budget.");
-                        } else {
-                          setBudgetError("");
-                        }
-                      }}
-                      placeholder="Budget (₹)"
-                      className={`w-full px-4 py-3.5 rounded-[16px] bg-slate-50 border text-sm font-semibold text-slate-700 placeholder:text-slate-400 outline-none transition-colors ${
-                        budgetError ? "border-red-500 focus:border-red-500" : "border-slate-200 focus:border-teal-400"
-                      }`}
-                    />
-                    {budgetError && (
-                      <span className="text-[10px] text-red-500 font-semibold mt-1 pl-1">
-                        {budgetError}
-                      </span>
+            {/* Responsive Modal Container: Centered Dialog on Desktop/Tablet, Bottom Sheet on Mobile */}
+            <div className="fixed inset-0 z-[999] flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="pointer-events-auto w-full md:max-w-[760px] max-h-[85vh] bg-white rounded-t-[32px] md:rounded-[24px] shadow-[0_25px_70px_rgba(15,23,42,0.22)] border border-slate-200/80 flex flex-col overflow-hidden"
+              >
+                {/* Header */}
+                <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-black text-[#0F172A]">
+                      {editingItem ? "Edit Activity" : "Add Activity"}
+                    </h3>
+                    <span className="px-3 py-1 rounded-full bg-cyan-50 text-cyan-700 text-xs font-black border border-cyan-200">
+                      Day {activeDay}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {editingItem && (
+                      <button
+                        onClick={() => { removeItem(editingItem._id); closeSheet(); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={14} /> Delete
+                      </button>
                     )}
+                    <button
+                      onClick={closeSheet}
+                      className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
                 </div>
-                <input
-                  type="text"
-                  value={newItem.place}
-                  onChange={e => setNewItem(p => ({ ...p, place: e.target.value }))}
-                  placeholder="Location / Place"
-                  className="w-full px-4 py-3.5 rounded-[16px] bg-slate-50 border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-teal-400 transition-colors"
-                />
-                <textarea
-                  value={newItem.note || ""}
-                  onChange={e => setNewItem(p => ({ ...p, note: e.target.value }))}
-                  placeholder="Additional notes/reminders..."
-                  className="w-full px-4 py-3 rounded-[16px] bg-slate-50 border border-slate-200 text-sm text-slate-700 outline-none focus:border-teal-400 resize-none h-16"
-                />
 
-                {/* Category picker */}
-                <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-                  {CATEGORY_LIST.map(cat => {
-                    const cfg = CATEGORY_ICONS[cat];
-                    const Icon = cfg.icon;
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => setNewItem(p => ({ ...p, category: cat }))}
-                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full border text-xs font-bold transition-all ${
-                          newItem.category === cat ? "border-teal-400" : "border-slate-200 bg-white"
-                        }`}
-                        style={newItem.category === cat ? { background: cfg.bg, color: cfg.color, borderColor: `${cfg.color}40` } : {}}
-                      >
-                        <Icon size={12} />
-                        {cat}
-                      </button>
-                    );
-                  })}
+                {/* Form Body - 2-Column Grid on Desktop */}
+                <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      {/* Activity Name */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Activity Name <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newItem.title}
+                          onChange={e => {
+                            setNewItem(p => ({ ...p, title: e.target.value }));
+                            if (formErrors.title) setFormErrors(p => ({ ...p, title: "" }));
+                          }}
+                          placeholder="e.g. Visit Eiffel Tower"
+                          className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-[#0F172A] outline-none transition-colors ${
+                            formErrors.title ? "border-rose-500 focus:border-rose-500" : "border-slate-200 focus:border-cyan-400"
+                          }`}
+                          autoFocus
+                        />
+                        {formErrors.title && (
+                          <p className="text-[10px] font-bold text-rose-500 mt-1">{formErrors.title}</p>
+                        )}
+                      </div>
+
+                      {/* Location / Place */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Location / Place <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newItem.place}
+                          onChange={e => {
+                            setNewItem(p => ({ ...p, place: e.target.value }));
+                            if (formErrors.place) setFormErrors(p => ({ ...p, place: "" }));
+                          }}
+                          placeholder="e.g. Champ de Mars, Paris"
+                          className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-[#0F172A] outline-none transition-colors ${
+                            formErrors.place ? "border-rose-500 focus:border-rose-500" : "border-slate-200 focus:border-cyan-400"
+                          }`}
+                        />
+                        {formErrors.place && (
+                          <p className="text-[10px] font-bold text-rose-500 mt-1">{formErrors.place}</p>
+                        )}
+                      </div>
+
+                      {/* Category Chips */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Category <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {CATEGORY_LIST.map(cat => {
+                            const cfg = getCategoryConfig(cat);
+                            const Icon = cfg?.icon || MapPin;
+                            const isSelected = newItem.category === cat;
+                            return (
+                              <button
+                                type="button"
+                                key={cat}
+                                onClick={() => {
+                                  setNewItem(p => ({ ...p, category: cat }));
+                                  if (formErrors.category) setFormErrors(p => ({ ...p, category: "" }));
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-extrabold transition-all cursor-pointer ${
+                                  isSelected ? "shadow-xs border-transparent" : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                                }`}
+                                style={isSelected ? { background: cfg.bg, color: cfg.color, borderColor: `${cfg.color}40` } : {}}
+                              >
+                                <Icon size={13} />
+                                <span>{cat}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {formErrors.category && (
+                          <p className="text-[10px] font-bold text-rose-500 mt-1">{formErrors.category}</p>
+                        )}
+                      </div>
+
+                      {/* Time */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Time <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="time"
+                          value={newItem.time}
+                          onChange={e => {
+                            setNewItem(p => ({ ...p, time: e.target.value }));
+                            if (formErrors.time) setFormErrors(p => ({ ...p, time: "" }));
+                          }}
+                          className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-[#0F172A] outline-none transition-colors ${
+                            formErrors.time ? "border-rose-500 focus:border-rose-500" : "border-slate-200 focus:border-cyan-400"
+                          }`}
+                        />
+                        {formErrors.time && (
+                          <p className="text-[10px] font-bold text-rose-500 mt-1">{formErrors.time}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      {/* Cost / Budget */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Estimated Cost (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={newItem.budget === "" ? "" : newItem.budget}
+                          onChange={e => {
+                            const valStr = e.target.value;
+                            const val = valStr === "" ? "" : (parseFloat(valStr) || 0);
+                            setNewItem(p => ({ ...p, budget: val }));
+                            
+                            const limitBudget = trip?.budget || 0;
+                            const valNum = Number(val) || 0;
+                            if (valStr !== "" && valNum < 0) {
+                              setBudgetError("Expense amount cannot be negative.");
+                            } else if (valStr !== "" && (valNum + otherItemsExpenses > limitBudget)) {
+                              setBudgetError("Expense exceeds available trip budget.");
+                            } else {
+                              setBudgetError("");
+                            }
+                          }}
+                          placeholder="0"
+                          className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-[#0F172A] outline-none transition-colors ${
+                            budgetError ? "border-rose-500 focus:border-rose-500" : "border-slate-200 focus:border-cyan-400"
+                          }`}
+                        />
+                        {budgetError && (
+                          <p className="text-[10px] font-bold text-rose-500 mt-1">{budgetError}</p>
+                        )}
+                      </div>
+
+                      {/* Additional Notes */}
+                      <div>
+                        <label className="block text-xs font-black text-[#0F172A] mb-1.5">
+                          Notes & Reminders
+                        </label>
+                        <textarea
+                          value={newItem.note || ""}
+                          onChange={e => setNewItem(p => ({ ...p, note: e.target.value }))}
+                          placeholder="Tickets, booking reference numbers, or tips..."
+                          rows={4}
+                          className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-[#0F172A] outline-none focus:border-cyan-400 resize-none"
+                        />
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
 
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={editingItem ? updateItem : addItem}
-                  disabled={!newItem.title || !!budgetError || (trip?.budget - (otherItemsExpenses + (Number(newItem.budget) || 0)) < 0)}
-                  className="w-full py-4 rounded-full text-white font-bold text-sm shadow-brand disabled:opacity-50"
-                  style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}
-                >
-                  {editingItem ? (
-                    <><Check size={16} className="inline mr-1" />Update Activity</>
-                  ) : (
-                    <><Plus size={16} className="inline mr-1" />Add Activity</>
-                  )}
-                </motion.button>
-              </div>
-            </motion.div>
+                {/* Footer Action Buttons */}
+                <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={closeSheet}
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-extrabold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!validateForm()) return;
+                      if (editingItem) {
+                        updateItem();
+                      } else {
+                        addItem();
+                      }
+                    }}
+                    disabled={!!budgetError}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-extrabold text-xs shadow-md shadow-cyan-500/20 hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    {editingItem ? <Check size={16} /> : <Plus size={16} />}
+                    <span>{editingItem ? "Update Activity" : "Add Activity"}</span>
+                  </button>
+                </div>
+
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>
@@ -2852,7 +2889,6 @@ const BuildItinerary = () => {
         onClose={() => setStatusSheetOpen(false)}
         title="Update Trip Status"
         snapPoints={["40vh"]}
-        variant="dialog"
       >
         <div className="space-y-3">
           {Object.keys(STATUS_CONFIG).map((key) => {
@@ -2884,7 +2920,6 @@ const BuildItinerary = () => {
         onClose={() => setCollabSheetOpen(false)}
         title="Trip Collaboration"
         snapPoints={["75vh"]}
-        variant="side"
       >
         <div className="p-4 space-y-4">
           {/* Tab Selector */}
@@ -3092,7 +3127,6 @@ const BuildItinerary = () => {
         onClose={() => { setFlightSheetOpen(false); setEditingFlight(null); setShowManualFields(false); }}
         title="Trip Flights ✈️"
         snapPoints={["85vh"]}
-        variant="side"
       >
         <div className="space-y-4 pb-6">
           {/* Sub-tabs: View Flights vs Add/Edit Flight */}
@@ -3271,7 +3305,6 @@ const BuildItinerary = () => {
         title="Trip Chat"
         snapPoints={["85vh"]}
         contentPadding="p-0"
-        variant="side"
       >
         <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 pb-6 rounded-t-[28px]">
           {/* Chat Header Actions / Search Row */}
@@ -3417,7 +3450,8 @@ const BuildItinerary = () => {
                 });
               }
             }}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 dark:bg-slate-950"
+            className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 dark:bg-slate-950"
+            style={{ maxHeight: "calc(85vh - 180px)", minHeight: "40vh" }}
           >
             {chatLoading && chatMessages.length === 0 ? (
               <div className="flex items-center justify-center py-20">
@@ -3813,13 +3847,12 @@ const BuildItinerary = () => {
         title="AI Travel Assistant"
         snapPoints={["85vh"]}
         contentPadding="p-0"
-        variant="side"
       >
         <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 pb-6 rounded-t-[28px]">
           {/* Prompt Suggestion Chips */}
           <div className="px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
             <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mb-1.5">Suggested Prompts</p>
-            <div className="flex flex-wrap gap-1.5 pb-1">
+            <div className="flex flex-wrap gap-2 pb-1">
               {[
                 { label: "📦 Packing checklist", prompt: "What should I pack for this trip?" },
                 { label: "🚨 Emergency info", prompt: "What emergency contact numbers or hospitals should I know about?" },
@@ -3838,7 +3871,7 @@ const BuildItinerary = () => {
           </div>
 
           {/* AI Messages list */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-4 dark:bg-slate-950">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-slate-950" style={{ maxHeight: "calc(85vh - 210px)", minHeight: "40vh" }}>
             {aiMessages.map((msg, idx) => {
               const isUser = msg.role === "user";
               return (

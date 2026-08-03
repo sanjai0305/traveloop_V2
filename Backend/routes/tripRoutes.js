@@ -241,6 +241,12 @@ router.get(
 );
 
 router.get(
+  "/my",
+  protect,
+  getTrips
+);
+
+router.get(
   "/destinations/autocomplete",
   protect,
   getDestinationsAutocomplete

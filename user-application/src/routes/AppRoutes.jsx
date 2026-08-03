@@ -308,6 +308,40 @@ const AppRoutes = () => {
             element={<DriverPortal />}
           />
 
+          {/* BOOKING DETAILS */}
+          <Route
+            path="/booking/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/booked-package/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/booked-trips/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-bookings/:bookingId"
+            element={
+              <ProtectedRoute>
+                <BookedPackageDetail />
+              </ProtectedRoute>
+            }
+          />
+
           {/* BOOKING SUCCESS */}
           <Route
             path="/booking/:bookingId/success"

@@ -9,6 +9,7 @@ import {
   Settings,
   Heart,
   Map,
+  Ticket,
   LogOut,
   ChevronDown,
 } from "lucide-react";
@@ -120,6 +121,14 @@ const UserMenu = () => {
       title: "My Trips",
       action: () =>
         navigate("/my-trips"),
+    },
+
+    {
+      id: 25,
+      icon: Ticket,
+      title: "Booked Trips",
+      action: () =>
+        navigate("/booked-trips"),
     },
 
     {

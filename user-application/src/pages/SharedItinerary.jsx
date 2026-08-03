@@ -10,13 +10,21 @@ import {
 import { getApiUrl } from "../utils/api";
 import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 
+const DEFAULT_CATEGORY_CONFIG = { icon: MapPin, color: "#14B8B5", bg: "#CCFBF1" };
+
 const CATEGORY_ICONS = {
-  "Food":      { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
-  "Sightseeing":{ icon: Camera,  color: "#3B82F6", bg: "#DBEAFE" },
-  "Stay":      { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
-  "Transport": { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
-  "Coffee":    { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
-  "Activity":  { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+  "Food":        { icon: Utensils, color: "#F59E0B", bg: "#FEF3C7" },
+  "Sightseeing": { icon: Camera,   color: "#3B82F6", bg: "#DBEAFE" },
+  "Stay":        { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Hotel":       { icon: Hotel,    color: "#8B5CF6", bg: "#EDE9FE" },
+  "Transport":   { icon: Car,      color: "#14B8B5", bg: "#CCFBF1" },
+  "Coffee":      { icon: Coffee,   color: "#D97706", bg: "#FEF9C3" },
+  "Activity":    { icon: Ticket,   color: "#EF4444", bg: "#FEE2E2" },
+};
+
+const getCategoryConfig = (category) => {
+  if (!category) return CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
+  return CATEGORY_ICONS[category] || CATEGORY_ICONS["Activity"] || DEFAULT_CATEGORY_CONFIG;
 };
 
 const COVERS = [
@@ -259,47 +267,57 @@ const SharedItinerary = () => {
                 <div className="absolute left-[19px] top-2 bottom-2 w-0.5 bg-slate-100" />
 
                 <div className="space-y-4">
-                  {dayItems.map((item, idx) => {
-                    const cfg = CATEGORY_ICONS[item.category] || CATEGORY_ICONS["Activity"];
-                    const CatIcon = cfg.icon;
-                    return (
-                      <div key={item._id || idx} className="flex gap-3 relative">
-                        {/* Circle Pin Icon */}
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 z-10 shadow-sm border border-white"
-                          style={{ backgroundColor: cfg.bg }}
-                        >
-                          <CatIcon size={16} style={{ color: cfg.color }} />
-                        </div>
-
-                        {/* Activity Card */}
-                        <div className="flex-1 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                              style={{ backgroundColor: cfg.bg, color: cfg.color }}
-                            >
-                              {item.category}
-                            </span>
-                            <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                              <Clock size={10} /> {item.time}
-                            </span>
+                  {(() => {
+                    if (!dayItems || !Array.isArray(dayItems)) return null;
+                    const validItems = dayItems.filter(item => {
+                      if (!item) {
+                        console.error("Invalid itinerary item:", item);
+                        return false;
+                      }
+                      return true;
+                    });
+                    return validItems.map((item, idx) => {
+                      const cfg = getCategoryConfig(item?.category);
+                      const CatIcon = item?.icon || cfg?.icon || MapPin;
+                      return (
+                        <div key={item._id || item.id || idx} className="flex gap-3 relative">
+                          {/* Circle Pin Icon */}
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 z-10 shadow-sm border border-white"
+                            style={{ backgroundColor: cfg.bg }}
+                          >
+                            <CatIcon size={16} style={{ color: cfg.color }} />
                           </div>
-                          <h4 className="text-sm font-bold text-slate-800">{item.title}</h4>
-                          {item.place && (
-                            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                              <MapPin size={11} className="text-slate-400" /> {item.place}
-                            </p>
-                          )}
-                          {item.note && (
-                            <p className="text-xs text-slate-400 mt-2 bg-slate-50 p-2.5 rounded-xl border border-dashed border-slate-100">
-                              {item.note}
-                            </p>
-                          )}
+
+                          {/* Activity Card */}
+                          <div className="flex-1 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                              >
+                                {item.category}
+                              </span>
+                              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                                <Clock size={10} /> {item.time}
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-800">{item.title}</h4>
+                            {item.place && (
+                              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                <MapPin size={11} className="text-slate-400" /> {item.place}
+                              </p>
+                            )}
+                            {item.note && (
+                              <p className="text-xs text-slate-400 mt-2 bg-slate-50 p-2.5 rounded-xl border border-dashed border-slate-100">
+                                {item.note}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}

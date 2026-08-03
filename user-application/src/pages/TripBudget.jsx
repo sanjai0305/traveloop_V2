@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import MainLayout from "../layouts/MainLayout";
+import PageHeader from "../components/common/PageHeader";
 import {
   ArrowLeft, DollarSign, Car, Hotel, Utensils,
   Ticket, ShoppingBag, AlertTriangle, CheckCircle, Save,
@@ -591,12 +592,12 @@ const TripBudget = () => {
   const displayExpenses = useMemo(() => {
     const sums = { transport: 0, accommodation: 0, food: 0, activities: 0, shopping: 0 };
     Object.keys(sums).forEach(key => {
-      sums[key] += expenses[key] || 0;
+      sums[key] += (expenses?.[key] ?? 0);
     });
-    expenseItems.forEach(item => {
-      const cat = item.category?.toLowerCase();
-      if (sums[cat] !== undefined) {
-        sums[cat] += item.convertedAmount || 0;
+    (expenseItems || []).forEach(item => {
+      const cat = item?.category?.toLowerCase();
+      if (cat && sums[cat] !== undefined) {
+        sums[cat] += (item.convertedAmount ?? 0);
       }
     });
     return sums;
@@ -831,11 +832,11 @@ const TripBudget = () => {
         body: JSON.stringify({
           budget: Number(budgetLimit),
           expenses: {
-            transport: Number(expenses.transport),
-            accommodation: Number(expenses.accommodation),
-            food: Number(expenses.food),
-            activities: Number(expenses.activities),
-            shopping: Number(expenses.shopping),
+            transport: Number(expenses?.transport ?? 0),
+            accommodation: Number(expenses?.accommodation ?? 0),
+            food: Number(expenses?.food ?? 0),
+            activities: Number(expenses?.activities ?? 0),
+            shopping: Number(expenses?.shopping ?? 0),
           },
         }),
       });
@@ -1103,10 +1104,78 @@ const TripBudget = () => {
       <MainLayout>
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <span className="text-5xl">😕</span>
-          <p className="text-xl font-bold text-slate-700">Trip Not Found</p>
-          <button onClick={() => navigate("/my-trips")} className="px-6 py-3 rounded-full text-white font-bold" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
-            Back to Trips
+          <p className="text-xl font-bold text-slate-700 dark:text-slate-200">Trip Not Found / No Budget Available</p>
+          <button onClick={() => navigate(id ? `/build-itinerary/${id}` : "/my-trips")} className="px-6 py-3 rounded-full text-white font-bold" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
+            Back to Trip
           </button>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  const isBookedPackage = trip?.type === "BOOKING" || trip?.tripType === "booked" || trip?.isBooked;
+
+  if (isBookedPackage) {
+    return (
+      <MainLayout>
+        <div className="px-4 pt-4 pb-24 max-w-4xl mx-auto space-y-6">
+          <PageHeader
+            title="Booking Financial Summary"
+            subtitle={`Purchased Package Details — ${trip.title || "Tour Package"}`}
+            backPath={`/build-itinerary/${id}`}
+          />
+
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-6">
+              <div>
+                <span className="px-3 py-1 rounded-full text-xs font-black bg-teal-500 text-white uppercase tracking-wider">
+                  🎫 Package Booking
+                </span>
+                <h2 className="text-2xl font-black text-slate-800 dark:text-white mt-2">
+                  {trip.title || "Booked Travel Package"}
+                </h2>
+                <p className="text-xs text-slate-500 font-semibold mt-1">
+                  Agency: {trip.agent?.companyName || trip.agency || "Traveloop Partner"}
+                </p>
+              </div>
+
+              <div className="text-left sm:text-right">
+                <span className="text-xs text-slate-400 font-bold block uppercase">Total Package Amount</span>
+                <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
+                  ₹{new Intl.NumberFormat("en-IN").format(trip.pricePaid || trip.budget || 0)}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 uppercase block mt-1 w-fit sm:ml-auto">
+                  Payment Paid
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-750 text-xs font-semibold space-y-2 text-slate-600 dark:text-slate-300">
+              <p>📌 Personal manual budget tracking is disabled for package bookings because your trip costs are included in the package price.</p>
+              <p>💬 Use <strong>Trip Group Chat</strong> for driver updates, tour coordinator announcements, and group discussions.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <button
+                onClick={() => navigate(`/booked-package/${id}`)}
+                className="py-3 px-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-extrabold text-xs flex items-center justify-center gap-2"
+              >
+                View Full Booking Details
+              </button>
+              <button
+                onClick={() => navigate(`/trip-chat/${id}`)}
+                className="py-3 px-4 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-xs flex items-center justify-center gap-2"
+              >
+                💬 Trip Group Chat
+              </button>
+              <button
+                onClick={() => navigate(`/build-itinerary/${id}`)}
+                className="py-3 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center justify-center gap-2"
+              >
+                Back to Itinerary
+              </button>
+            </div>
+          </div>
         </div>
       </MainLayout>
     );
@@ -1115,44 +1184,36 @@ const TripBudget = () => {
   return (
     <MainLayout>
       <div className="px-4 pt-4 pb-24">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate("/my-trips")}
-              className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center shadow-sm"
-            >
-              <ArrowLeft size={18} className="text-slate-600" />
-            </button>
-            <div>
-              <h2 className="text-xl font-extrabold text-slate-800 leading-tight flex items-center gap-1.5">
-                Trip Budget
-                {pendingSync && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-500 animate-pulse">
-                    Pending Sync
-                  </span>
-                )}
-              </h2>
-              <p className="text-slate-400 text-xs font-semibold">{trip.title} • {trip.destination}</p>
+        <PageHeader
+          title="Trip Budget & Expenses"
+          subtitle={`Manage budgets, track categories, and log expenses for ${trip?.title || "your trip"}`}
+          tripTitle={trip?.title}
+          tripId={id}
+          onBack={() => navigate(`/build-itinerary/${id}`)}
+          actions={
+            <div className="relative">
+              <select
+                value={selectedCurrency}
+                onChange={(e) => {
+                  setSelectedCurrency(e.target.value);
+                  fetchRates(e.target.value);
+                }}
+                className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none shadow-xs"
+              >
+                {["INR", "USD", "EUR", "GBP", "JPY", "SGD", "THB", "AED", "CHF", "IDR"].map(cur => (
+                  <option key={cur} value={cur}>{cur}</option>
+                ))}
+              </select>
             </div>
-          </div>
-          
-          {/* Currency Dropdown */}
-          <div className="relative">
-            <select
-              value={selectedCurrency}
-              onChange={(e) => {
-                setSelectedCurrency(e.target.value);
-                fetchRates(e.target.value);
-              }}
-              className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-bold bg-white text-slate-700 outline-none shadow-xs"
-            >
-              {["INR", "USD", "EUR", "GBP", "JPY", "SGD", "THB", "AED", "CHF", "IDR"].map(cur => (
-                <option key={cur} value={cur}>{cur}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+          }
+          badge={
+            pendingSync ? (
+              <span className="px-2 py-1 rounded-full text-[10px] font-extrabold bg-amber-500/10 text-amber-500 animate-pulse">
+                Pending Sync
+              </span>
+            ) : null
+          }
+        />
 
         {/* Active Budget Selector and Action Buttons */}
         <div className="premium-card p-4 mb-5 space-y-3">

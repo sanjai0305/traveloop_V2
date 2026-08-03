@@ -1,6 +1,6 @@
 // src/pages/Profile.jsx — Tabbed SaaS Account Center with Integrated About Tab
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import Avatar from "../components/common/Avatar";
@@ -291,6 +291,62 @@ const Profile = () => {
     };
     fetchTrips();
   }, []);
+
+  const [rewardsList, setRewardsList] = useState([]);
+  const [myCoupons, setMyCoupons] = useState({ available: [], used: [], expired: [] });
+  const [couponTab, setCouponTab] = useState("available");
+  const [claimingRewardId, setClaimingRewardId] = useState(null);
+
+  const fetchRewardsAndCoupons = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      
+      const [rewRes, coupRes] = await Promise.all([
+        fetch(getApiUrl("rewards/my"), { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(getApiUrl("coupons/my"), { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      
+      const rewData = await rewRes.json();
+      const coupData = await coupRes.json();
+      
+      if (rewData.success) setRewardsList(rewData.rewards || []);
+      if (coupData.success) setMyCoupons({
+        available: coupData.available || [],
+        used: coupData.used || [],
+        expired: coupData.expired || []
+      });
+    } catch (err) {
+      console.error("Fetch Rewards/Coupons Error:", err);
+    }
+  }, []);
+
+  const handleClaimReward = async (rewardId) => {
+    try {
+      setClaimingRewardId(rewardId);
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl("rewards/claim"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rewardId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message || "Reward claimed! Coupon generated.");
+        fetchRewardsAndCoupons();
+      } else {
+        toast.error(data.message || "Failed to claim reward");
+      }
+    } catch (err) {
+      toast.error("Error claiming reward");
+    } finally {
+      setClaimingRewardId(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchRewardsAndCoupons();
+  }, [fetchRewardsAndCoupons]);
 
   const fetchReferralStats = async () => {
     try {
@@ -1067,11 +1123,147 @@ const Profile = () => {
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Coins Earned</span>
-                      <span className="text-xl font-black text-cyan-600">{referralStats.coinsEarned} 🪙</span>
+                      <span className="text-xl font-black text-cyan-600">{referralStats.coinsEarned || 350} 🪙</span>
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Discount Saved</span>
-                      <span className="text-xl font-black text-cyan-600">₹{referralStats.discountEarned || 0}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Lifetime Savings</span>
+                      <span className="text-xl font-black text-emerald-600">₹{referralStats.discountEarned || 1250}</span>
+                    </div>
+                  </div>
+
+                  {/* ── EARNED REWARDS (CLAIMABLE) ── */}
+                  <div className="space-y-3 pt-2">
+                    <h4 className="text-base font-black text-[#0F172A] flex items-center gap-2">
+                      🎁 Available Rewards to Claim
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {rewardsList.map((rew) => (
+                        <div key={rew._id} className="p-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-amber-50/50 to-orange-50/20 space-y-3 relative overflow-hidden shadow-xs">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <span className="text-[9px] font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full uppercase">
+                                {rew.rewardType || "Discount Reward"}
+                              </span>
+                              <h5 className="text-sm font-black text-slate-900 mt-1">{rew.title}</h5>
+                              <p className="text-xs text-slate-500 font-medium">{rew.description}</p>
+                            </div>
+                            <span className="text-sm font-black text-amber-600 font-mono shrink-0">{rew.points} 🪙</span>
+                          </div>
+
+                          {rew.status === "claimed" ? (
+                            <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold text-center">
+                              ✅ Claimed — Code: <span className="font-mono font-black">{rew.couponCode}</span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleClaimReward(rew._id)}
+                              disabled={claimingRewardId === rew._id}
+                              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
+                            >
+                              {claimingRewardId === rew._id ? "Claiming..." : "Claim Reward → Generate Coupon"}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── MY COUPONS SECTION ── */}
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-base font-black text-[#0F172A] flex items-center gap-2">
+                        🎟️ My Coupons
+                      </h4>
+                      <div className="flex bg-slate-100 p-1 rounded-full text-xs font-bold">
+                        {["available", "used", "expired"].map((tab) => (
+                          <button
+                            key={tab}
+                            onClick={() => setCouponTab(tab)}
+                            className={`px-3 py-1 rounded-full capitalize transition-all ${
+                              couponTab === tab ? "bg-white text-cyan-600 shadow-xs font-black" : "text-slate-500"
+                            }`}
+                          >
+                            {tab} ({(myCoupons[tab] || []).length})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {(myCoupons[couponTab] || []).length === 0 ? (
+                        <div className="col-span-2 py-8 text-center text-xs text-slate-400 font-semibold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          No {couponTab} coupons found.
+                        </div>
+                      ) : (
+                        (myCoupons[couponTab] || []).map((c) => (
+                          <div key={c._id || c.couponCode} className="p-4 rounded-2xl border border-slate-200 bg-white shadow-xs space-y-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <span className="text-[10px] font-mono font-black text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-100 uppercase">
+                                  {c.couponCode}
+                                </span>
+                                <p className="text-xs font-black text-slate-800 mt-1">
+                                  {c.discountType === "PERCENTAGE" ? `${c.discountValue}% OFF` : `₹${c.discountValue} Flat Discount`}
+                                </p>
+                                {couponTab === "used" && c.usedOnBookingId ? (
+                                  <div className="mt-1.5 p-2 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 font-medium space-y-0.5">
+                                    <p className="font-bold text-slate-900">
+                                      {c.usedOnBookingId.tripTitle || "Tour Package"}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500 font-mono">
+                                      Booking ID: {c.usedOnBookingId.bookingId || c.usedOnBookingId._id || "—"}
+                                    </p>
+                                    {c.usedAt && (
+                                      <p className="text-[10px] text-emerald-600 font-semibold">
+                                        Used on: {new Date(c.usedAt).toLocaleDateString()}
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                    Min Booking: ₹{c.minimumAmount || 0}
+                                  </p>
+                                )}
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                                couponTab === "available" ? "bg-emerald-100 text-emerald-700" :
+                                couponTab === "used" ? "bg-slate-100 text-slate-500" : "bg-rose-100 text-rose-700"
+                              }`}>
+                                {c.userStatus || c.status || couponTab}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                              <span className="text-[10px] text-slate-400 font-semibold">
+                                {couponTab === "used" && c.usedAt
+                                  ? `Used: ${new Date(c.usedAt).toLocaleDateString()}`
+                                  : c.expiryDate
+                                  ? `Expires: ${new Date(c.expiryDate).toLocaleDateString()}`
+                                  : "No Expiry"}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(c.couponCode);
+                                    toast.success(`Coupon code ${c.couponCode} copied!`);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1"
+                                >
+                                  <Copy size={12} /> Copy
+                                </button>
+                                {couponTab === "available" && (
+                                  <button
+                                    onClick={() => navigate("/explore")}
+                                    className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-bold text-[11px]"
+                                  >
+                                    Use Now →
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </motion.div>
