@@ -1105,8 +1105,8 @@ const TripBudget = () => {
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <span className="text-5xl">😕</span>
           <p className="text-xl font-bold text-slate-700">Trip Not Found</p>
-          <button onClick={() => navigate("/my-trips")} className="px-6 py-3 rounded-full text-white font-bold" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
-            Back to Trips
+          <button onClick={() => navigate(id ? `/build-itinerary/${id}` : "/my-trips")} className="px-6 py-3 rounded-full text-white font-bold" style={{ background: "linear-gradient(135deg, #14B8B5, #0D9488)" }}>
+            Back to Trip
           </button>
         </div>
       </MainLayout>
@@ -1121,6 +1121,7 @@ const TripBudget = () => {
           subtitle={`Manage budgets, track categories, and log expenses for ${trip?.title || "your trip"}`}
           tripTitle={trip?.title}
           tripId={id}
+          onBack={() => navigate(`/build-itinerary/${id}`)}
           actions={
             <div className="relative">
               <select

@@ -35,7 +35,7 @@ const NOTE_THEMES = [
   { bg: "bg-emerald-50 dark:bg-emerald-950/20", border: "border-emerald-200 dark:border-emerald-800/40", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" },
 ];
 
-const NoteCard = ({ note, index, onPin, onDelete, onEdit, isViewer }) => {
+const NoteCard = ({ note, index, onPin, onDelete, onView, onEdit, isViewer }) => {
   const theme = NOTE_THEMES[index % NOTE_THEMES.length];
   
   return (
@@ -46,7 +46,7 @@ const NoteCard = ({ note, index, onPin, onDelete, onEdit, isViewer }) => {
       transition={{ delay: index * 0.04 }}
       whileHover={{ y: -4 }}
       className={`rounded-2xl p-5 border relative cursor-pointer group shadow-sm hover:shadow-xl transition-all duration-300 ${theme.bg} ${theme.border}`}
-      onClick={() => onEdit(note)}
+      onClick={() => onView(note)}
     >
       {/* Color Accent Indicator */}
       <div className={`absolute top-4 left-4 w-3 h-3 rounded-full ${theme.dot}`} />
@@ -98,6 +98,16 @@ const NoteCard = ({ note, index, onPin, onDelete, onEdit, isViewer }) => {
           <button
             onClick={(e) => {
               e.stopPropagation();
+              onEdit(note);
+            }}
+            className="w-7 h-7 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:scale-110 active:scale-90 transition-transform shadow-xs text-teal-600"
+            title="Edit Note"
+          >
+            <Edit3 size={12} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
               onDelete(note._id);
             }}
             className="w-7 h-7 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:scale-110 active:scale-90 transition-transform shadow-xs text-rose-500"
@@ -112,7 +122,8 @@ const NoteCard = ({ note, index, onPin, onDelete, onEdit, isViewer }) => {
 };
 
 const TripNotes = () => {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params.tripId || params.id;
   const navigate = useNavigate();
   const { isDark } = useTheme();
 
@@ -126,34 +137,9 @@ const TripNotes = () => {
   const [viewMode, setViewMode] = useState("grid"); // grid | journal
   const [filterDay, setFilterDay] = useState("all"); // all | general | [dayNumber]
 
-  // Add/Edit states
-  const [showSheet, setShowSheet] = useState(false);
+  // UI states
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState(null);
-  const [noteForm, setNoteForm] = useState({
-    title: "",
-    content: "",
-    type: "trip",
-    day: 1,
-    pinned: false,
-    tagInput: "",
-    tags: []
-  });
-  const [saving, setSaving] = useState(false);
   const isViewer = trip?.role === "viewer";
-
-  // Auto handle back overlay
-  useEffect(() => {
-    if (!showSheet) return;
-    const handleHardwareBack = (e) => {
-      e.preventDefault();
-      setShowSheet(false);
-    };
-    window.addEventListener("hardwareBack", handleHardwareBack);
-    return () => {
-      window.removeEventListener("hardwareBack", handleHardwareBack);
-    };
-  }, [showSheet]);
 
   useEffect(() => {
     let unsubscribe = null;
@@ -287,6 +273,11 @@ const TripNotes = () => {
     return groups;
   }, [filtered]);
 
+  // ── NAVIGATE HELPERS (no modals) ───────────────────────────────────────
+  const handleNewNote    = ()     => navigate(`/trip-notes/${id}/new`);
+  const handleViewNote   = (note) => navigate(`/trip-notes/${id}/${note._id || note.id}`);
+  const handleEditNote   = (note) => navigate(`/trip-notes/${id}/${note._id || note.id}/edit`);
+
   // Handlers
   const handlePinNote = async (noteId, pinState) => {
     try {
@@ -304,71 +295,6 @@ const TripNotes = () => {
       await deleteDoc(noteDocRef);
     } catch (err) {
       console.error("Failed to delete note:", err);
-    }
-  };
-
-  const handleOpenAddSheet = () => {
-    setEditingNote(null);
-    setNoteForm({
-      title: "",
-      content: "",
-      type: "trip",
-      day: 1,
-      pinned: false,
-      tagInput: "",
-      tags: []
-    });
-    setShowSheet(true);
-  };
-
-  const handleOpenCreateSheet = handleOpenAddSheet;
-
-  const handleOpenEditSheet = (note) => {
-    setEditingNote(note);
-    setNoteForm({
-      title: note.title || "",
-      content: note.content || "",
-      type: note.type || "trip",
-      day: note.day || 1,
-      pinned: note.pinned || false,
-      tagInput: "",
-      tags: note.tags || []
-    });
-    setShowSheet(true);
-  };
-
-  const handleSaveNote = async () => {
-    if (!noteForm.title.trim() || !noteForm.content.trim()) return;
-
-    try {
-      setSaving(true);
-      const notesColRef = collection(db, "trips", id, "notes");
-      const body = {
-        title: noteForm.title,
-        content: noteForm.content,
-        type: noteForm.type,
-        day: noteForm.type === "day" ? Number(noteForm.day) : null,
-        pinned: noteForm.pinned,
-        tags: noteForm.tags,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (editingNote) {
-        const noteDocRef = doc(db, "trips", id, "notes", editingNote._id);
-        await updateDoc(noteDocRef, body);
-      } else {
-        const noteDocRef = doc(notesColRef);
-        await setDoc(noteDocRef, {
-          ...body,
-          createdAt: serverTimestamp(),
-        });
-      }
-      setShowSheet(false);
-    } catch (err) {
-      console.error("Error saving note:", err);
-      alert("Error saving note");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -462,7 +388,7 @@ const TripNotes = () => {
               actions={
                 !isViewer && (
                   <button
-                    onClick={handleOpenAddSheet}
+                    onClick={handleNewNote}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold text-xs shadow-md hover:scale-105 active:scale-95 transition-all"
                   >
                     <Plus size={16} /> New Note
@@ -633,7 +559,7 @@ const TripNotes = () => {
                   {!isViewer && (
                     <div className="flex items-center justify-center gap-3 pt-2">
                       <button
-                        onClick={handleOpenAddSheet}
+                        onClick={handleNewNote}
                         className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold text-xs px-6 py-3 rounded-full hover:scale-105 active:scale-95 shadow-lg shadow-teal-500/30 transition-all flex items-center gap-2"
                       >
                         <Plus size={16} /> Add First Note
@@ -668,7 +594,8 @@ const TripNotes = () => {
                         index={i}
                         onPin={handlePinNote}
                         onDelete={handleDeleteNote}
-                        onEdit={handleOpenEditSheet}
+                        onView={handleViewNote}
+                        onEdit={handleEditNote}
                         isViewer={isViewer}
                       />
                     ))}
@@ -692,7 +619,7 @@ const TripNotes = () => {
                         {journalGroups[dayGroup].map((note) => (
                           <div
                             key={note._id}
-                            onClick={() => handleOpenEditSheet(note)}
+                            onClick={() => handleViewNote(note)}
                             className="p-5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/60 hover:border-teal-500 transition-colors cursor-pointer relative group shadow-xs"
                           >
                             <div className="pr-12 space-y-1.5">
@@ -719,6 +646,12 @@ const TripNotes = () => {
                                   className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 hover:text-violet-500"
                                 >
                                   <Pin size={12} className={note.pinned ? "text-violet-500 fill-violet-500" : ""} />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleEditNote(note); }}
+                                  className="w-7 h-7 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-teal-600"
+                                >
+                                  <Edit3 size={12} />
                                 </button>
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleDeleteNote(note._id); }}
@@ -838,7 +771,7 @@ const TripNotes = () => {
           </div>
         </main>
 
-        {/* ── 3. DESKTOP FIXED ACTION PANEL (Replacing Android FAB) ── */}
+        {/* ── 3. DESKTOP FIXED ACTION PANEL ── */}
         {!isViewer && (
           <div className="fixed bottom-8 right-8 z-40 flex flex-col items-end gap-3">
             <AnimatePresence>
@@ -850,7 +783,7 @@ const TripNotes = () => {
                   className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 shadow-2xl space-y-1 w-44"
                 >
                   <button
-                    onClick={() => { setActionMenuOpen(false); handleOpenAddSheet(); }}
+                    onClick={() => { setActionMenuOpen(false); handleNewNote(); }}
                     className="w-full px-3 py-2 rounded-xl hover:bg-teal-50 dark:hover:bg-teal-950/40 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-teal-600 flex items-center gap-2 transition-colors"
                   >
                     <Plus size={14} className="text-teal-500" /> New Note
@@ -881,7 +814,7 @@ const TripNotes = () => {
               </button>
 
               <button
-                onClick={handleOpenAddSheet}
+                onClick={handleNewNote}
                 className="bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold text-sm px-6 py-3.5 rounded-full hover:scale-105 active:scale-95 shadow-xl shadow-teal-500/30 transition-all flex items-center gap-2"
               >
                 <Plus size={18} /> <span>New Note</span>
@@ -890,169 +823,7 @@ const TripNotes = () => {
           </div>
         )}
 
-        {/* ── 4. ADD/EDIT NOTE MODAL / DIALOG ──────────────────── */}
-        <AnimatePresence>
-          {showSheet && (
-            <>
-              {/* Backdrop */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowSheet(false)}
-                className="fixed inset-0 z-[998] bg-black/60 backdrop-blur-sm"
-              />
-              {/* Modal Container */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                transition={{ type: "spring", stiffness: 300, damping: 28 }}
-                className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[999] w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto"
-              >
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-5">
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    <Edit3 size={18} className="text-teal-500" />
-                    <span>{editingNote ? "Edit Note" : "Create New Note"}</span>
-                  </h3>
-                  <button
-                    onClick={() => setShowSheet(false)}
-                    className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center transition-colors"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Title */}
-                  <div>
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Title</label>
-                    <input
-                      type="text"
-                      value={noteForm.title}
-                      onChange={e => setNoteForm(p => ({ ...p, title: e.target.value }))}
-                      placeholder="E.g. Flight details, Hotel reservation, Packing ideas..."
-                      className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-teal-500 transition-colors"
-                      disabled={isViewer}
-                    />
-                  </div>
-
-                  {/* Type & Day Select */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Type</label>
-                      <select
-                        value={noteForm.type}
-                        onChange={e => setNoteForm(p => ({ ...p, type: e.target.value }))}
-                        className="w-full px-3 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500"
-                        disabled={isViewer}
-                      >
-                        <option value="trip">General Info</option>
-                        <option value="day">Day Specific</option>
-                      </select>
-                    </div>
-
-                    {noteForm.type === "day" && (
-                      <div>
-                        <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Assign to Day</label>
-                        <select
-                          value={noteForm.day}
-                          onChange={e => setNoteForm(p => ({ ...p, day: e.target.value }))}
-                          className="w-full px-3 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500"
-                          disabled={isViewer}
-                        >
-                          {Array.from({ length: daysCount }, (_, i) => i + 1).map(d => (
-                            <option key={d} value={d}>Day {d}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div>
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Note Content</label>
-                    <textarea
-                      value={noteForm.content}
-                      onChange={e => setNoteForm(p => ({ ...p, content: e.target.value }))}
-                      placeholder="Write your thoughts, memory details, or instructions..."
-                      rows={5}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-teal-500 transition-colors resize-none leading-relaxed"
-                      disabled={isViewer}
-                    />
-                  </div>
-
-                  {/* Tags Input */}
-                  <div>
-                    <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Tags</label>
-                    {!isViewer && (
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={noteForm.tagInput}
-                          onChange={e => setNoteForm(p => ({ ...p, tagInput: e.target.value }))}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(); } }}
-                          placeholder="Add tag (e.g. hotel, food, flight)"
-                          className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-white outline-none focus:border-teal-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddTag}
-                          className="px-4 rounded-xl bg-teal-500 text-white text-xs font-bold hover:bg-teal-600 transition-colors"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    )}
-                    
-                    <div className="flex flex-wrap gap-1.5">
-                      {noteForm.tags.map(tag => (
-                        <span
-                          key={tag}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800 px-2.5 py-1 rounded-lg"
-                        >
-                          #{tag}
-                          {!isViewer && (
-                            <button type="button" onClick={() => handleRemoveTag(tag)} className="text-teal-400 hover:text-teal-600">
-                              <X size={10} />
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Pin Checkbox */}
-                  <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={noteForm.pinned}
-                      onChange={e => setNoteForm(p => ({ ...p, pinned: e.target.checked }))}
-                      className="w-4 h-4 accent-teal-500 rounded cursor-pointer"
-                      disabled={isViewer}
-                    />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <Pin size={14} className="text-violet-500 fill-violet-500" />
-                      Pin this note to the top
-                    </span>
-                  </label>
-
-                  {/* Save CTA */}
-                  {!isViewer && (
-                    <button
-                      type="button"
-                      onClick={handleSaveNote}
-                      disabled={!noteForm.title.trim() || !noteForm.content.trim() || saving}
-                      className="w-full py-3.5 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold text-xs shadow-lg shadow-teal-500/30 hover:scale-102 active:scale-98 transition-all disabled:opacity-50 mt-2"
-                    >
-                      {saving ? "Saving Changes..." : "Save Note"}
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
+        {/* Modal removed — Notes now open as full-page routes */}
 
       </div>
     </MainLayout>

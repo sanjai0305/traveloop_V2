@@ -3,49 +3,23 @@ import mongoose from "mongoose";
 import Booking from "../models/Booking.js";
 import Payment from "../models/Payment.js";
 import AgentTrip from "../models/AgentTrip.js";
-import { addSyncJob } from "../config/bullmq.js";
-import { setCache, getCache } from "./cacheService.js";
 import Passenger from "../models/Passenger.js";
 import SeatBooking from "../models/SeatBooking.js";
 
 export class PaymentService {
-  /** Create a payment lock on a booking in Redis to prevent double booking */
+  /** Create a payment lock on a booking */
   static async lockPayment(bookingId, ttlSeconds = 900) {
-    const lockKey = `booking:payment:${bookingId}`;
-    try {
-      // Set payment lock
-      await setCache(lockKey, "LOCKED", ttlSeconds);
-      console.log(`[Payment Lock] Set lock for booking ${bookingId}`);
-      return true;
-    } catch (err) {
-      console.error(`[Payment Lock Error] Failed to set lock for booking ${bookingId}:`, err.message);
-      return false;
-    }
+    return true;
   }
 
   /** Release payment lock after success or cancel */
   static async unlockPayment(bookingId) {
-    const lockKey = `booking:payment:${bookingId}`;
-    try {
-      // Check cacheService import for delCache
-      const { delCache } = await import("./cacheService.js");
-      await delCache(lockKey);
-      console.log(`[Payment Lock] Released lock for booking ${bookingId}`);
-    } catch (err) {
-      console.error(`[Payment Lock Error] Failed to release lock for booking ${bookingId}:`, err.message);
-    }
+    return;
   }
 
   /** Check if booking has an active payment lock */
   static async isPaymentLocked(bookingId) {
-    const lockKey = `booking:payment:${bookingId}`;
-    try {
-      const lock = await getCache(lockKey);
-      return lock === "LOCKED";
-    } catch (err) {
-      console.error(`[Payment Lock Error] Failed to verify lock for booking ${bookingId}:`, err.message);
-      return false;
-    }
+    return false;
   }
 
   /** Generate dynamic QR code link using open source API and UPI payment URI schemas */
@@ -60,17 +34,7 @@ export class PaymentService {
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiLink)}`;
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes expiry
 
-    // Save temporary transaction metadata to Redis for status polling verification
-    const txnMeta = {
-      bookingId,
-      amount,
-      tripId,
-      userId,
-      transactionId,
-      status: "PENDING",
-      expiresAt,
-    };
-    await setCache(`payment:qr:${bookingId}`, txnMeta, 600); // 10 minutes cache
+
 
     return {
       qrImage,
@@ -90,9 +54,7 @@ export class PaymentService {
     const trip = await AgentTrip.findById(booking.tripId);
     if (!trip) throw new Error("Trip not found");
 
-    // Clear seat lock
-    const { BookingLockService } = await import("./bookingLockService.js");
-    await BookingLockService.releaseSeats(booking.tripId, booking.seatNumbers);
+
 
     // Generate unique ticketId and verificationCode
     const randDigits = Math.floor(100000 + Math.random() * 900000).toString();
@@ -196,15 +158,7 @@ export class PaymentService {
     // Remove lock
     await this.unlockPayment(bookingId);
 
-    // Enqueue sync job to update Neo4j
-    await addSyncJob("BOOKING_SYNC", {
-      userId: booking.userId,
-      tripId: booking.tripId,
-      bookingId: booking.bookingId,
-      seatNumbers: booking.seatNumbers,
-      pricePaid: booking.pricePaid,
-      paymentStatus: "PAID",
-    });
+
 
     // Trigger PDF generation and confirmation email
     try {

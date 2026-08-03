@@ -28,7 +28,7 @@ export default function PageHeader({
 
   const defaultBreadcrumbs = breadcrumbs || [
     { label: "My Trips", href: "/my-trips" },
-    ...(tripTitle ? [{ label: tripTitle, href: tripId ? `/trip/${tripId}` : "/my-trips" }] : []),
+    ...(tripTitle ? [{ label: tripTitle, href: tripId ? `/build-itinerary/${tripId}` : "/my-trips" }] : []),
     { label: title }
   ];
 

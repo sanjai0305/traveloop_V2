@@ -1,4 +1,4 @@
-// src/components/myTrips/TripCardMenu.jsx
+// src/components/myTrips/TripCardMenu.jsx — Trip card context menu with working Edit navigation
 
 import React, {
   useState,
@@ -14,8 +14,12 @@ import {
   Share2,
 } from "lucide-react";
 
-const TripCardMenu = () => {
+import { useNavigate } from "react-router-dom";
+
+const TripCardMenu = ({ tripId, onDelete, onDuplicate, onShare }) => {
   
+  const navigate = useNavigate();
+
   // MENU STATE
   const [open, setOpen] =
     useState(false);
@@ -50,6 +54,28 @@ const TripCardMenu = () => {
       );
     };
   }, []);
+
+  const handleEdit = () => {
+    setOpen(false);
+    if (tripId) {
+      navigate(`/trips/${tripId}/edit`);
+    }
+  };
+
+  const handleDelete = () => {
+    setOpen(false);
+    if (onDelete) onDelete();
+  };
+
+  const handleDuplicate = () => {
+    setOpen(false);
+    if (onDuplicate) onDuplicate();
+  };
+
+  const handleShare = () => {
+    setOpen(false);
+    if (onShare) onShare();
+  };
 
   return (
     <div
@@ -86,6 +112,7 @@ const TripCardMenu = () => {
           duration-300
           
           hover:scale-110
+          cursor-pointer
         "
       >
         <MoreVertical
@@ -130,6 +157,7 @@ const TripCardMenu = () => {
             
             {/* EDIT */}
             <button
+              onClick={handleEdit}
               className="
                 w-full
                 
@@ -149,6 +177,7 @@ const TripCardMenu = () => {
                 
                 transition-all
                 duration-300
+                cursor-pointer
               "
             >
               
@@ -178,6 +207,7 @@ const TripCardMenu = () => {
 
             {/* DUPLICATE */}
             <button
+              onClick={handleDuplicate}
               className="
                 w-full
                 
@@ -197,6 +227,7 @@ const TripCardMenu = () => {
                 
                 transition-all
                 duration-300
+                cursor-pointer
               "
             >
               
@@ -226,6 +257,7 @@ const TripCardMenu = () => {
 
             {/* SHARE */}
             <button
+              onClick={handleShare}
               className="
                 w-full
                 
@@ -245,6 +277,7 @@ const TripCardMenu = () => {
                 
                 transition-all
                 duration-300
+                cursor-pointer
               "
             >
               
@@ -274,6 +307,7 @@ const TripCardMenu = () => {
 
             {/* DELETE */}
             <button
+              onClick={handleDelete}
               className="
                 w-full
                 
@@ -292,6 +326,7 @@ const TripCardMenu = () => {
                 
                 transition-all
                 duration-300
+                cursor-pointer
               "
             >
               

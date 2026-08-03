@@ -51,12 +51,7 @@ import referralRoutes from "./routes/referralRoutes.js";
 import passengerVerificationRoutes from "./routes/passengerVerificationRoutes.js";
 import legalRoutes from "./routes/legalRoutes.js";
 
-// Multi-Model Database Additions
 import healthRoutes from "./routes/healthRoutes.js";
-import recommendationRoutes from "./routes/recommendationRoutes.js";
-import { runConstraintsSetup } from "./utils/neo4jSetup.js";
-import { initNeo4jSyncWorker } from "./workers/neo4jSyncWorker.js";
-import { startMongoSyncPublisher } from "./workers/syncPublisher.js";
 import errorLogger from "./middleware/errorMiddleware.js";
 
 
@@ -264,7 +259,6 @@ app.use(globalLimiter);
 ------------------------------ */
 
 app.use("/api/health", healthRoutes);
-app.use("/api/recommendations", recommendationRoutes);
 
 app.get("/", (req, res) => {
   res.json({
@@ -369,15 +363,7 @@ app.use(errorLogger);
 
 await connectDB();
 
-// Initialize graph constraints, background sync workers & change streams on boot
-try {
-  await runConstraintsSetup();
-  initNeo4jSyncWorker();
-  startMongoSyncPublisher();
-  console.log("✅ Neo4j and Redis synchronization pipelines initialized.");
-} catch (infraErr) {
-  console.warn("⚠️ Warning: Synchronization pipeline initialization failed:", infraErr.message);
-}
+
 
 if (!process.env.JWT_SECRET) {
   throw new Error("FATAL: JWT_SECRET environment variable is missing!");
@@ -432,9 +418,7 @@ if (process.env.NODE_ENV === "production") {
   startServer(port);
 }
 
-// ─── UNHANDLED REJECTION & GRACEFUL SHUTDOWN HANDLERS ─────────────────────────
-import { closeNeo4jDriver } from "./config/neo4j.js";
-import { closeRedisConnection } from "./config/redis.js";
+
 
 process.on("unhandledRejection", (reason, promise) => {
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
@@ -452,8 +436,6 @@ const gracefulShutdown = async (signal) => {
     try {
       await mongoose.connection.close();
       console.log("[Mongo] Connection closed.");
-      await closeNeo4jDriver();
-      await closeRedisConnection();
       console.log("[Server] Graceful shutdown completed successfully.");
       process.exit(0);
     } catch (err) {

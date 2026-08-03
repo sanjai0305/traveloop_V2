@@ -15,6 +15,7 @@ import {
   X,
   Lock,
   Wallet,
+  Scale,
 } from "lucide-react";
 import { useAuthStore } from "../store/authStore";
 import { BreadcrumbNav, BackButton } from "@shared-ui/components";
@@ -61,6 +62,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     { label: "Wallet", path: "/wallet", icon: Wallet },
     { label: "Profile", path: "/profile", icon: User },
     { label: "Settings", path: "/settings", icon: Settings },
+    { label: "Legal Center", path: "/legal", icon: Scale },
   ];
 
   // While restoring session, show a spinner (ProtectedRoute handles the redirect)

@@ -11,6 +11,7 @@ import { CompleteProfile } from "./pages/CompleteProfile";
 import { Wallet } from "./pages/Wallet";
 import { ScheduleVerification } from "./pages/ScheduleVerification";
 import LegalConsent from "./pages/LegalConsent";
+import LegalCenter from "./pages/LegalCenter";
 import { MainLayout } from "./components/layout";
 import { ProtectedRoute } from "./features/auth/components/ProtectedRoute";
 import { useAuthStore } from "./store/authStore";
@@ -160,6 +161,37 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <LegalConsent />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/legal"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <LegalCenter />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/terms"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <LegalCenter />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/privacy"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <LegalCenter />
+                </MainLayout>
               </ProtectedRoute>
             }
           />

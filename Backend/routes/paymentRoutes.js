@@ -15,7 +15,6 @@ import Passenger from "../models/Passenger.js";
 import SeatBooking from "../models/SeatBooking.js";
 import protectAgent from "../middleware/agentAuthMiddleware.js";
 import AgentSettings from "../models/AgentSettings.js";
-import redisClient from "../config/redis.js";
 
 const router = express.Router();
 
@@ -259,11 +258,7 @@ const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) =>
       }
     );
 
-    // 3. Clear Redis lock
-    if (redisClient) {
-      const key = `seat_lock:${tripId}:${seatNumber}`;
-      await redisClient.del(key);
-    }
+
 
     // 4. Emit live seat update
     if (io) {
@@ -927,9 +922,7 @@ router.post("/webhook", async (req, res) => {
             { tripId: booking.tripId, seatNumber },
             { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
           );
-          if (redisClient) {
-            await redisClient.del(`seat_lock:${booking.tripId}:${seatNumber}`);
-          }
+
 
           const io = req.app.get("io");
           if (io) {

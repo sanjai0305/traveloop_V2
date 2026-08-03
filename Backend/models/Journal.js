@@ -28,7 +28,7 @@ const journalSchema = new mongoose.Schema(
       default: "",
     },
     photos: {
-      type: [String],
+      type: mongoose.Schema.Types.Mixed,
       default: [],
     },
     mood: {

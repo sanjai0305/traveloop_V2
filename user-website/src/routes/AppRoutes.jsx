@@ -15,6 +15,8 @@ import Register from "../pages/Register";
 import VerifyEmail from "../pages/VerifyEmail";
 import LegalConsent from "../pages/LegalConsent";
 
+import VerifyPhone from "../pages/VerifyPhone";
+
 // LAZY LOADED PAGES
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const MyTrips = lazy(() => import("../pages/MyTrips"));
@@ -39,6 +41,13 @@ const About = lazy(() => import("../pages/About"));
 const BookedPackageDetail = lazy(() => import("../pages/BookedPackageDetail"));
 const DriverPortal = lazy(() => import("../pages/DriverPortal"));
 const BookingSuccess = lazy(() => import("../pages/BookingSuccess"));
+const TripCollaborationPage = lazy(() => import("../pages/TripCollaborationPage"));
+const TripFlightsPage = lazy(() => import("../pages/TripFlightsPage"));
+const TripChatPage = lazy(() => import("../pages/TripChatPage"));
+const TripAiAssistantPage = lazy(() => import("../pages/TripAiAssistantPage"));
+const EditTrip = lazy(() => import("../pages/EditTrip"));
+const NoteEditor = lazy(() => import("../pages/NoteEditor"));
+const NoteView = lazy(() => import("../pages/NoteView"));
 
 // PROTECTED ROUTE
 import ProtectedRoute from "./ProtectedRoute";
@@ -86,6 +95,16 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <LegalConsent />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* VERIFY PHONE */}
+          <Route
+            path="/verify-phone"
+            element={
+              <ProtectedRoute>
+                <VerifyPhone />
               </ProtectedRoute>
             }
           />
@@ -142,6 +161,38 @@ const AppRoutes = () => {
 
           {/* TRIP NOTES */}
           <Route
+            path="/trip-notes/:tripId/new"
+            element={
+              <ProtectedRoute>
+                <NoteEditor />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trip-notes/:tripId/:noteId/edit"
+            element={
+              <ProtectedRoute>
+                <NoteEditor />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trip-notes/:tripId/:noteId"
+            element={
+              <ProtectedRoute>
+                <NoteView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trip-notes/:tripId"
+            element={
+              <ProtectedRoute>
+                <TripNotes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/trip-notes/:id"
             element={
               <ProtectedRoute>
@@ -166,6 +217,56 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <TripDetails />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TRIP COLLABORATION PAGE */}
+          <Route
+            path="/trips/:tripId/collaboration"
+            element={
+              <ProtectedRoute>
+                <TripCollaborationPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TRIP FLIGHTS PAGE */}
+          <Route
+            path="/trips/:tripId/flights"
+            element={
+              <ProtectedRoute>
+                <TripFlightsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TRIP CHAT PAGE */}
+          <Route
+            path="/trips/:tripId/chat"
+            element={
+              <ProtectedRoute>
+                <TripChatPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* EDIT TRIP PAGE */}
+          <Route
+            path="/trips/:tripId/edit"
+            element={
+              <ProtectedRoute>
+                <EditTrip />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* TRIP AI ASSISTANT PAGE */}
+          <Route
+            path="/trips/:tripId/assistant"
+            element={
+              <ProtectedRoute>
+                <TripAiAssistantPage />
               </ProtectedRoute>
             }
           />

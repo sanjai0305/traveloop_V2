@@ -11,7 +11,6 @@ import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
 import Passenger from "../models/Passenger.js";
 import SeatBooking from "../models/SeatBooking.js";
-import redisClient from "../config/redis.js";
 
 const generateBookingId = () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -812,11 +811,7 @@ router.post("/confirm", protect, async (req, res) => {
         }
       );
 
-      // 3. Clear Redis lock if it exists
-      if (redisClient) {
-        const key = `seat_lock:${tripId}:${seatNumber}`;
-        await redisClient.del(key);
-      }
+
 
       // 4. Emit live seat update
       const io = req.app.get("io");
@@ -1088,22 +1083,6 @@ router.post("/create-order", protect, async (req, res) => {
           // Rollback previous locks
           for (const sNum of locksAcquired) {
             await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
-            if (redisClient && redisClient.status === "ready") await redisClient.del(`seat_lock:${tripId}:${sNum}`);
-          }
-          return res.status(409).json({
-            success: false,
-            message: `Seat ${seatNumber} is temporarily reserved by another traveler.`
-          });
-        }
-      }
-
-      if (redisClient && redisClient.status === "ready") {
-        const key = `seat_lock:${tripId}:${seatNumber}`;
-        const lockAcquired = await redisClient.set(key, String(userId), "EX", SEAT_LOCK_TTL, "NX");
-        if (lockAcquired !== "OK" && !(seatDoc && String(seatDoc.reservedByUserId) === String(userId))) {
-          for (const sNum of locksAcquired) {
-            await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
-            await redisClient.del(`seat_lock:${tripId}:${sNum}`);
           }
           return res.status(409).json({
             success: false,
@@ -1387,9 +1366,7 @@ router.post("/cancel", protect, async (req, res) => {
         { tripId: booking.tripId, seatNumber },
         { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
       );
-      if (redisClient) {
-        await redisClient.del(`seat_lock:${booking.tripId}:${seatNumber}`);
-      }
+
       const io = req.app.get("io");
       if (io) {
         io.to(`trip_${booking.tripId}`).emit("seat_update", {

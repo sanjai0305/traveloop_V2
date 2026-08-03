@@ -97,7 +97,7 @@ async function run() {
     firstName: "Friend",
     lastName: "User",
     email: "invitee@test.com",
-    phone: "9876543211",
+    phone: "1234567890",
     password: "Password123!",
     referredBy: inviter.referralCode,
   });
@@ -158,7 +158,7 @@ async function run() {
     bookingStatus: "confirmed",
     paymentVerified: true,
     pickupLocation: "Goa Airport",
-    contactNumber: "9876543211",
+    contactNumber: "1234567890",
     couponCode: updatedInvitee.couponCode,
   };
 

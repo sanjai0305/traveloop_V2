@@ -73,23 +73,27 @@ export const usePublishedTrips = () => {
       setData(prev => (prev ? prev.filter(t => t._id !== deletedId) : []));
     };
 
-    const handleTripPublished = (tripId) => {
-      console.log("[usePublishedTrips] Live trip_published event:", tripId);
+    const handleTripPublished = (eventData) => {
+      console.log("[usePublishedTrips] Live trip published event:", eventData);
       fetchTrips(true);
     };
 
-    const handleTripUpdated = (tripId) => {
-      console.log("[usePublishedTrips] Live trip_updated event:", tripId);
+    const handleTripUpdated = (eventData) => {
+      console.log("[usePublishedTrips] Live trip updated event:", eventData);
       fetchTrips(true);
     };
 
     socket.on("trip_deleted", handleTripDeleted);
     socket.on("trip_published", handleTripPublished);
+    socket.on("trip:published", handleTripPublished);
+    socket.on("trip_approved", handleTripPublished);
     socket.on("trip_updated", handleTripUpdated);
 
     return () => {
       socket.off("trip_deleted", handleTripDeleted);
       socket.off("trip_published", handleTripPublished);
+      socket.off("trip:published", handleTripPublished);
+      socket.off("trip_approved", handleTripPublished);
       socket.off("trip_updated", handleTripUpdated);
     };
   }, [fetchTrips]);

@@ -1,4 +1,5 @@
-// src/components/mobile/BottomSheet.jsx
+// src/components/mobile/BottomSheet.jsx — Fully Responsive Bottom Sheet & Centered Modal System
+
 import React, { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
@@ -7,21 +8,25 @@ const BottomSheet = ({
   onClose,
   title,
   children,
-  snapPoints = ["80vh"],
+  snapPoints = ["85vh"],
   showHandle = true,
   contentPadding = "px-6 py-5",
 }) => {
   const sheetRef = useRef(null);
   const startYRef = useRef(null);
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 768);
+      setWindowWidth(window.innerWidth);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+  const isDesktop = windowWidth >= 1024;
 
   // Lock body scroll & ESC key listener when open
   useEffect(() => {
@@ -40,7 +45,7 @@ const BottomSheet = ({
     };
   }, [isOpen, onClose]);
 
-  // Handle hardware back event
+  // Handle hardware back event for Android
   useEffect(() => {
     if (!isOpen) return;
     const handleHardwareBack = (e) => {
@@ -53,14 +58,14 @@ const BottomSheet = ({
     };
   }, [isOpen, onClose]);
 
-  // Simple drag-to-dismiss for mobile
+  // Touch drag-to-dismiss for mobile
   const handleTouchStart = (e) => {
-    if (isDesktop) return;
+    if (!isMobile) return;
     startYRef.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e) => {
-    if (isDesktop || startYRef.current === null) return;
+    if (!isMobile || startYRef.current === null) return;
     const deltaY = e.changedTouches[0].clientY - startYRef.current;
     if (deltaY > 80) {
       onClose();
@@ -72,63 +77,66 @@ const BottomSheet = ({
 
   return (
     <>
-      {/* OVERLAY / BACKDROP */}
+      {/* 1. OVERLAY / BACKDROP (Covers entire screen with blur & dark tint) */}
       <div
-        className="fixed inset-0 z-[998] bg-black/60 backdrop-blur-xs transition-opacity duration-300 animate-fade-in"
+        className="fixed inset-0 z-[998] bg-black/60 backdrop-blur-md transition-opacity duration-300 animate-fade-in"
         onClick={onClose}
       />
 
-      {/* RESPONSIVE CONTAINER (DesktopModal on Desktop, Bottom Sheet on Mobile) */}
-      <div
-        ref={sheetRef}
-        className={`fixed z-[999] bg-white dark:bg-slate-900 shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 transition-all duration-300 ${
-          isDesktop
-            ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[20px] sm:rounded-3xl w-[95vw] sm:w-[90vw] lg:w-[min(1000px,90vw)] max-w-[1000px] max-h-[90vh] flex flex-col animate-scale-in"
-            : "bottom-0 left-0 right-0 rounded-t-[28px] w-full max-w-[480px] mx-auto animate-slide-up-sheet"
-        }`}
-        style={
-          isDesktop
-            ? {}
-            : {
-                maxHeight: snapPoints[0],
-                paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
-              }
-        }
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
-        {/* MOBILE DRAG HANDLE */}
-        {showHandle && !isDesktop && (
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
-          </div>
-        )}
-
-        {/* HEADER */}
-        {title && (
-          <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
-            <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-150">
-              {title}
-            </h2>
-            <button
-              onClick={onClose}
-              className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 active:scale-95 transition-all"
-              aria-label="Close dialog"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-
-        {/* CONTENT */}
+      {/* 2. FLEXBOX CENTERING CONTAINER (Guarantees zero off-screen displacement) */}
+      <div className="fixed inset-0 z-[999] flex items-end md:items-center justify-center p-0 md:p-6 pointer-events-none">
+        
+        {/* 3. RESPONSIVE MODAL PANEL */}
         <div
-          className={`overflow-y-auto ${contentPadding}`}
-          style={{
-            maxHeight: isDesktop ? "calc(85vh - 70px)" : `calc(${snapPoints[0]} - 80px)`,
-          }}
+          ref={sheetRef}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className={`pointer-events-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden shadow-[0_25px_70px_rgba(15,23,42,0.22)] transition-all duration-300 ${
+            isMobile
+              ? "w-full rounded-t-[24px] max-h-[85vh] animate-slide-up-sheet"
+              : isTablet
+              ? "w-[90vw] max-w-[600px] max-h-[85vh] rounded-[24px] animate-scale-in"
+              : "w-[min(720px,90vw)] max-w-[720px] max-h-[80vh] rounded-[24px] animate-scale-in"
+          }`}
+          style={
+            isMobile
+              ? {
+                  paddingBottom: "max(env(safe-area-inset-bottom), 16px)",
+                }
+              : {}
+          }
         >
-          {children}
+          {/* MOBILE DRAG HANDLE */}
+          {showHandle && isMobile && (
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
+            </div>
+          )}
+
+          {/* HEADER BAR */}
+          {title && (
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/20 shrink-0">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white truncate">
+                {title}
+              </h2>
+              <button
+                onClick={onClose}
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 active:scale-95 transition-all cursor-pointer shrink-0"
+                aria-label="Close dialog"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* INTERNAL SCROLLABLE CONTENT AREA */}
+          <div
+            className={`flex-1 overflow-y-auto ${contentPadding}`}
+          >
+            {children}
+          </div>
         </div>
+
       </div>
     </>
   );

@@ -119,14 +119,7 @@ const agentSchema = new mongoose.Schema(
       enum: ["PENDING", "EMAIL_VERIFIED", "MOBILE_VERIFIED", "KYC_COMPLETED", "APPROVED"],
       default: "PENDING",
     },
-    emailOtp: {
-      type: String,
-      default: "",
-    },
-    emailOtpExpiry: {
-      type: Date,
-      default: null,
-    },
+
     mobileOtp: {
       type: String,
       default: "",
@@ -157,7 +150,6 @@ const agentSchema = new mongoose.Schema(
     // ── Agent Referral System ────────────────────────────────────────────────
     referralCode: {
       type: String,
-      default: "",
       unique: true,
       sparse: true,
     },
@@ -191,6 +183,28 @@ const agentSchema = new mongoose.Schema(
     termsVersion: {
       type: String,
       default: "",
+    },
+
+    // ── Onboarding State Machine Fields ──────────────────────────────────────
+    currentStep: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 5,
+    },
+    completedSteps: {
+      type: [Number],
+      default: [],
+    },
+    profileCompletion: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    onboardingComplete: {
+      type: Boolean,
+      default: false,
     },
   },
   {

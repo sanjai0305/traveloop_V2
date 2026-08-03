@@ -18,6 +18,7 @@ import Login from "../pages/Login";
 import Register from "../pages/Register";
 import VerifyEmail from "../pages/VerifyEmail";
 import LegalConsent from "../pages/LegalConsent";
+import VerifyPhone from "../pages/VerifyPhone";
 
 // LAZY LOADED PAGES
 const Dashboard = lazy(() => import("../pages/Dashboard"));
@@ -91,6 +92,16 @@ const AppRoutes = () => {
             element={
               <ProtectedRoute>
                 <LegalConsent />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* VERIFY PHONE */}
+          <Route
+            path="/verify-phone"
+            element={
+              <ProtectedRoute>
+                <VerifyPhone />
               </ProtectedRoute>
             }
           />

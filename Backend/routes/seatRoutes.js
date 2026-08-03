@@ -2,7 +2,7 @@
  * seatRoutes.js — Real-time Seat Reservation API
  *
  * GET    /api/seats/:tripId          → Full seat map with live status + passenger metadata
- * POST   /api/seats/reserve          → Lock seat in Redis (10 min TTL), set status=reserved
+ * POST   /api/seats/reserve          → Lock seat (10 min TTL), set status=reserved
  * POST   /api/seats/release          → Release seat lock (called on payment cancel / timeout)
  * POST   /api/seats/confirm          → Mark seat as booked after successful payment
  * GET    /api/seats/ticket/:bookingId → Return booking + per-passenger QR payloads
@@ -16,7 +16,6 @@ import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
 import SeatBooking from "../models/SeatBooking.js";
 import Passenger from "../models/Passenger.js";
-import redisClient from "../config/redis.js";
 
 const router = express.Router();
 
@@ -78,61 +77,9 @@ const ensureTripSeatsExist = async (tripId, totalSeats) => {
   }
 };
 
-// ─── REDIS SEAT LOCK HELPERS ──────────────────────────────────────────────────
+// ─── SEAT RESERVATION CONSTANTS ───────────────────────────────────────────────
 
 const SEAT_LOCK_TTL = 300; // 5 minutes in seconds
-
-const seatLockKey = (tripId, seatNumber) =>
-  `seat_lock:${tripId}:${seatNumber}`;
-
-/**
- * Acquire Redis lock for a seat.
- * Returns true if lock acquired, false if seat is already locked by someone else.
- */
-const acquireSeatLock = async (tripId, seatNumber, userId) => {
-  if (!redisClient || redisClient.status !== "ready") return true; // Graceful degradation if Redis is unavailable
-  const key = seatLockKey(tripId, seatNumber);
-
-  // Re-entrant lock check: if the current user already owns the lock, refresh TTL and succeed
-  const currentLockOwner = await redisClient.get(key);
-  if (currentLockOwner === String(userId)) {
-    await redisClient.set(key, String(userId), "EX", SEAT_LOCK_TTL);
-    return true;
-  }
-
-  // NX = only set if not exists, EX = expire in seconds
-  const result = await redisClient.set(
-    key,
-    String(userId),
-    "EX",
-    SEAT_LOCK_TTL,
-    "NX"
-  );
-  return result === "OK";
-};
-
-/**
- * Release Redis lock for a seat.
- * Only releases if the caller owns the lock (prevents accidental unlock by others).
- */
-const releaseSeatLock = async (tripId, seatNumber, userId) => {
-  if (!redisClient || redisClient.status !== "ready") return;
-  const key = seatLockKey(tripId, seatNumber);
-  const owner = await redisClient.get(key);
-  if (owner === String(userId)) {
-    await redisClient.del(key);
-  }
-};
-
-/**
- * Check if a Redis lock exists for a seat (regardless of owner).
- */
-const isSeatLocked = async (tripId, seatNumber) => {
-  if (!redisClient || redisClient.status !== "ready") return false;
-  const key = seatLockKey(tripId, seatNumber);
-  const val = await redisClient.get(key);
-  return val !== null;
-};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -176,8 +123,8 @@ router.get("/:tripId", protect, async (req, res) => {
     // Fetch all seat records
     const seats = await SeatBooking.find({ tripId }).lean();
 
-    // For each reserved seat, cross-check the Redis lock;
-    // if the lock has expired but MongoDB still shows "reserved", auto-heal to "available"
+    // For each reserved seat, check if the reservation has expired;
+    // if expired, auto-heal to "available"
     const now = new Date();
     const healPromises = [];
 
@@ -236,7 +183,7 @@ router.get("/:tripId", protect, async (req, res) => {
 /**
  * POST /api/seats/reserve
  * Temporarily reserve a seat during the booking flow.
- * Uses Redis NX lock + MongoDB status update.
+ * Uses MongoDB status update with TTL.
  *
  * Body: { tripId, seatNumber }
  */
@@ -259,11 +206,10 @@ router.post("/reserve", protect, async (req, res) => {
       return res.status(409).json({ success: false, message: "Seat is already booked" });
     }
 
-    // Already reserved by someone else — check Redis lock
+    // Already reserved by someone else — check expiry
     if (seat.status === "reserved") {
-      const locked = await isSeatLocked(tripId, seatNumber);
       const expiredInMongo = seat.reservedUntil && seat.reservedUntil < new Date();
-      if (locked && !expiredInMongo) {
+      if (!expiredInMongo) {
         // Check if the current user owns this reservation
         if (String(seat.reservedByUserId) !== String(userId)) {
           return res.status(409).json({
@@ -274,15 +220,6 @@ router.post("/reserve", protect, async (req, res) => {
         }
         // User re-reserving their own seat — allow (refresh TTL)
       }
-    }
-
-    // Acquire Redis lock
-    const lockAcquired = await acquireSeatLock(tripId, seatNumber, userId);
-    if (!lockAcquired) {
-      return res.status(409).json({
-        success: false,
-        message: "Seat is being reserved by another user. Please try a different seat.",
-      });
     }
 
     const reservedUntil = new Date(Date.now() + SEAT_LOCK_TTL * 1000);
@@ -354,8 +291,7 @@ router.post("/release", protect, async (req, res) => {
       return res.status(403).json({ success: false, message: "You do not own this reservation" });
     }
 
-    // Release Redis lock
-    await releaseSeatLock(tripId, seatNumber, userId);
+
 
     // Reset MongoDB
     await SeatBooking.updateOne(
@@ -459,8 +395,7 @@ router.post("/confirm", protect, async (req, res) => {
       }
     );
 
-    // Clear Redis lock
-    await releaseSeatLock(tripId, seatNumber, userId);
+
 
     // Emit live update
     const io = req.app.get("io");

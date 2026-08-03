@@ -35,46 +35,44 @@ const router = express.Router();
 
 // ── Published Marketplace Routes ───────────────────────────────────────────
 
-// 1. Get all published trips
 router.get("/published", async (req, res) => {
   try {
     const data = await AgentTrip.find({
       isDeleted: { $ne: true },
-      approvalStatus: "approved",
       $or: [
-        { published: true },
-        { status: "published" },
-        { publishStatus: "published" }
-      ]
+        { isPublished: true },
+        { published: true }
+      ],
+      $or: [
+        { approvalStatus: "APPROVED" },
+        { approvalStatus: "approved" },
+        { status: "APPROVED" }
+      ],
+      status: { $ne: "PENDING_APPROVAL" }
     }).populate("agentId", "companyName email").sort({ createdAt: -1 });
 
-    const now = new Date();
-    const trips = (data || [])
-      .map(t => {
-        const mapped = { ...t.toObject(), _id: t._id };
-        if (mapped.agentId) {
-          // Flatten companyName/email to match client assumptions if needed
-          mapped.agent = {
-            _id: mapped.agentId._id,
-            displayName: mapped.agentId.companyName,
-            companyName: mapped.agentId.companyName,
-            email: mapped.agentId.email,
-            logo: "",
-            profileImage: "",
-            phone: ""
-          };
-        }
-        return mapped;
-      })
-      .filter(t => {
-        if (t.availableSeats !== undefined && t.availableSeats !== null && t.availableSeats <= 0) return false;
-        if (!t.bookingDeadline || !t.startDate) return false;
-        const deadline = new Date(t.bookingDeadline);
-        const start = new Date(t.startDate);
-        if (isNaN(deadline.getTime()) || deadline <= now) return false;
-        if (isNaN(start.getTime()) || start <= now) return false;
-        return true;
-      });
+    const trips = (data || []).map(t => {
+      const mapped = {
+        ...t.toObject(),
+        _id: t._id,
+        isPublished: true,
+        published: true,
+        status: "APPROVED",
+        approvalStatus: "approved"
+      };
+      if (mapped.agentId) {
+        mapped.agent = {
+          _id: mapped.agentId._id,
+          displayName: mapped.agentId.companyName,
+          companyName: mapped.agentId.companyName,
+          email: mapped.agentId.email,
+          logo: "",
+          profileImage: "",
+          phone: ""
+        };
+      }
+      return mapped;
+    });
 
     res.status(200).json({
       success: true,
@@ -93,14 +91,18 @@ router.put("/:id/publish", protect, async (req, res) => {
     if (!trip) {
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
-    trip.status = "published";
-    trip.publishStatus = "published";
+    trip.status = "PENDING_APPROVAL";
+    trip.publishStatus = "PENDING_APPROVAL";
+    trip.approvalStatus = "PENDING_APPROVAL";
+    trip.isPublished = true;
+    trip.published = true;
+    trip.visibleToTravelers = false;
     trip.publishedAt = new Date();
     await trip.save();
 
     res.status(200).json({
       success: true,
-      message: "Trip published successfully",
+      message: "Trip submitted for admin approval.",
       trip,
     });
   } catch (error) {
@@ -114,8 +116,12 @@ router.get("/published/:id", async (req, res) => {
   try {
     const tripData = await AgentTrip.findOne({
       _id: req.params.id,
-      approvalStatus: "approved",
-      isDeleted: { $ne: true }
+      isDeleted: { $ne: true },
+      $or: [
+        { approvalStatus: "approved" },
+        { approvalStatus: "APPROVED" },
+        { status: "APPROVED" }
+      ]
     }).populate("agentId", "companyName email");
 
     if (!tripData) {

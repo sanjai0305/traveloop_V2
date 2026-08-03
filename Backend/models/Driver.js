@@ -39,6 +39,19 @@ const driverSchema = new mongoose.Schema(
       ref: "AgentTrip",
       default: null,
     },
+    mobileVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationStatus: {
+      type: String,
+      enum: ["PENDING", "VERIFIED"],
+      default: "PENDING",
+    },
   },
   {
     timestamps: true,

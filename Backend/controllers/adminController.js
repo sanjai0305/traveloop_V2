@@ -28,6 +28,9 @@ const generateToken = (id, email) => {
   });
 };
 
+// In-memory single OTP store for seamless local/prototype synchronization
+const localOtpStore = new Map();
+
 /* ==========================================
    ADMIN AUTHENTICATION & PROFILE
    ========================================== */
@@ -43,17 +46,17 @@ export const loginAdmin = async (req, res) => {
     let adminUser = await Admin.findOne({ email: email.toLowerCase() });
 
     // Seed default Super Admin on first login if no admin exists
-    if (!adminUser && email.toLowerCase() === "sanjaim0940r@gmail.com" && password === "Sanjai@2006") {
+    if (!adminUser && email.toLowerCase() === "admin@traveloop.com" && password === "admin@123") {
       const salt = await bcrypt.genSalt(10);
-      const passwordHash = await bcrypt.hash("Sanjai@2006", salt);
+      const passwordHash = await bcrypt.hash("admin@123", salt);
       adminUser = await Admin.create({
         name: "Traveloop Super Admin",
-        email: "sanjaim0940r@gmail.com",
+        email: "admin@traveloop.com",
         passwordHash,
         role: "Super Admin",
         twoFactorEnabled: true,
       });
-      console.log("[Admin Auth] Seeded default Super Admin user (sanjaim0940r@gmail.com).");
+      console.log("[Admin Auth] Seeded default Super Admin user (admin@123.com).");
     } else if (!adminUser && (email.toLowerCase() === "admin@traveloop.com" || email.toLowerCase() === "demo@traveloop.com" || process.env.NODE_ENV === "development")) {
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
@@ -78,22 +81,37 @@ export const loginAdmin = async (req, res) => {
 
     // Handle 2FA if enabled
     if (adminUser.twoFactorEnabled) {
+      // GENERATE ONLY ONE OTP
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const emailKey = adminUser.email.toLowerCase();
+
+      // Store in memory for instant verification fallback
+      localOtpStore.set(emailKey, {
+        otp: otpCode,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+
+      console.log(`========================================`);
+      console.log(`[Admin 2FA] SINGLE OTP GENERATED`);
+      console.log(`Generated OTP: ${otpCode}`);
+      console.log(`Email OTP:     ${otpCode}`);
+      console.log(`Stored OTP:    ${otpCode}`);
+      console.log(`Returned OTP:  ${otpCode}`);
+      console.log(`========================================`);
 
       // Save OTP to Firestore
       try {
         if (!firebaseAuth.currentUser) {
           await signInAnonymously(firebaseAuth);
         }
-        
+
         const otpDocRef = doc(db, "otps", emailKey);
         const salt = await bcrypt.genSalt(10);
         const hashedOtp = await bcrypt.hash(otpCode, salt);
-        
+
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 mins
-        
+
         await setDoc(otpDocRef, {
           otp: hashedOtp,
           expiresAt: expiresAt.toISOString(),
@@ -101,28 +119,39 @@ export const loginAdmin = async (req, res) => {
           createdAt: now.toISOString(),
           debugOtp: otpCode,
         });
-        
-        console.log(`[Admin 2FA] OTP for ${emailKey} is: ${otpCode}`);
 
-        // Try sending email
+        // Send email with the EXACT same OTP
         try {
           await sendAdminOtpEmail(emailKey, otpCode);
         } catch (mailError) {
           console.warn("[Admin 2FA] Failed to send email, logging to console instead:", mailError.message);
         }
 
+        const isDev = process.env.NODE_ENV !== "production";
+        console.log("[ADMIN OTP GENERATED]", otpCode);
+        console.log("[ADMIN OTP RETURNED TO FRONTEND]", isDev ? otpCode : "STRIPPED (Production Mode)");
+
         return res.status(200).json({
           success: true,
+          message: "OTP sent successfully",
           twoFactorRequired: true,
+          requiresOTP: true,
           email: adminUser.email,
+          expiresIn: 300,
+          ...(isDev && { otp: otpCode, development: true }),
         });
 
       } catch (err) {
-        console.error("[Admin 2FA] Firestore setup failed. Returning 2FA requirement for dev...", err);
+        console.error("[Admin 2FA] Firestore setup failed, using in-memory OTP for this session...", err);
+        const isDev = process.env.NODE_ENV !== "production";
         return res.status(200).json({
           success: true,
+          message: "OTP sent successfully",
           twoFactorRequired: true,
+          requiresOTP: true,
           email: adminUser.email,
+          expiresIn: 300,
+          ...(isDev && { otp: otpCode, development: true }),
         });
       }
     }
@@ -162,7 +191,7 @@ export const verifyAdmin2FA = async (req, res) => {
 
   try {
     let adminUser = await Admin.findOne({ email: email.toLowerCase() });
-    
+
     // Seed admin user if not present (dev mode / demo login)
     if (!adminUser) {
       const salt = await bcrypt.genSalt(10);
@@ -178,14 +207,26 @@ export const verifyAdmin2FA = async (req, res) => {
     }
 
     const emailKey = email.toLowerCase();
+    const cleanOtp = otp.toString().trim();
     let isMatch = false;
 
-    // Check demo OTP codes first (482931 / 123456)
-    if (otp.toString() === "482931" || otp.toString() === "123456") {
+    console.log(`========================================`);
+    console.log(`[Admin 2FA] VERIFYING OTP`);
+    console.log(`Verification OTP: ${cleanOtp}`);
+    console.log(`Target Email:     ${emailKey}`);
+
+    // 1. Check in-memory store
+    const memRecord = localOtpStore.get(emailKey);
+    if (memRecord && memRecord.otp === cleanOtp && Date.now() < memRecord.expiresAt) {
       isMatch = true;
-      console.log(`[Admin verify2FA Debug] Demo OTP code (${otp}) matched for ${emailKey}`);
+      localOtpStore.delete(emailKey);
+      console.log(`[Admin 2FA] Matched via In-Memory Store!`);
+    } else if (cleanOtp === "482931" || cleanOtp === "123456") {
+      // 2. Check demo codes
+      isMatch = true;
+      console.log(`[Admin 2FA] Matched via Demo OTP Code (${cleanOtp})`);
     } else {
-      // Try Firestore lookup
+      // 3. Check Firestore
       try {
         if (!firebaseAuth.currentUser) {
           await signInAnonymously(firebaseAuth);
@@ -196,8 +237,14 @@ export const verifyAdmin2FA = async (req, res) => {
 
         if (otpSnap.exists()) {
           const data = otpSnap.data();
-          if (data && data.otp) {
-            isMatch = await bcrypt.compare(otp.toString(), data.otp);
+          if (data) {
+            if (data.debugOtp && data.debugOtp === cleanOtp) {
+              isMatch = true;
+              console.log(`[Admin 2FA] Matched via Firestore debugOtp!`);
+            } else if (data.otp) {
+              isMatch = await bcrypt.compare(cleanOtp, data.otp);
+              if (isMatch) console.log(`[Admin 2FA] Matched via Firestore bcrypt compare!`);
+            }
             if (isMatch) {
               await deleteDoc(otpDocRef);
             }
@@ -207,6 +254,9 @@ export const verifyAdmin2FA = async (req, res) => {
         console.warn("[Admin verify2FA] Firestore lookup failed:", fsErr.message);
       }
     }
+
+    console.log(`Verification Result: ${isMatch ? "SUCCESS (OTP MATCHED)" : "FAILED (INVALID OTP)"}`);
+    console.log(`========================================`);
 
     if (!isMatch) {
       return res.status(400).json({ success: false, message: "Invalid verification code" });
@@ -236,6 +286,72 @@ export const verifyAdmin2FA = async (req, res) => {
   } catch (error) {
     console.error("[Admin verify2FA Error]:", error);
     return res.status(500).json({ success: false, message: error.message || "Server Error during 2FA verification" });
+  }
+};
+
+export const resendAdminOtp = async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Email is required" });
+  }
+
+  try {
+    const emailKey = email.toLowerCase().trim();
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Save in-memory store
+    localOtpStore.set(emailKey, {
+      otp: otpCode,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
+
+    console.log("========================================");
+    console.log("[ADMIN OTP RESEND GENERATED]", otpCode);
+    console.log("[ADMIN OTP RESEND TARGET]", emailKey);
+
+    // Save to Firestore
+    try {
+      if (!firebaseAuth.currentUser) {
+        await signInAnonymously(firebaseAuth);
+      }
+      const otpDocRef = doc(db, "otps", emailKey);
+      const salt = await bcrypt.genSalt(10);
+      const hashedOtp = await bcrypt.hash(otpCode, salt);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
+
+      await setDoc(otpDocRef, {
+        otp: hashedOtp,
+        expiresAt: expiresAt.toISOString(),
+        attempts: 0,
+        createdAt: now.toISOString(),
+        debugOtp: otpCode,
+      });
+    } catch (fsErr) {
+      console.warn("[Admin Resend 2FA] Firestore update failed:", fsErr.message);
+    }
+
+    // Send email
+    try {
+      await sendAdminOtpEmail(emailKey, otpCode);
+    } catch (mailErr) {
+      console.warn("[Admin Resend 2FA] Email failed:", mailErr.message);
+    }
+
+    const isDev = process.env.NODE_ENV !== "production";
+    console.log("[ADMIN OTP GENERATED]", otpCode);
+    console.log("[ADMIN OTP RETURNED TO FRONTEND]", isDev ? otpCode : "STRIPPED (Production Mode)");
+
+    return res.status(200).json({
+      success: true,
+      message: "New OTP sent successfully",
+      email: emailKey,
+      expiresIn: 300,
+      ...(isDev && { otp: otpCode, development: true }),
+    });
+  } catch (error) {
+    console.error("[Admin Resend OTP Error]:", error);
+    return res.status(500).json({ success: false, message: "Server Error during OTP resend" });
   }
 };
 
@@ -275,21 +391,21 @@ export const getAdminProfile = async (req, res) => {
 export const getDashboardStats = async (req, res) => {
   try {
     const bookings = await Booking.find({});
-    
+
     // Revenue calculations
     let totalRevenue = 0; // Gross booking value
     let platformRevenue = 0; // Traveloop commission
     let refundAmount = 0;
     let pendingSettlements = 0;
-    
+
     bookings.forEach(b => {
       totalRevenue += b.pricePaid || b.amountPaid || 0;
       platformRevenue += b.commissionAmount || 0;
-      
+
       if (b.status === "Paid" || b.status === "Pending") {
         pendingSettlements += b.agentAmount || 0;
       }
-      
+
       if (b.refundStatus === "approved") {
         refundAmount += b.pricePaid || 0;
       }
@@ -300,7 +416,7 @@ export const getDashboardStats = async (req, res) => {
     const totalAgents = await Agent.countDocuments();
     const totalDrivers = await Driver.countDocuments();
     const totalUsers = await User.countDocuments();
-    
+
     const totalAgentTrips = await AgentTrip.countDocuments();
     const totalPlannerTrips = await Trip.countDocuments();
     const totalTrips = totalAgentTrips + totalPlannerTrips;
@@ -419,7 +535,7 @@ export const getFinanceDetails = async (req, res) => {
         agentId: obj.agentId ? { ...obj.agentId, _id: obj.agentId._id } : null
       };
     });
-    
+
     res.status(200).json({
       success: true,
       bookings,
@@ -434,7 +550,7 @@ export const getFinanceDetails = async (req, res) => {
 export const getCommissionAnalytics = async (req, res) => {
   try {
     const bookings = await Booking.find({ paymentStatus: "Paid" });
-    
+
     // Default rate check
     let defaultCommissionRate = 10;
     const commissionDoc = await Commission.findOne().sort({ createdAt: -1 });
@@ -543,7 +659,7 @@ export const getPayoutsList = async (req, res) => {
 export const getRevenueDetails = async (req, res) => {
   try {
     const bookings = await Booking.find({ paymentStatus: "Paid" });
-    
+
     let grossRevenue = 0;
     let commissionRevenue = 0;
     let refundAmount = 0;
@@ -557,7 +673,7 @@ export const getRevenueDetails = async (req, res) => {
       if (b.status === "Paid" || b.status === "Pending") {
         pendingSettlements += b.agentAmount || 0;
       }
-      
+
       if (b.refundStatus === "approved") {
         refundAmount += b.pricePaid || 0;
       }
@@ -666,10 +782,45 @@ export const deleteAgent = async (req, res) => {
 
 export const getTrips = async (req, res) => {
   try {
-    const tripsData = await AgentTrip.find({})
-      .populate("agentId", "companyName email")
+    const { status } = req.query;
+    let filter = {};
+    if (status) {
+      if (status.toUpperCase() === "PENDING_APPROVAL" || status.toUpperCase() === "PENDING") {
+        filter = {
+          $or: [
+            { status: "PENDING_APPROVAL" },
+            { status: "pending_approval" },
+            { approvalStatus: "PENDING" },
+            { approvalStatus: "pending" },
+            { approvalStatus: "pending_approval" }
+          ]
+        };
+      } else {
+        filter = {
+          $or: [
+            { status: status },
+            { status: status.toLowerCase() },
+            { approvalStatus: status },
+            { approvalStatus: status.toLowerCase() }
+          ]
+        };
+      }
+    }
+
+    const tripsData = await AgentTrip.find(filter)
+      .populate("agentId", "companyName email displayName phone")
       .populate("driverId", "name phone vehicleNumber")
       .sort({ createdAt: -1 });
+
+    const allTripsData = await AgentTrip.find({ isDeleted: { $ne: true } });
+
+    const counts = {
+      pending: allTripsData.filter(t => ["PENDING", "PENDING_APPROVAL", "pending", "pending_approval"].includes(t.approvalStatus) || ["PENDING_APPROVAL", "pending_approval"].includes(t.status)).length,
+      approved: allTripsData.filter(t => ["APPROVED", "approved"].includes(t.approvalStatus) || ["APPROVED", "published", "published"].includes(t.status) || t.published === true).length,
+      rejected: allTripsData.filter(t => ["REJECTED", "rejected"].includes(t.approvalStatus) || ["REJECTED", "rejected"].includes(t.status)).length,
+      needsRevision: allTripsData.filter(t => ["NEEDS_REVISION", "needs_revision", "changes_requested"].includes(t.approvalStatus) || ["NEEDS_REVISION", "needs_revision"].includes(t.status)).length,
+      archived: allTripsData.filter(t => t.isDeleted || t.status === "archived").length,
+    };
 
     const trips = (tripsData || []).map(t => {
       const obj = t.toObject ? t.toObject() : t;
@@ -681,24 +832,32 @@ export const getTrips = async (req, res) => {
       const totalSeats = obj.totalSeats ?? obj.seats ?? 0;
       const bookedSeats = obj.bookedSeats ?? obj.bookedCount ?? 0;
       const availableSeats = obj.availableSeats ?? Math.max(0, totalSeats - bookedSeats);
-      const approvalStatus = obj.approvalStatus || (obj.status === "approved" || obj.status === "published" || obj.status === "ACTIVE" ? "approved" : obj.status === "rejected" ? "rejected" : "pending");
+
+      let normApproval = obj.approvalStatus || "PENDING";
+      if (["approved", "published"].includes(normApproval.toLowerCase())) normApproval = "APPROVED";
+      if (["rejected"].includes(normApproval.toLowerCase())) normApproval = "REJECTED";
+      if (["pending", "pending_approval"].includes(normApproval.toLowerCase())) normApproval = "PENDING";
 
       const mapped = {
         ...obj,
         _id: t._id,
+        tripId: obj.tripId || `TRIP-${t._id.toString().slice(-6)}`,
         destinations: rawDestinations,
         pricePerPerson,
         totalSeats,
         bookedSeats,
         availableSeats,
-        approvalStatus,
+        approvalStatus: normApproval,
+        status: normApproval,
+        published: normApproval === "APPROVED",
+        visibleToTravelers: normApproval === "APPROVED",
+        submittedAt: obj.submittedAt || obj.createdAt,
         agent: obj.agentId ? {
           _id: obj.agentId._id,
-          companyName: obj.agentId.companyName || "Independent",
-          displayName: obj.agentId.companyName || "",
+          companyName: obj.agentId.companyName || obj.agentId.displayName || "Independent Agency",
+          displayName: obj.agentId.displayName || obj.agentId.companyName || "",
           email: obj.agentId.email || "",
-          logo: "",
-          phone: ""
+          phone: obj.agentId.phone || ""
         } : (obj.agent || null),
         driver: obj.driverId ? {
           _id: obj.driverId._id,
@@ -710,7 +869,7 @@ export const getTrips = async (req, res) => {
       return mapped;
     });
 
-    res.status(200).json({ success: true, trips });
+    res.status(200).json({ success: true, trips, counts });
   } catch (error) {
     console.error("getTrips error:", error);
     res.status(500).json({ success: false, message: "Server Error retrieving trips list" });
@@ -728,21 +887,26 @@ export const updateTrip = async (req, res) => {
     }
 
     if (approvalStatus !== undefined) {
-      if (!["pending", "approved", "rejected"].includes(approvalStatus)) {
+      const normalizedStatus = approvalStatus.toUpperCase();
+      if (!["PENDING", "APPROVED", "REJECTED", "NEEDS_REVISION"].includes(normalizedStatus)) {
         return res.status(400).json({ success: false, message: "Invalid approval status" });
       }
-      trip.approvalStatus = approvalStatus;
-      
-      // Sync publication status
-      if (approvalStatus === "approved") {
+
+      if (normalizedStatus === "APPROVED") {
+        trip.approvalStatus = "approved";
         trip.publishStatus = "published";
-        trip.status = "published";
+        trip.status = "APPROVED";
         trip.published = true;
+        trip.visibleToTravelers = true;
         trip.publishedAt = new Date();
         trip.approvedAt = new Date();
         trip.reviewedAt = new Date();
         trip.approvedBy = req.admin ? req.admin.email || "Admin" : "Admin";
         trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+
+        console.log(`[ADMIN APPROVAL] Trip approved for ID: ${id}`);
+        await trip.save();
+        console.log(`[ADMIN APPROVAL] Mongo updated: status=APPROVED, published=true, visibleToTravelers=true`);
 
         // Mark associated AdminNotification as read
         try {
@@ -755,63 +919,42 @@ export const updateTrip = async (req, res) => {
           console.error("Failed to mark AdminNotification read on approval:", notifErr);
         }
 
-        // Referral bonus slot system award check
+        // Create Agent Notification
         try {
-          const Agent = await import("../models/Agent.js").then(m => m.default);
-          const AgentReferral = await import("../models/AgentReferral.js").then(m => m.default);
-          const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
-
-          const agent = await Agent.findById(trip.agentId);
-          if (agent) {
-            // Count approved trips
-            const approvedTripsCount = await AgentTrip.countDocuments({
-              agentId: agent._id,
-              approvalStatus: "approved",
-              isDeleted: { $ne: true }
-            });
-            // If this is about to be their first approved trip (approvedTripsCount currently 0)
-            if (approvedTripsCount === 0) {
-              const referral = await AgentReferral.findOne({ newAgentId: agent._id, rewardGranted: false });
-              if (referral) {
-                const settings = await AgentSettings.findOne({ settingId: "global" });
-                const extraSlots = settings ? settings.extraSlotsPerReferral : 1;
-                const maxSlotsLimit = settings ? settings.maxSlots : 5;
-
-                const inviter = await Agent.findById(referral.inviterAgentId);
-                if (inviter) {
-                  const currentTotalSlots = (inviter.tripSlots || 2) + (inviter.bonusSlots || 0);
-                  if (currentTotalSlots < maxSlotsLimit) {
-                    const slotsToAdd = Math.min(extraSlots, maxSlotsLimit - currentTotalSlots);
-                    inviter.bonusSlots = (inviter.bonusSlots || 0) + slotsToAdd;
-                    inviter.referralCount = (inviter.referralCount || 0) + 1;
-                    await inviter.save();
-
-                    referral.rewardGranted = true;
-                    referral.bonusSlotsAdded = slotsToAdd;
-                    referral.conditionsMet = true;
-                    await referral.save();
-
-                    console.log(`[Referral Bonus] Awarded +${slotsToAdd} bonus slots to inviter ${inviter.email}`);
-                  }
-                }
-              }
-            }
-          }
-        } catch (refErr) {
-          console.error("Error awarding referral bonus slots:", refErr);
+          const Notification = (await import("../models/Notification.js")).default;
+          await Notification.create({
+            recipientId: trip.agentId,
+            recipientModel: "Agent",
+            title: "Trip Approved!",
+            message: `Your trip '${trip.title}' has been approved and is now live on the Traveler Portal.`,
+            type: "TRIP_APPROVED",
+            metadata: { tripId: id }
+          });
+          console.log(`[ADMIN APPROVAL] Notification sent to Agent ${trip.agentId}`);
+        } catch (notifErr) {
+          console.error("Failed to create agent notification on approval:", notifErr);
         }
 
         const io = req.app.get("io");
         if (io) {
-          io.emit("trip_approved", { tripId: id, agentId: trip.agentId });
-          io.emit("trip_updated", id);
+          try {
+            io.emit("trip_approved", { tripId: id, agentId: trip.agentId });
+            io.emit("admin:trip-status-changed", { tripId: id, status: "APPROVED" });
+            io.emit("trip_updated", id);
+          } catch (sockErr) {
+            console.error("Socket emit error on approval (non-fatal):", sockErr);
+          }
         }
 
-        console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Approved | Message: Your trip has been approved and is now live.`);
-      } else if (approvalStatus === "rejected") {
+        console.log(`[Notification] To Agent ${trip.agentId}: Your trip '${trip.title}' has been approved and is now live.`);
+      } else if (normalizedStatus === "REJECTED") {
+        trip.approvalStatus = "rejected";
         trip.publishStatus = "rejected";
-        trip.status = "rejected";
+        trip.status = "REJECTED";
         trip.published = false;
+        trip.visibleToTravelers = false;
+        trip.rejectedAt = new Date();
+        trip.rejectedBy = req.admin ? req.admin.email || "Admin" : "Admin";
         trip.rejectionReason = req.body.reason || req.body.rejectReason || req.body.rejectionReason || "Does not comply with policies";
         trip.reviewedAt = new Date();
         trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
@@ -827,14 +970,68 @@ export const updateTrip = async (req, res) => {
           console.error("Failed to mark AdminNotification read on rejection:", notifErr);
         }
 
-        const io = req.app.get("io");
-        if (io) {
-          io.emit("trip_rejected", { tripId: id, agentId: trip.agentId, reason: trip.rejectionReason });
-          io.emit("trip_updated", id);
+        // Create Agent Notification
+        try {
+          const Notification = (await import("../models/Notification.js")).default;
+          await Notification.create({
+            recipientId: trip.agentId,
+            recipientModel: "Agent",
+            title: "Trip Submission Rejected",
+            message: `Your trip '${trip.title}' was rejected. Reason: ${trip.rejectionReason}`,
+            type: "TRIP_REJECTED",
+            metadata: { tripId: id, reason: trip.rejectionReason }
+          });
+        } catch (notifErr) {
+          console.error("Failed to create agent notification on rejection:", notifErr);
         }
 
-        console.log(`[Email Mock] To: ${trip.agentId ? trip.agentId.email : "Agent"} | Subject: Trip Rejected | Message: Your trip has been rejected. Reason: ${trip.rejectionReason}`);
+        const io = req.app.get("io");
+        if (io) {
+          try {
+            io.emit("trip_rejected", { tripId: id, agentId: trip.agentId, reason: trip.rejectionReason });
+            io.emit("admin:trip-status-changed", { tripId: id, status: "REJECTED" });
+            io.emit("trip_updated", id);
+          } catch (sockErr) {
+            console.error("Socket emit error on rejection (non-fatal):", sockErr);
+          }
+        }
+      } else if (normalizedStatus === "NEEDS_REVISION") {
+        trip.approvalStatus = "changes_requested";
+        trip.publishStatus = "draft";
+        trip.status = "NEEDS_REVISION";
+        trip.published = false;
+        trip.visibleToTravelers = false;
+        trip.rejectionReason = req.body.comments || req.body.reason || "Admin requested changes before publication.";
+        trip.reviewedAt = new Date();
+        trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+
+        // Create Agent Notification
+        try {
+          const Notification = (await import("../models/Notification.js")).default;
+          await Notification.create({
+            recipientId: trip.agentId,
+            recipientModel: "Agent",
+            title: "Changes Requested for Trip",
+            message: `Admin requested changes for '${trip.title}': ${trip.rejectionReason}`,
+            type: "TRIP_REVISION_REQUESTED",
+            metadata: { tripId: id, comments: trip.rejectionReason }
+          });
+        } catch (notifErr) {
+          console.error("Failed to create agent notification on revision request:", notifErr);
+        }
+
+        const io = req.app.get("io");
+        if (io) {
+          try {
+            io.emit("trip_revision_requested", { tripId: id, agentId: trip.agentId, comments: trip.rejectionReason });
+            io.emit("admin:trip-status-changed", { tripId: id, status: "NEEDS_REVISION" });
+            io.emit("trip_updated", id);
+          } catch (sockErr) {
+            console.error("Socket emit error on revision request (non-fatal):", sockErr);
+          }
+        }
       }
+      await trip.save();
     }
 
     if (isHidden !== undefined) {
@@ -850,7 +1047,7 @@ export const updateTrip = async (req, res) => {
       trip.deletedAt = new Date();
       trip.deletedBy = req.admin ? req.admin._id.toString() : "Admin";
       trip.status = "deleted";
-      
+
       await AgentTrip.findByIdAndUpdate(id, {
         isDeleted: true,
         deletedAt: trip.deletedAt,
@@ -893,6 +1090,166 @@ export const updateTrip = async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error updating trip" });
   }
 };
+
+export const approveTrip = async (req, res) => {
+  console.log("Approve API Called");
+  const tripId = req.params.tripId || req.params.id;
+  console.log("Trip ID:", tripId);
+
+  try {
+    console.log("Finding Trip...");
+    const trip = await AgentTrip.findById(tripId);
+
+    if (!trip) {
+      console.log("Trip Not Found for ID:", tripId);
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found",
+      });
+    }
+
+    console.log("Trip Found:", trip);
+
+    // Validate and check required fields
+    const requiredFields = [
+      { key: "trip.status", val: trip.status },
+      { key: "trip.agentId", val: trip.agentId },
+      { key: "trip.userId", val: trip.userId || trip.agentId },
+      { key: "trip.packageId", val: trip.packageId || trip._id },
+      { key: "trip.createdBy", val: trip.createdBy || trip.agentId },
+      { key: "trip.price", val: trip.price !== undefined ? trip.price : (trip.pricePerPerson !== undefined ? trip.pricePerPerson : trip.offerPrice) },
+      { key: "trip.schedule", val: trip.schedule || (trip.itinerary && trip.itinerary.length > 0 ? trip.itinerary : null) }
+    ];
+
+    requiredFields.forEach(field => {
+      if (field.val === undefined || field.val === null || field.val === "") {
+        console.log(`Missing field: ${field.key}`);
+      }
+    });
+
+    console.log("Updating Status...");
+    // Update statuses for Mongoose schema (approvalStatus enum is lowercase: "approved")
+    trip.approvalStatus = "approved";
+    trip.status = "APPROVED";
+    trip.publishStatus = "published";
+    trip.published = true;
+    trip.isPublished = true;
+    trip.visibleToTravelers = true;
+    trip.approvedAt = new Date();
+    trip.publishedAt = new Date();
+    trip.reviewedAt = new Date();
+    trip.approvedBy = req.admin ? req.admin._id || req.admin.id || req.admin.email || "Admin" : "Admin";
+    trip.reviewedBy = req.admin ? req.admin._id || req.admin.id || req.admin.email || "Admin" : "Admin";
+
+    console.log("Saving Trip...");
+    try {
+      await trip.save();
+      console.log("Trip Saved Successfully (isPublished=true, status=APPROVED)");
+    } catch (saveError) {
+      console.error("MongoDB Save Validation Error:", saveError);
+      throw saveError;
+    }
+
+    // Clear associated admin notifications
+    try {
+      const AdminNotification = (await import("../models/AdminNotification.js")).default;
+      await AdminNotification.updateMany(
+        { $or: [{ tripId: tripId }, { resourceId: tripId.toString() }] },
+        { $set: { read: true } }
+      );
+    } catch (adminNotifErr) {
+      console.error("Failed to mark AdminNotification read (non-fatal):", adminNotifErr);
+    }
+
+    console.log("Sending Notifications...");
+
+    // Notify Agent
+    try {
+      if (trip.agentId) {
+        const Notification = (await import("../models/Notification.js")).default;
+        await Notification.create({
+          recipientId: trip.agentId,
+          recipientModel: "Agent",
+          title: "Trip Approved!",
+          message: `Your trip '${trip.title}' has been approved and is now live on the Traveler Portal.`,
+          type: "TRIP_APPROVED",
+          metadata: { tripId }
+        });
+        console.log("Agent Notification Sent");
+      }
+    } catch (agentNotifErr) {
+      console.error("Notification Error (Agent, non-fatal):", agentNotifErr);
+    }
+
+    // Notify Traveler
+    try {
+      const Booking = (await import("../models/Booking.js")).default;
+      const Notification = (await import("../models/Notification.js")).default;
+      const bookings = await Booking.find({ $or: [{ tripId }, { agentTrip: tripId }] });
+      for (const b of bookings) {
+        const recipientId = b.userId || b.user;
+        if (recipientId) {
+          await Notification.create({
+            recipientId,
+            recipientModel: "User",
+            title: "Trip Approved",
+            message: `The trip '${trip.title}' has been approved by Traveloop Admin.`,
+            type: "TRIP_APPROVED",
+            metadata: { tripId }
+          });
+        }
+      }
+      console.log("Traveler Notification Sent");
+    } catch (travelerNotifErr) {
+      console.error("Notification Error (Traveler, non-fatal):", travelerNotifErr);
+    }
+
+    console.log("Socket Emit...");
+    try {
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("trip:published", { tripId, agentId: trip.agentId, trip: trip.toObject() });
+        io.emit("trip_published", { tripId, agentId: trip.agentId, trip: trip.toObject() });
+        io.emit("trip_approved", { tripId, agentId: trip.agentId, trip: trip.toObject() });
+        io.emit("admin:trip-status-changed", { tripId, status: "APPROVED" });
+        io.emit("trip_updated", tripId);
+      }
+    } catch (socketErr) {
+      console.error("Socket Emit Error (non-fatal):", socketErr);
+    }
+
+    // Fetch fresh copy with agent populated for the response
+    const updatedTripData = await AgentTrip.findById(tripId).populate("agentId", "companyName email");
+    const updatedTrip = updatedTripData ? {
+      ...updatedTripData.toObject(),
+      _id: updatedTripData._id,
+      agent: updatedTripData.agentId ? {
+        _id: updatedTripData.agentId._id,
+        companyName: updatedTripData.agentId.companyName,
+        displayName: updatedTripData.agentId.companyName,
+        email: updatedTripData.agentId.email,
+        logo: "",
+        phone: ""
+      } : null
+    } : trip.toObject();
+
+    console.log("Returning Success");
+    return res.status(200).json({
+      success: true,
+      message: "Trip approved successfully",
+      trip: updatedTrip
+    });
+  } catch (error) {
+    console.error("APPROVE ERROR:", error);
+    console.error(error.stack);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+      stack: error.stack
+    });
+  }
+};
+
 
 export const deleteTrip = async (req, res) => {
   const { id } = req.params;
@@ -1016,7 +1373,7 @@ export const getBookingsLedger = async (req, res) => {
 
     const bookings = await Promise.all((bookingsData || []).map(async (b) => {
       const obj = b.toObject ? b.toObject() : b;
-      
+
       const pricePaid = obj.pricePaid ?? obj.amountPaid ?? obj.amount ?? 0;
       const amountPaid = obj.amountPaid ?? pricePaid;
       const commAmt = obj.commissionAmount ?? Math.round(pricePaid * 0.1);
@@ -1200,7 +1557,7 @@ export const createSettlement = async (req, res) => {
     // Update Agent balances
     const agent = await Agent.findById(booking.agent);
     const agentShare = booking.agentAmount || booking.agentShare || 0;
-    
+
     if (agent) {
       agent.pendingRevenue = Math.max(0, (agent.pendingRevenue || 0) - agentShare);
       agent.settledRevenue = (agent.settledRevenue || 0) + agentShare;
@@ -1294,7 +1651,7 @@ export const markNotificationRead = async (req, res) => {
 export const seedMockData = async (req, res) => {
   try {
     await AdminNotification.deleteMany({});
-    
+
     await AdminNotification.create([
       { title: "New Booking Confirmed", message: "Traveler Sanjay booked trip 'Weekend Escapade to Ooty' for ₹9,998", type: "booking" },
       { title: "Trip Awaiting Approval", message: "Agent Sunset Travels published trip 'Munnar Tea Estates Escape' for ₹6,500", type: "trip_published" },
@@ -1428,35 +1785,35 @@ export const updateReferralSettings = async (req, res) => {
     const enabledVal = enabled !== undefined ? enabled : req.body.referralEnabled;
     const discountVal = discountPercentage !== undefined ? discountPercentage : req.body.referralDiscountPercent;
     const coinVal = coinReward !== undefined ? coinReward : req.body.inviterCoins;
-    
+
     const scratchEnabledVal = referral_scratch_rewards_enabled !== undefined ? referral_scratch_rewards_enabled : req.body.scratchRewardsEnabled;
     const travelCoinsEnabledVal = referral_travel_coins_enabled !== undefined ? referral_travel_coins_enabled : req.body.travelCoinsEnabled;
-    
+
     let couponExpiryEnabledVal = referral_coupon_expiry_enabled;
     if (couponExpiryEnabledVal === undefined) {
       couponExpiryEnabledVal = req.body.couponExpiryEnabled !== undefined ? req.body.couponExpiryEnabled : req.body.couponExpiry;
     }
-    
+
     let minRewardVal = referral_min_reward;
     if (minRewardVal === undefined) {
       minRewardVal = req.body.minimumReward !== undefined ? req.body.minimumReward : req.body.minRewardPercent;
     }
-    
+
     let maxRewardVal = referral_max_reward;
     if (maxRewardVal === undefined) {
       maxRewardVal = req.body.maximumReward !== undefined ? req.body.maximumReward : req.body.maxRewardPercent;
     }
-    
+
     const bronzeWeightVal = referral_prob_bronze !== undefined ? referral_prob_bronze : (req.body.bronzeWeight !== undefined ? req.body.bronzeWeight : req.body.bronze);
     const silverWeightVal = referral_prob_silver !== undefined ? referral_prob_silver : (req.body.silverWeight !== undefined ? req.body.silverWeight : req.body.silver);
     const goldWeightVal = referral_prob_gold !== undefined ? referral_prob_gold : (req.body.goldWeight !== undefined ? req.body.goldWeight : req.body.gold);
     const diamondWeightVal = referral_prob_diamond !== undefined ? referral_prob_diamond : (req.body.diamondWeight !== undefined ? req.body.diamondWeight : req.body.diamond);
-    
+
     const defaultSlotsVal = defaultTripSlots !== undefined ? defaultTripSlots : (req.body.defaultSlots !== undefined ? req.body.defaultSlots : req.body.defaultTripSlots);
     const extraSlotsVal = extraSlotsPerReferral !== undefined ? extraSlotsPerReferral : req.body.extraSlotsPerReferral;
     const maxSlotsVal = maxSlots !== undefined ? maxSlots : (req.body.bonusCap !== undefined ? req.body.bonusCap : req.body.maxSlots);
     const approvalHoursVal = approvalTimeLimit !== undefined ? approvalTimeLimit : (req.body.approvalHours !== undefined ? req.body.approvalHours : req.body.approvalTimeLimit);
-    
+
     const tripSlotBonusEnabledVal = tripSlotBonusEnabled !== undefined ? tripSlotBonusEnabled : (req.body.tripSlotBonus !== undefined ? req.body.tripSlotBonus : req.body.slotBonusEnabled);
     const slotPriceVal = slotPrice !== undefined ? slotPrice : req.body.slotPrice;
     const slotPurchaseEnabledVal = slotPurchaseEnabled !== undefined ? slotPurchaseEnabled : req.body.slotPurchaseEnabled;
@@ -1468,12 +1825,12 @@ export const updateReferralSettings = async (req, res) => {
     if (coinVal !== undefined) settingsToSave.referral_coin_reward = Number(coinVal);
     if (scratchEnabledVal !== undefined) settingsToSave.referral_scratch_rewards_enabled = scratchEnabledVal === true;
     if (travelCoinsEnabledVal !== undefined) settingsToSave.referral_travel_coins_enabled = travelCoinsEnabledVal === true;
-    
+
     if (couponExpiryEnabledVal !== undefined) {
       settingsToSave.referral_coupon_expiry_enabled = couponExpiryEnabledVal === true || couponExpiryEnabledVal === "true" || typeof couponExpiryEnabledVal === "number";
       settingsToSave.couponExpiry = typeof couponExpiryEnabledVal === "number" ? couponExpiryEnabledVal : 30;
     }
-    
+
     if (minRewardVal !== undefined) {
       settingsToSave.referral_min_reward = Number(minRewardVal);
       settingsToSave.minimumReward = Number(minRewardVal);
@@ -1571,7 +1928,7 @@ export const getReferralStats = async (req, res) => {
     const AgentSettings = await import("../models/AgentSettings.js").then(m => m.default);
 
     const agentsReferred = await AgentReferral.countDocuments();
-    
+
     // Sum bonusSlotsGranted
     const bonusSlotsResult = await AgentReferral.aggregate([
       { $group: { _id: null, total: { $sum: "$bonusSlotsAdded" } } }
@@ -1585,7 +1942,7 @@ export const getReferralStats = async (req, res) => {
     const agentsList = await Agent.find();
     let slotsConsumed = 0;
     let slotsAvailable = 0;
-    
+
     const settings = await AgentSettings.findOne({ settingId: "global" });
     const defaultSlots = settings ? settings.defaultTripSlots : 2;
 

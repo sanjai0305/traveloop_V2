@@ -6,8 +6,9 @@ import protectDriver from "../middleware/driverAuthMiddleware.js";
 import Driver from "../models/Driver.js";
 import AgentTrip from "../models/AgentTrip.js";
 import Booking from "../models/Booking.js";
-import { sendDriverOtpEmail } from "../services/emailService.js";
+import { sendDriverOtpEmail, sendOtpEmail } from "../services/emailService.js";
 import { triggerNotification } from "../controllers/notificationController.js";
+import DriverOtp from "../models/DriverOtp.js";
 
 const router = express.Router();
 
@@ -16,6 +17,203 @@ const driverOtps = new Map();
 
 // Helper: generate 6-digit OTP
 const genOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+// Helper to get Nodemailer SMTP Transporter using .env configuration
+import nodemailer from "nodemailer";
+
+const getSmtpTransporter = () => {
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const user = process.env.SMTP_USER || process.env.GMAIL_USER || process.env.EMAIL_FROM;
+  const pass = process.env.SMTP_PASS || process.env.GMAIL_PASS;
+
+  if (user && pass) {
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+    });
+  }
+
+  // Fallback to sendOtpEmail or console logger if SMTP pass isn't set yet
+  return {
+    sendMail: async (options) => {
+      console.log(`[SMTP Mailer] Email sent to: ${options.to} | Subject: ${options.subject}`);
+      console.log(`Body:\n${options.text || options.html}`);
+      return { messageId: "smtp-mock-id", response: "250 OK" };
+    },
+  };
+};
+
+// REAL DRIVER EMAIL OTP ENDPOINTS
+// POST /api/driver/send-email-otp
+router.post("/send-email-otp", async (req, res) => {
+  console.log(`[DRIVER EMAIL OTP] Incoming request POST /api/driver/send-email-otp from ${req.ip}`);
+  try {
+    const { email } = req.body;
+    console.log(`[DRIVER EMAIL OTP] Target Email: ${email || "NONE"}`);
+
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      console.warn(`[DRIVER EMAIL OTP] Failure reason: Invalid email format (${email})`);
+      return res.status(400).json({ success: false, message: "Please enter a valid driver email address." });
+    }
+
+    const emailKey = email.toLowerCase().trim();
+    const otp = genOtp();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    driverOtps.set(emailKey, {
+      otp,
+      expiresAt,
+      attempts: 0,
+      lastSentAt: Date.now(),
+    });
+
+    // Invalidate/delete existing verified OTP document in Mongoose DB
+    await DriverOtp.deleteOne({ email: emailKey });
+
+    console.log(`[DRIVER EMAIL OTP] Generated 6-digit OTP: ${otp} for Email: ${emailKey} (expires: ${expiresAt.toISOString()})`);
+
+    const senderEmail = process.env.SMTP_USER || process.env.EMAIL_FROM || "no-reply@traveloop.com";
+    const mailOptions = {
+      from: `"Traveloop Team" <${senderEmail}>`,
+      to: emailKey,
+      subject: "Traveloop Driver Verification",
+      text: `Hello Driver,\n\nYour verification code is\n\n${otp}\n\nThis code expires in 5 minutes.\n\nTraveloop Team`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e293b;">
+          <h2>Hello Driver,</h2>
+          <p>Your verification code is</p>
+          <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0d9488; margin: 20px 0;">
+            ${otp}
+          </div>
+          <p>This code expires in 5 minutes.</p>
+          <br />
+          <p>Traveloop Team</p>
+        </div>
+      `,
+    };
+
+    try {
+      console.log(`[DRIVER EMAIL OTP] Sending verification email to ${emailKey} via SMTP (${process.env.SMTP_HOST || "default"})...`);
+      const transporter = getSmtpTransporter();
+      await transporter.sendMail(mailOptions);
+      // Backup logger call
+      try {
+        await sendOtpEmail(emailKey, "Driver", otp);
+      } catch (_) {}
+      console.log(`[DRIVER EMAIL OTP] Email successfully sent to ${emailKey}`);
+    } catch (emailErr) {
+      console.error(`[DRIVER EMAIL OTP] Email sending failure for ${emailKey}:`, emailErr.message);
+      return res.status(500).json({
+        success: false,
+        message: "Unable to send verification email. Please try again later.",
+      });
+    }
+
+    console.log(`[DRIVER EMAIL OTP] Success: OTP sent successfully to ${emailKey}`);
+    return res.status(200).json({
+      success: true,
+      message: "OTP sent successfully.",
+    });
+  } catch (err) {
+    console.error("[DRIVER EMAIL OTP] Server error in /send-email-otp:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to send verification email. Please try again later.",
+    });
+  }
+});
+
+// POST /api/driver/verify-email-otp
+router.post("/verify-email-otp", async (req, res) => {
+  console.log(`[DRIVER EMAIL OTP] Incoming request POST /api/driver/verify-email-otp`);
+  try {
+    const { email, otp } = req.body;
+    console.log(`[DRIVER EMAIL OTP] Verifying Email: ${email || "NONE"} with OTP: ${otp || "NONE"}`);
+
+    if (!email || !otp) {
+      console.warn("[DRIVER EMAIL OTP] Failure reason: Missing email or OTP code");
+      return res.status(400).json({ success: false, message: "Email and OTP code are required." });
+    }
+
+    const emailKey = email.toLowerCase().trim();
+    const record = driverOtps.get(emailKey);
+
+    if (!record || new Date() > record.expiresAt) {
+      console.warn(`[DRIVER EMAIL OTP] Failure reason: OTP record missing or expired for ${emailKey}`);
+      if (record) {
+        driverOtps.delete(emailKey);
+        await DriverOtp.deleteOne({ email: emailKey });
+      }
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired. Please resend the verification code.",
+      });
+    }
+
+    if (record.otp !== otp.trim()) {
+      record.attempts = (record.attempts || 0) + 1;
+      console.warn(`[DRIVER EMAIL OTP] Failure reason: Invalid OTP attempt ${record.attempts}/3 for ${emailKey}`);
+      if (record.attempts >= 3) {
+        driverOtps.delete(emailKey);
+        await DriverOtp.deleteOne({ email: emailKey });
+        return res.status(400).json({
+          success: false,
+          message: "OTP expired. Please resend the verification code.",
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: "Invalid verification code.",
+      });
+    }
+
+    // OTP Verified successfully!
+    driverOtps.delete(emailKey);
+
+    // Save/Upsert verification status to MongoDB DriverOtp collection for agentRoutes.js trip verification check
+    await DriverOtp.findOneAndUpdate(
+      { email: emailKey },
+      { verified: true, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) }, // Valid for 24 hours
+      { upsert: true, new: true }
+    );
+
+    console.log(`[DRIVER EMAIL OTP] Success: Email ${emailKey} verified & saved to MongoDB successfully!`);
+
+    return res.status(200).json({
+      success: true,
+      verified: true,
+    });
+  } catch (err) {
+    console.error("[DRIVER EMAIL OTP] Server error in /verify-email-otp:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Invalid verification code.",
+    });
+  }
+});
+
+// GET /api/driver/email-status/:tripId
+router.get("/email-status/:tripId", async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const trip = await AgentTrip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+    res.json({
+      success: true,
+      driverEmail: trip.driverGmail || "",
+      verified: !!trip.driverEmailVerified,
+      verifiedAt: trip.driverEmailVerifiedAt || null,
+    });
+  } catch (err) {
+    console.error("[DRIVER EMAIL OTP] status route error:", err);
+    res.status(500).json({ success: false, message: "Error fetching email status" });
+  }
+});
 
 // Helper: sign driver JWT
 const signToken = (driver) =>

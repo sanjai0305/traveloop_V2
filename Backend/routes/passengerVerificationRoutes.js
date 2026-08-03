@@ -14,48 +14,13 @@ import express from "express";
 import crypto from "crypto";
 import protect from "../middleware/authMiddleware.js";
 import User from "../models/User.js";
-import redisClient from "../config/redis.js";
 import { sendPassengerOtpEmail } from "../services/emailService.js";
 
 const router = express.Router();
 
-// ── Helper: OTP Redis key ───────────────────────────────────────────────────
-const otpKey = (userId, phone) => `passenger_otp:${userId}:${phone}`;
-
 // ── Helper: generate 6-digit OTP ───────────────────────────────────────────
 const generateOtp = () => {
   return String(Math.floor(100000 + Math.random() * 900000));
-};
-
-// ── Helper: safely set Redis with fallback ─────────────────────────────────
-const tryRedisSet = async (key, value, ttlSeconds) => {
-  try {
-    if (!redisClient) return false;
-    await redisClient.set(key, value, "EX", ttlSeconds);
-    return true;
-  } catch (err) {
-    console.error("[PassengerOTP] Redis SET error:", err.message);
-    return false;
-  }
-};
-
-const tryRedisGet = async (key) => {
-  try {
-    if (!redisClient) return null;
-    return await redisClient.get(key);
-  } catch (err) {
-    console.error("[PassengerOTP] Redis GET error:", err.message);
-    return null;
-  }
-};
-
-const tryRedisDel = async (key) => {
-  try {
-    if (!redisClient) return;
-    await redisClient.del(key);
-  } catch (err) {
-    console.error("[PassengerOTP] Redis DEL error:", err.message);
-  }
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -80,17 +45,11 @@ router.post("/send-otp", protect, async (req, res) => {
     }
 
     const otp = generateOtp();
-    const redisStored = await tryRedisSet(otpKey(user._id, phone), otp, 300); // 5 min TTL
-
-    if (!redisStored) {
-      // Fallback: store OTP in a transient in-memory map (single-process only)
-      // This gracefully degrades when Redis is unavailable
-      if (!global._passengerOtpFallback) global._passengerOtpFallback = {};
-      global._passengerOtpFallback[`${user._id}:${phone}`] = {
-        otp,
-        expiresAt: Date.now() + 5 * 60 * 1000
-      };
-    }
+    if (!global._passengerOtpFallback) global._passengerOtpFallback = {};
+    global._passengerOtpFallback[`${user._id}:${phone}`] = {
+      otp,
+      expiresAt: Date.now() + 5 * 60 * 1000
+    };
 
     // Send OTP email
     let emailSent = false;
@@ -141,11 +100,8 @@ router.post("/verify-otp", protect, async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found." });
     }
 
-    // Attempt Redis lookup first
-    let storedOtp = await tryRedisGet(otpKey(user._id, cleanPhone));
-
-    // Fallback to in-memory store if Redis unavailable
-    if (!storedOtp && global._passengerOtpFallback) {
+    let storedOtp = null;
+    if (global._passengerOtpFallback) {
       const fb = global._passengerOtpFallback[`${user._id}:${cleanPhone}`];
       if (fb && fb.expiresAt > Date.now()) {
         storedOtp = fb.otp;
@@ -185,8 +141,7 @@ router.post("/verify-otp", protect, async (req, res) => {
 
     await user.save();
 
-    // Clean up OTP from stores
-    await tryRedisDel(otpKey(user._id, cleanPhone));
+    // Clean up OTP from store
     if (global._passengerOtpFallback) {
       delete global._passengerOtpFallback[`${user._id}:${cleanPhone}`];
     }

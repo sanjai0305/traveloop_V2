@@ -230,6 +230,7 @@ const seedMockData = (agentId) => {
 // @route   POST /api/agent/login
 // @desc    Unified Login / Registration using Google idToken or OTP Token
 router.post("/login", async (req, res) => {
+  console.log("[LOGIN] Incoming agent login request received");
   const { idToken, otpToken, email, uid } = req.body;
   
   try {
@@ -239,76 +240,151 @@ router.post("/login", async (req, res) => {
     let emailVerified = false;
 
     if (idToken) {
-      // 1. Google Auth Token Verification (Firebase Admin SDK)
+      console.log("[LOGIN] Firebase ID Token received, verifying...");
       try {
         const decoded = await admin.auth().verifyIdToken(idToken);
-        console.log("[Firebase Admin] Decoded token payload:", decoded);
-        console.log("[Firebase Admin] uid:", decoded.uid);
-        console.log("[Firebase Admin] email:", decoded.email);
+        console.log("[LOGIN] Firebase token verified. Decoded payload:", decoded);
+        
+        if (!decoded || !decoded.email) {
+          console.error("[LOGIN ERROR] Firebase token verified but email is missing");
+          return res.status(400).json({
+            success: false,
+            message: "Email missing from Google account",
+            error: "MISSING_EMAIL",
+          });
+        }
 
         verifiedEmail = decoded.email.trim().toLowerCase();
-        verifiedUid = decoded.uid; // Firebase UID
+        verifiedUid = decoded.uid;
         displayName = decoded.name || decoded.email.split("@")[0] || "";
         emailVerified = true;
+        console.log(`[LOGIN] Verified Email: ${verifiedEmail}, UID: ${verifiedUid}`);
       } catch (verifyErr) {
-        console.error("[Firebase Admin] Token verification failed:", verifyErr);
-        return res.status(400).json({ success: false, message: "Invalid Google ID token" });
+        console.error("[LOGIN ERROR] Firebase token verification failed:", verifyErr.message);
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired Google ID token",
+          error: verifyErr.message,
+        });
       }
     } else if (otpToken && email) {
-      // 2. Email OTP Token Verification
+      console.log("[LOGIN] OTP token received, verifying...");
       if (!process.env.JWT_SECRET) {
-        return res.status(500).json({ success: false, message: "Auth configuration missing on server" });
+        console.error("[LOGIN ERROR] JWT_SECRET configuration missing on server");
+        return res.status(500).json({
+          success: false,
+          message: "Server authentication configuration error",
+          error: "JWT_SECRET_MISSING",
+        });
       }
 
       try {
         const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
         if (decoded.email !== email.trim().toLowerCase() || !decoded.otpVerified) {
-          return res.status(400).json({ success: false, message: "Invalid OTP validation token" });
+          console.error("[LOGIN ERROR] OTP validation failed or email mismatch");
+          return res.status(400).json({
+            success: false,
+            message: "Invalid OTP validation token",
+            error: "OTP_TOKEN_INVALID",
+          });
         }
         verifiedEmail = email.trim().toLowerCase();
-        verifiedUid = uid || `otp_${new mongoose.Types.ObjectId().toString()}`; // Generate a fallback uid if not provided
+        verifiedUid = uid || `otp_${new mongoose.Types.ObjectId().toString()}`;
         displayName = email.split("@")[0];
         emailVerified = true;
+        console.log(`[LOGIN] OTP Verified Email: ${verifiedEmail}`);
       } catch (err) {
-        return res.status(400).json({ success: false, message: "OTP validation session expired" });
+        console.error("[LOGIN ERROR] OTP verification error:", err.message);
+        return res.status(400).json({
+          success: false,
+          message: "OTP validation session expired or invalid",
+          error: err.message,
+        });
       }
     } else {
-      return res.status(400).json({ success: false, message: "Please provide either idToken or otpToken" });
+      console.error("[LOGIN ERROR] Neither idToken nor otpToken provided");
+      return res.status(400).json({
+        success: false,
+        message: "Please provide either idToken or otpToken",
+        error: "MISSING_CREDENTIALS",
+      });
     }
 
     let agent;
 
     if (isDbConnected()) {
-      // Find agent in database by email or uid
+      console.log(`[LOGIN] Searching agent in MongoDB for email: ${verifiedEmail}...`);
       agent = await Agent.findOne({ $or: [{ email: verifiedEmail }, { uid: verifiedUid }] });
 
       if (!agent) {
-        // Create new agent profile
-        agent = await Agent.create({
-          uid: verifiedUid,
-          email: verifiedEmail,
-          displayName,
-          companyName: displayName || "Pending Verification",
-          emailVerified,
-          profileCompleted: false,
-        });
-      } else {
-        // Sync verification flags if needed
-        agent.emailVerified = emailVerified;
-        if (!agent.uid) {
-          agent.uid = verifiedUid;
+        console.log("[LOGIN] Agent not found in MongoDB. Creating new agent profile...");
+        const cleanName = (displayName || "AGT").replace(/[^a-zA-Z]/g, "").toUpperCase();
+        const initialReferralCode = `AGT-${cleanName.slice(0, 5)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        try {
+          agent = await Agent.create({
+            uid: verifiedUid,
+            email: verifiedEmail,
+            displayName,
+            companyName: displayName || "Pending Verification",
+            emailVerified,
+            profileCompleted: false,
+            referralCode: initialReferralCode,
+          });
+          console.log(`[LOGIN] New Agent created successfully with ID: ${agent._id}, ReferralCode: ${agent.referralCode}`);
+        } catch (createErr) {
+          console.error("[LOGIN ERROR] Error during Agent.create:", createErr);
+          if (createErr.code === 11000) {
+            console.warn("[LOGIN RECOVERY] Duplicate key encountered during Agent creation. Attempting fallback creation...");
+            const fallbackReferralCode = `AGT-FB-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+            agent = await Agent.create({
+              uid: verifiedUid,
+              email: verifiedEmail,
+              displayName,
+              companyName: displayName || "Pending Verification",
+              emailVerified,
+              profileCompleted: false,
+              referralCode: fallbackReferralCode,
+            });
+            console.log(`[LOGIN RECOVERY] Fallback Agent created with ReferralCode: ${agent.referralCode}`);
+          } else {
+            throw createErr;
+          }
         }
-        await agent.save();
+      } else {
+        console.log(`[LOGIN] Agent found with ID: ${agent._id}`);
+        // Build update object — only set fields that changed
+        const updateFields = { emailVerified };
+        
+        if (!agent.uid) {
+          updateFields.uid = verifiedUid;
+        }
+
+        // Generate referral code if missing or empty
+        if (!agent.referralCode || agent.referralCode.trim() === "") {
+          const cleanName = (agent.companyName || agent.displayName || "AGT").replace(/[^a-zA-Z]/g, "").toUpperCase();
+          updateFields.referralCode = `AGT-${cleanName.slice(0, 5)}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+
+        // Use findByIdAndUpdate instead of agent.save() to avoid re-writing
+        // stale fields (especially referralCode: "") that trigger E11000
+        agent = await Agent.findByIdAndUpdate(
+          agent._id,
+          { $set: updateFields },
+          { new: true }
+        );
+        console.log("[LOGIN] Agent profile updated via findByIdAndUpdate.");
       }
     } else {
       // In-Memory Fallback
-      console.warn("[MongoDB] Disconnected. Running Auth via In-Memory fallback.");
+      console.warn("[LOGIN WARNING] MongoDB Disconnected. Running Auth via In-Memory fallback.");
       
       agent = Array.from(fallbackAgents.values()).find(
         a => a.email === verifiedEmail || a.uid === verifiedUid
       );
 
       if (!agent) {
+        console.log("[LOGIN] Creating fallback in-memory agent profile...");
         const mockId = new mongoose.Types.ObjectId().toString();
         agent = {
           _id: mockId,
@@ -333,22 +409,47 @@ router.post("/login", async (req, res) => {
           role: "agent",
           status: "approved",
           isVerified: true,
+          referralCode: `AGT-MEM-${Math.floor(1000 + Math.random() * 9000)}`,
         };
         fallbackAgents.set(mockId, agent);
       }
     }
 
-    // Seed mock data for visual dashboard display
-    seedMockData(agent._id.toString());
+    // Check account status if applicable
+    if (agent.status === "rejected" || agent.status === "blocked") {
+      console.error(`[LOGIN ERROR] Agent status is ${agent.status}`);
+      return res.status(403).json({
+        success: false,
+        message: "Your agent account has been suspended or rejected. Please contact support.",
+        error: "ACCOUNT_DISABLED",
+      });
+    }
 
+    // Seed mock data for visual dashboard display
+    try {
+      seedMockData(agent._id.toString());
+    } catch (seedErr) {
+      console.warn("[LOGIN WARNING] Error seeding mock data:", seedErr.message);
+    }
+
+    // Generate JWT
+    console.log("[LOGIN] Generating JWT token for Agent ID:", agent._id);
+    const token = generateToken(agent._id.toString());
+
+    console.log("[LOGIN] Login successful for:", verifiedEmail);
     res.status(200).json({
       success: true,
-      token: generateToken(agent._id.toString()),
+      message: "Login successful",
+      token,
       agent,
     });
   } catch (error) {
-    console.error("Agent Auth Login Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server Error" });
+    console.error("[LOGIN CRITICAL ERROR] Unhandled Agent Auth Login Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "An internal server error occurred during login. Please try again later.",
+      error: error.message || "SERVER_ERROR",
+    });
   }
 });
 
@@ -521,6 +622,86 @@ router.post("/profile/create", protectAgent, async (req, res) => {
   }
 });
 
+// @route   PATCH /api/agent/profile/onboarding
+// @desc    Update current onboarding step & state machine progress
+router.patch("/profile/onboarding", protectAgent, async (req, res) => {
+  try {
+    const { currentStep, completedSteps, profileCompletion, onboardingComplete, formData } = req.body;
+    console.log(`[ONBOARDING BACKEND] Request received for Agent ID: ${req.agent._id}`);
+    console.log(`[ONBOARDING BACKEND] Target currentStep: ${currentStep}, completedSteps: ${JSON.stringify(completedSteps)}, completion: ${profileCompletion}%`);
+
+    const fieldsToUpdate = {};
+    if (typeof currentStep === "number" && currentStep >= 1 && currentStep <= 5) {
+      fieldsToUpdate.currentStep = currentStep;
+    }
+    if (Array.isArray(completedSteps)) {
+      fieldsToUpdate.completedSteps = Array.from(new Set(completedSteps.map(Number))).sort((a, b) => a - b);
+    }
+    if (typeof profileCompletion === "number") {
+      fieldsToUpdate.profileCompletion = Math.min(100, Math.max(0, profileCompletion));
+    }
+    if (typeof onboardingComplete === "boolean") {
+      fieldsToUpdate.onboardingComplete = onboardingComplete;
+      if (onboardingComplete) {
+        fieldsToUpdate.profileCompleted = true;
+        fieldsToUpdate.kycStatus = "APPROVED";
+      }
+    }
+
+    // Merge any form data passed alongside the step update
+    if (formData && typeof formData === "object") {
+      if (formData.displayName || formData.name) fieldsToUpdate.displayName = formData.displayName || formData.name;
+      if (formData.dob) fieldsToUpdate.dob = formData.dob;
+      if (formData.mobile) fieldsToUpdate.mobile = formData.mobile;
+      if (formData.state) fieldsToUpdate.state = formData.state;
+      if (formData.country) fieldsToUpdate.country = formData.country;
+      if (formData.companyName) fieldsToUpdate.companyName = formData.companyName;
+      if (formData.gstNo || formData.gstNumber) {
+        fieldsToUpdate.gstNo = formData.gstNo || formData.gstNumber;
+        fieldsToUpdate.gstNumber = formData.gstNo || formData.gstNumber;
+      }
+      if (formData.companyLogo || formData.logo) {
+        fieldsToUpdate.companyLogo = formData.companyLogo || formData.logo;
+        fieldsToUpdate.logo = formData.companyLogo || formData.logo;
+      }
+      if (formData.agentPhoto || formData.profileImage) {
+        fieldsToUpdate.agentPhoto = formData.agentPhoto || formData.profileImage;
+        fieldsToUpdate.profileImage = formData.agentPhoto || formData.profileImage;
+      }
+    }
+
+    let updatedAgent;
+    if (isDbConnected()) {
+      updatedAgent = await Agent.findByIdAndUpdate(
+        req.agent._id,
+        { $set: fieldsToUpdate },
+        { returnDocument: "after", runValidators: true }
+      );
+    } else {
+      updatedAgent = {
+        ...req.agent,
+        ...fieldsToUpdate,
+      };
+      fallbackAgents.set(req.agent._id.toString(), updatedAgent);
+    }
+
+    console.log(`[ONBOARDING BACKEND] Saved successfully. Backend Current Step is now: ${updatedAgent.currentStep}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Onboarding progress updated successfully",
+      agent: updatedAgent,
+    });
+  } catch (error) {
+    console.error("[ONBOARDING BACKEND ERROR] Failed to update onboarding progress:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update onboarding step state",
+      error: error.message,
+    });
+  }
+});
+
 // @route   PUT /api/agent/profile/update
 // @desc    Update agent profile details
 router.put("/profile/update", protectAgent, async (req, res) => {
@@ -596,79 +777,7 @@ router.put("/profile/update", protectAgent, async (req, res) => {
   }
 });
 
-// @route   POST /api/agent/send-email-otp
-// @desc    Generate + Send email verification OTP
-router.post("/send-email-otp", protectAgent, async (req, res) => {
-  try {
-    const agent = await Agent.findById(req.agent._id);
-    if (!agent) {
-      return res.status(404).json({ success: false, message: "Agent not found" });
-    }
 
-    const email = agent.email;
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    agent.emailOtp = otp;
-    agent.emailOtpExpiry = expiry;
-    await agent.save();
-
-    console.log(`[KYC Email OTP] Generated OTP for ${email}: ${otp}`);
-
-    try {
-      await sendAdminOtpEmail(email, otp);
-    } catch (err) {
-      console.warn("[KYC Email OTP] Nodemailer failed, falling back to log:", err.message);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Email OTP sent successfully",
-      otp: process.env.NODE_ENV === "production" ? undefined : otp,
-    });
-  } catch (error) {
-    console.error("Send email OTP error:", error);
-    res.status(500).json({ success: false, message: "Failed to send email OTP" });
-  }
-});
-
-// @route   POST /api/agent/verify-email-otp
-// @desc    Verify email OTP and advance kycStatus
-router.post("/verify-email-otp", protectAgent, async (req, res) => {
-  try {
-    const { otp } = req.body;
-    if (!otp) {
-      return res.status(400).json({ success: false, message: "OTP is required" });
-    }
-
-    const agent = await Agent.findById(req.agent._id);
-    if (!agent) {
-      return res.status(404).json({ success: false, message: "Agent not found" });
-    }
-
-    if (agent.emailOtp !== otp || !agent.emailOtpExpiry || agent.emailOtpExpiry < new Date()) {
-      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
-    }
-
-    agent.emailVerified = true;
-    agent.emailOtp = "";
-    agent.emailOtpExpiry = null;
-
-    if (agent.kycStatus === "PENDING") {
-      agent.kycStatus = "EMAIL_VERIFIED";
-    }
-    await agent.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Email verified successfully",
-      agent,
-    });
-  } catch (error) {
-    console.error("Verify email OTP error:", error);
-    res.status(500).json({ success: false, message: "Failed to verify email OTP" });
-  }
-});
 
 /* ──────────────────────────────────────────────────────────────────────────
    DRIVER VERIFICATION ENDPOINTS (used during trip creation Step 6)
@@ -859,33 +968,35 @@ router.post("/verify-mobile-otp", protectAgent, async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid or expired Firebase Auth token." });
     }
 
+    console.log(`[OTP VERIFICATION] Verifying mobile OTP for Agent ID: ${agent._id}`);
     agent.mobileVerified = true;
     if (phone) {
-      agent.mobile = phone;
-      agent.phone = phone;
+      agent.mobile = phone.replace(/^\+91/, "");
+      agent.phone = phone.replace(/^\+91/, "");
     }
 
-    const hasGst = agent.gstNo || agent.gstNumber;
-    const hasLogo = agent.companyLogo || agent.logo;
-    const hasPhoto = agent.agentPhoto || agent.profileImage;
-    const allFieldsFilled = !!(agent.displayName && agent.dob && agent.mobile && agent.state && agent.country && agent.companyName && hasGst && hasLogo && hasPhoto);
-
-    if (agent.emailVerified && allFieldsFilled) {
-      agent.kycStatus = "KYC_COMPLETED";
-      agent.profileCompleted = true;
-    } else {
-      agent.kycStatus = "MOBILE_VERIFIED";
-    }
+    // Set complete onboarding state machine flags immediately
+    agent.currentStep = 6;
+    agent.completedSteps = [1, 2, 3, 4, 5, 6];
+    agent.profileCompletion = 100;
+    agent.mobileVerified = true;
+    agent.emailVerified = true;
+    agent.kycStatus = "APPROVED";
+    agent.profileCompleted = true;
+    agent.onboardingComplete = true;
 
     await agent.save();
+    console.log(`[OTP VERIFICATION] OTP Verified | Saving onboardingCompleted=true | Mongo updated for Agent ID: ${agent._id}`);
 
     res.status(200).json({
       success: true,
       message: "Mobile verified successfully",
+      onboardingCompleted: true,
+      redirect: "/dashboard",
       agent,
     });
   } catch (error) {
-    console.error("Verify mobile OTP error:", error);
+    console.error("[OTP VERIFICATION ERROR] Verify mobile OTP error:", error);
     res.status(500).json({ success: false, message: "Failed to verify mobile OTP" });
   }
 });
@@ -955,6 +1066,11 @@ const handleDriverCreation = async (tripData, agentId) => {
   if (!tripData.driverGmail) return null;
   const email = tripData.driverGmail.toLowerCase().trim();
   let driver = await Driver.findOne({ email });
+
+  const mobileVerified = !!tripData.driverMobileVerified;
+  const emailVerified = !!tripData.driverEmailVerified;
+  const verificationStatus = (mobileVerified && emailVerified) ? "VERIFIED" : "PENDING";
+
   if (!driver) {
     driver = await Driver.create({
       name: tripData.driverName || "Driver",
@@ -965,7 +1081,10 @@ const handleDriverCreation = async (tripData, agentId) => {
       photo: tripData.driverPhoto || "",
       emergencyContact: tripData.emergencyContact || "",
       assignedAgent: agentId,
-      status: "pending_verification",
+      status: "active",
+      mobileVerified,
+      emailVerified,
+      verificationStatus,
     });
   } else {
     driver.name = tripData.driverName || driver.name;
@@ -974,6 +1093,9 @@ const handleDriverCreation = async (tripData, agentId) => {
     driver.vehicleNumber = tripData.busNumber || driver.vehicleNumber;
     if (tripData.driverPhoto) driver.photo = tripData.driverPhoto;
     if (tripData.emergencyContact) driver.emergencyContact = tripData.emergencyContact;
+    driver.mobileVerified = mobileVerified;
+    driver.emailVerified = emailVerified;
+    driver.verificationStatus = verificationStatus;
     await driver.save();
   }
   return driver._id;
@@ -1087,7 +1209,10 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
 
   // ── Driver Verification Gate ──────────────────────────────────────────────
   // Both driver mobile (Firebase) and email OTP must be verified before trip creation.
+  console.log(`[CreateTrip] Checking driver verification for mobile: ${req.body.driverMobileVerified}, email: ${req.body.driverEmailVerified}`);
+  
   if (!req.body.driverMobileVerified) {
+    console.warn(`[CreateTrip] ❌ Mobile verification check failed. Received: ${req.body.driverMobileVerified}`);
     return res.status(400).json({
       success: false,
       reason: "DRIVER_MOBILE_NOT_VERIFIED",
@@ -1096,6 +1221,7 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
   }
 
   if (!req.body.driverEmailVerified) {
+    console.warn(`[CreateTrip] ❌ Email verification check failed. Received: ${req.body.driverEmailVerified}`);
     return res.status(400).json({
       success: false,
       reason: "DRIVER_EMAIL_NOT_VERIFIED",
@@ -1104,12 +1230,35 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
   }
 
   if (req.body.driverGmail) {
-    const otpDoc = await DriverOtp.findOne({ email: req.body.driverGmail.toLowerCase() });
-    if (!otpDoc || !otpDoc.verified) {
+    const targetEmail = req.body.driverGmail.toLowerCase().trim();
+    const otpDoc = await DriverOtp.findOne({ email: targetEmail });
+    
+    console.log(`[CreateTrip] Database lookup for DriverOtp: ${targetEmail} -> Found: ${!!otpDoc}, Verified: ${otpDoc ? otpDoc.verified : false}`);
+
+    if (!otpDoc) {
+      console.warn(`[CreateTrip] ❌ Driver email verification record not found in database for ${targetEmail}`);
       return res.status(400).json({
         success: false,
-        reason: "DRIVER_EMAIL_NOT_VERIFIED",
-        message: "Driver email verification mismatch. Please verify again.",
+        reason: "DRIVER_RECORD_NOT_FOUND",
+        message: "Driver record not found. Please verify the driver's email via OTP first.",
+      });
+    }
+
+    if (Date.now() > otpDoc.expiresAt) {
+      console.warn(`[CreateTrip] ❌ Driver email verification record expired for ${targetEmail} (expired at ${otpDoc.expiresAt})`);
+      return res.status(400).json({
+        success: false,
+        reason: "VERIFICATION_RECORD_EXPIRED",
+        message: "Verification record expired. Please request a new OTP and verify again.",
+      });
+    }
+
+    if (!otpDoc.verified) {
+      console.warn(`[CreateTrip] ❌ Driver email verification mismatch (verified flag false in database) for ${targetEmail}`);
+      return res.status(400).json({
+        success: false,
+        reason: "VERIFICATION_TOKEN_MISMATCH",
+        message: "Verification token mismatch. Please complete email OTP verification.",
       });
     }
   }
@@ -1210,7 +1359,9 @@ router.post("/trips/create", protectAgent, checkAgentKYC, async (req, res) => {
         driverLicenseNumber,
         busNumber,
         driverPhoto,
-        emergencyContact
+        emergencyContact,
+        driverMobileVerified: req.body.driverMobileVerified,
+        driverEmailVerified: req.body.driverEmailVerified,
       }, req.agent._id);
     }
 
@@ -1532,7 +1683,9 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
           driverLicenseNumber: req.body.driverLicenseNumber || trip.driverLicenseNumber,
           busNumber: req.body.busNumber || trip.busNumber,
           driverPhoto: req.body.driverPhoto || trip.driverPhoto,
-          emergencyContact: req.body.emergencyContact || trip.emergencyContact
+          emergencyContact: req.body.emergencyContact || trip.emergencyContact,
+          driverMobileVerified: req.body.driverMobileVerified !== undefined ? req.body.driverMobileVerified : trip.driverMobileVerified,
+          driverEmailVerified: req.body.driverEmailVerified !== undefined ? req.body.driverEmailVerified : trip.driverEmailVerified,
         }, req.agent._id);
         req.body.driver = driverId;
         req.body.driverId = driverId;
@@ -1794,7 +1947,9 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
           driverLicenseNumber: req.body.driverLicenseNumber || trip.driverLicenseNumber,
           busNumber: req.body.busNumber || trip.busNumber,
           driverPhoto: req.body.driverPhoto || trip.driverPhoto,
-          emergencyContact: req.body.emergencyContact || trip.emergencyContact
+          emergencyContact: req.body.emergencyContact || trip.emergencyContact,
+          driverMobileVerified: req.body.driverMobileVerified !== undefined ? req.body.driverMobileVerified : trip.driverMobileVerified,
+          driverEmailVerified: req.body.driverEmailVerified !== undefined ? req.body.driverEmailVerified : trip.driverEmailVerified,
         }, req.agent._id);
         req.body.driver = driverId;
       }
@@ -1847,108 +2002,239 @@ router.put(["/trip/:id", "/trips/:id"], protectAgent, checkAgentKYC, async (req,
   }
 });
 
-// @route   PUT /api/agent/trip/:id/publish or /api/agent/trips/:id/publish or POST /api/agent/trips/publish
-// @desc    Submit a trip for Admin publication approval
+// @route   POST /api/agent/trip/:id/publish or /api/agent/trips/:id/publish or /api/agent/trips/publish
+// @desc    Submit a trip for Admin publication approval with strict validation and safe operations
 const handleTripPublishRequest = async (req, res) => {
+  console.log("[PUBLISH] Request received");
+
   try {
-    const tripId = req.params.id || req.body.id || req.body.tripId;
-    if (!tripId) {
-      return res.status(400).json({ success: false, message: "Trip ID is required for publication." });
+    const id = req.params.id || req.body.id || req.body._id || req.body.tripId;
+    console.log(`[PUBLISH] Trip ID: ${id || "NOT_PROVIDED"}`);
+
+    if (!id) {
+      console.log("[PUBLISH] Validation failed: Missing Trip ID");
+      return res.status(400).json({
+        success: false,
+        message: "Trip ID is required to publish.",
+      });
     }
 
+    const agentId = req.agent?._id;
+    console.log(`[PUBLISH] Agent ID: ${agentId || "NOT_PROVIDED"}`);
+
+    if (!agentId) {
+      console.log("[PUBLISH] Validation failed: Missing Agent ID");
+      return res.status(401).json({
+        success: false,
+        message: "Agent authentication required.",
+      });
+    }
+
+    console.log("[PUBLISH] Searching trip...");
     let trip;
 
     if (isDbConnected()) {
-      trip = await AgentTrip.findById(tripId);
+      trip = await AgentTrip.findById(id);
       if (!trip) {
-        return res.status(404).json({ success: false, message: "Trip not found" });
-      }
-
-      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
-      if (!ownerId) {
-        return res.status(500).json({ success: false, message: "Trip owner field missing" });
-      }
-
-      if (ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized publish request. You can only publish your own trips." });
-      }
-
-      // Idempotency check
-      if (trip.approvalStatus === "pending" && (trip.status === "pending_approval" || trip.publishStatus === "pending_approval")) {
-        return res.status(200).json({
-          success: true,
-          message: "Trip publication request is already pending Admin approval.",
-          trip,
+        console.log(`[PUBLISH] Trip not found for ID: ${id}`);
+        return res.status(404).json({
+          success: false,
+          message: "Trip not found.",
         });
       }
+      console.log(`[PUBLISH] Trip found: ${trip.title || trip._id}`);
 
-      trip.status = "pending_approval";
-      trip.publishStatus = "pending_approval";
-      trip.approvalStatus = "pending";
-      trip.published = false;
+      // STEP 5: Verify Ownership
+      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent || trip.agencyId;
+      if (!ownerId || ownerId.toString() !== agentId.toString()) {
+        console.log(`[PUBLISH] Ownership verification failed: owner ${ownerId} !== agent ${agentId}`);
+        return res.status(403).json({
+          success: false,
+          message: "Unauthorized publish request. You can only publish your own trips.",
+        });
+      }
+      console.log("[PUBLISH] Ownership verified");
+
+      // STEP 6: Validate Required Fields before publishing
+      const missingFields = [];
+
+      if (!trip.title || !String(trip.title).trim()) {
+        missingFields.push("Trip Name (title)");
+      }
+
+      const destinationsList = Array.isArray(trip.destinations)
+        ? trip.destinations.filter(d => Boolean(d && String(d).trim()))
+        : (trip.destination && String(trip.destination).trim() ? [trip.destination.trim()] : []);
+      if (destinationsList.length === 0) {
+        missingFields.push("Destination");
+      }
+
+      const hasImages = Boolean(
+        trip.coverImage ||
+        trip.bannerImage ||
+        (Array.isArray(trip.images) && trip.images.length > 0)
+      );
+      if (!hasImages) {
+        missingFields.push("Cover / Gallery Images");
+      }
+
+      const price = Number(trip.pricePerPerson ?? trip.price ?? trip.offerPrice ?? 0);
+      if (!price || price <= 0) {
+        missingFields.push("Price per person");
+      }
+
+      if (!trip.duration || !String(trip.duration).trim()) {
+        missingFields.push("Duration");
+      }
+
+      const totalSeats = Number(trip.totalSeats ?? trip.seats ?? 0);
+      if (!totalSeats || totalSeats <= 0) {
+        missingFields.push("Total Seats");
+      }
+
+      const hasDescription = Boolean(
+        (trip.description && String(trip.description).trim()) ||
+        (trip.shortDescription && String(trip.shortDescription).trim()) ||
+        (trip.subtitle && String(trip.subtitle).trim()) ||
+        (trip.tagline && String(trip.tagline).trim())
+      );
+      if (!hasDescription) {
+        missingFields.push("Description");
+      }
+
+      if (!trip.startDate) {
+        missingFields.push("Departure Date (startDate)");
+      }
+
+      if (!trip.endDate) {
+        missingFields.push("Return Date (endDate)");
+      }
+
+      if (missingFields.length > 0) {
+        console.log(`[PUBLISH] Field validation failed. Missing: ${missingFields.join(", ")}`);
+        return res.status(400).json({
+          success: false,
+          message: "Cannot publish trip. Please complete all mandatory trip details.",
+          missingFields,
+        });
+      }
+      console.log("[PUBLISH] Validation passed");
+
+      // Generate custom unique trip ID if not present
+      if (!trip.tripId || !trip.tripId.startsWith("TRIP-")) {
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const randStr = Math.floor(100000 + Math.random() * 900000);
+        trip.tripId = `TRIP-${dateStr}-${randStr}`;
+      }
+
+      // STEP 7: MongoDB Update
+      console.log("[PUBLISH] Updating status");
+      trip.status = "PENDING_APPROVAL";
+      trip.publishStatus = "PENDING_APPROVAL";
+      trip.approvalStatus = "PENDING_APPROVAL";
+      trip.published = true;
+      trip.isPublished = true;
+      trip.visibleToTravelers = false;
+      trip.publishedAt = new Date();
       trip.submittedAt = new Date();
+      trip.submittedBy = req.agent._id;
+      trip.agencyId = req.agent._id;
+
+      console.log("[PUBLISH] Saving MongoDB");
       await trip.save();
 
-      // Create persistent AdminNotification in MongoDB
+      // STEP 8: Create Admin Notification (safe failure)
+      console.log("[PUBLISH] Creating notification");
       try {
         const AdminNotification = (await import("../models/AdminNotification.js")).default;
         const agentName = req.agent.companyName || req.agent.displayName || req.agent.email || "Agent";
         await AdminNotification.create({
-          title: "New Publication Request",
-          message: `${agentName} submitted trip '${trip.title}' for approval`,
-          type: "AGENT_PUBLICATION_REQUEST",
-          agentId: req.agent._id,
+          type: "NEW_TRIP_SUBMISSION",
           tripId: trip._id,
+          agencyId: req.agent._id,
+          title: "New Trip Awaiting Approval",
+          message: `${trip.title} submitted by ${agentName}`,
           resourceId: trip._id.toString(),
           resourceType: "trip",
-          read: false
+          read: false,
         });
+        console.log("[PUBLISH] Admin notification created successfully");
       } catch (notifErr) {
-        console.error("Failed to create AdminNotification on trip publish:", notifErr);
+        console.error("[PUBLISH] AdminNotification error (continuing publish flow):", notifErr?.message || notifErr);
       }
 
     } else {
-      trip = fallbackTrips.get(tripId);
+      // Fallback DB branch
+      trip = fallbackTrips.get(id);
       if (!trip) {
-        return res.status(404).json({ success: false, message: "Trip not found" });
+        console.log(`[PUBLISH] Fallback trip not found for ID: ${id}`);
+        return res.status(404).json({ success: false, message: "Trip not found." });
       }
 
-      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
-      if (!ownerId) {
-        return res.status(500).json({ success: false, message: "Trip owner field missing" });
+      if (!trip.tripId || !trip.tripId.startsWith("TRIP-")) {
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const randStr = Math.floor(100000 + Math.random() * 900000);
+        trip.tripId = `TRIP-${dateStr}-${randStr}`;
       }
 
-      if (ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized publish request." });
-      }
-
-      trip.status = "pending_approval";
-      trip.publishStatus = "pending_approval";
-      trip.approvalStatus = "pending";
-      trip.published = false;
+      trip.status = "PENDING_APPROVAL";
+      trip.publishStatus = "PENDING_APPROVAL";
+      trip.approvalStatus = "PENDING_APPROVAL";
+      trip.published = true;
+      trip.isPublished = true;
+      trip.visibleToTravelers = false;
+      trip.publishedAt = new Date();
       trip.submittedAt = new Date();
-      fallbackTrips.set(tripId, trip);
+      trip.submittedBy = req.agent._id;
+      trip.agencyId = req.agent._id;
+      fallbackTrips.set(id, trip);
     }
 
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("trip_published", trip._id || tripId);
-      io.emit("admin:publication-submitted", { tripId: trip._id || tripId, agentId: req.agent._id });
+    // STEP 9: Socket.IO (safe failure)
+    console.log("[PUBLISH] Emitting Socket Event");
+    try {
+      const io = req.app.get("io");
+      if (io) {
+        io.emit("trip_published", trip._id || id);
+        io.emit("admin:publication-submitted", { tripId: trip._id || id, agentId: req.agent._id });
+        io.emit("admin:new-trip-submission", { tripId: trip._id || id, agentId: req.agent._id, trip });
+        console.log("[PUBLISH] Socket realtime events emitted successfully");
+      } else {
+        console.log("[PUBLISH] Socket unavailable. Skipping realtime event");
+      }
+    } catch (socketErr) {
+      console.warn("[PUBLISH] Socket error (continuing publish flow):", socketErr?.message || socketErr);
     }
 
-    res.status(200).json({
+    console.log("[PUBLISH] Publish completed");
+
+    // STEP 10: Return HTTP 200 Response
+    return res.status(200).json({
       success: true,
-      message: "Trip submitted successfully for Admin approval.",
+      message: "Trip submitted for admin approval.",
+      tripStatus: "PENDING_APPROVAL",
       trip,
     });
+
   } catch (error) {
-    console.error("Publish trip error:", error);
-    res.status(500).json({ success: false, message: "Server Error publishing trip" });
+    // STEP 11: Comprehensive Error Output
+    console.error("[PUBLISH ERROR] File: agentRoutes.js | Function: handleTripPublishRequest");
+    console.error(`[PUBLISH ERROR] Trip ID: ${req.params?.id || req.body?.id || req.body?._id || req.body?.tripId || "N/A"}`);
+    console.error(`[PUBLISH ERROR] Agent ID: ${req.agent?._id || "N/A"}`);
+    console.error(`[PUBLISH ERROR] Exception: ${error?.message || error}`);
+    console.error(`[PUBLISH ERROR] Stack Trace:\n${error?.stack}`);
+
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "Internal Server Error during trip publish.",
+      stack: error?.stack,
+    });
   }
 };
 
-router.put(["/trip/:id/publish", "/trips/:id/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
-router.post(["/trips/publish", "/trip/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
+// Register publish endpoints cleanly for all HTTP verb variations
+router.put(["/trip/:id/publish", "/trips/:id/publish", "/trips/publish", "/trip/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
+router.post(["/trip/:id/publish", "/trips/:id/publish", "/trips/publish", "/trip/publish"], protectAgent, checkAgentKYC, handleTripPublishRequest);
 
 // @route   DELETE /api/agent/trip/:id or /api/agent/trips/:id
 // @desc    Delete trip by ID (Soft delete & Realtime sync, with Booking & Cancellation confirmations check)
@@ -2756,84 +3042,7 @@ router.patch(["/trips/:id/draft", "/trips/draft"], protectAgent, async (req, res
   }
 });
 
-// @route   POST /api/agent/trips/publish or /api/agent/trips/:id/publish
-// @desc    Explicitly publish a trip (Requires 100% completion)
-router.post(["/trips/publish", "/trips/:id/publish", "/trip/:id/publish"], protectAgent, checkAgentKYC, async (req, res) => {
-  try {
-    const id = req.params.id || req.body.id || req.body._id || req.body.tripId;
-    if (!id) {
-      return res.status(400).json({ success: false, message: "Trip ID is required to publish" });
-    }
-
-    let trip;
-    if (isDbConnected()) {
-      trip = await AgentTrip.findById(id);
-      if (!trip) {
-        return res.status(404).json({ success: false, message: "Trip not found" });
-      }
-
-      const ownerId = trip.agentId || trip.createdBy || trip.userId || trip.agent;
-      if (ownerId && ownerId.toString() !== req.agent._id.toString()) {
-        return res.status(403).json({ success: false, message: "Unauthorized publish request" });
-      }
-
-      // Check required fields (100% completion)
-      const missingFields = [];
-      if (!trip.title) missingFields.push("title");
-      if (!trip.description) missingFields.push("description");
-      if (!trip.destinations || trip.destinations.length === 0) missingFields.push("destinations");
-      if (!trip.startDate) missingFields.push("startDate");
-      if (!trip.endDate) missingFields.push("endDate");
-      if (!trip.bookingDeadline) missingFields.push("bookingDeadline");
-      if (!trip.busType) missingFields.push("busType");
-      if (!trip.emergencyContact) missingFields.push("emergencyContact");
-      if (!trip.totalSeats) missingFields.push("totalSeats");
-      if (!trip.pricePerPerson && !trip.offerPrice) missingFields.push("pricePerPerson / offerPrice");
-
-      if (missingFields.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Cannot publish trip. Please complete all mandatory sections (100% progress required).",
-          missingFields
-        });
-      }
-
-      trip.status = "published";
-      trip.publishStatus = "published";
-      trip.published = true;
-      trip.visible = true;
-      trip.publishedAt = new Date();
-      trip.progressPercentage = 100;
-      await trip.save();
-    } else {
-      trip = fallbackTrips.get(id);
-      if (!trip) {
-        return res.status(404).json({ success: false, message: "Trip not found" });
-      }
-      trip.status = "published";
-      trip.publishStatus = "published";
-      trip.published = true;
-      trip.visible = true;
-      trip.publishedAt = new Date();
-      trip.progressPercentage = 100;
-      fallbackTrips.set(id, trip);
-    }
-
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("trip_published", trip._id || id);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Trip published successfully",
-      trip
-    });
-  } catch (error) {
-    console.error("Publish trip error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server Error publishing trip" });
-  }
-});
+// Note: Publish trip route handled by handleTripPublishRequest above
 
 // @route   PATCH /api/agent/trips/:id/cancel-request or /api/agent/trips/cancel-request
 // @desc    Initiate cancellation workflow for a trip

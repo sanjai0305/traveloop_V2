@@ -6,6 +6,7 @@ import { hasTripPermission } from "../utils/permissionHelper.js";
 
 // Helper: verify trip access for V1.4 roles
 const verifyTripAccess = async (tripId, userId, requiredPermission = "edit") => {
+  if (!tripId) return { error: "Missing required tripId parameter", status: 400 };
   const trip = await Trip.findById(tripId);
   if (!trip) return { error: "Trip not found", status: 404 };
 
@@ -38,51 +39,66 @@ export const getJournalEntries = async (req, res) => {
     const access = await verifyTripAccess(tripId, req.user.id, "view");
     if (access.error) return res.status(access.status).json({ success: false, message: access.error });
 
-    const entries = await Journal.find({ trip: tripId }).sort({ day: 1 });
+    const entries = await Journal.find({ $or: [{ trip: tripId }, { tripId: tripId }] }).sort({ day: 1 });
     res.status(200).json({ success: true, entries });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Error fetching journal entries:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to fetch journal entries from database" });
   }
 };
 
 // CREATE journal entry
 export const createJournalEntry = async (req, res) => {
   try {
-    const { tripId, day, date, title, content, photos, mood, highlights } = req.body;
+    const { tripId, day, dayId, date, title, content, description, photos, mood, highlights, timestamp } = req.body;
 
-    const access = await verifyTripAccess(tripId, req.user.id, "edit");
+    const targetTripId = tripId || req.body.trip;
+    if (!targetTripId) {
+      return res.status(400).json({ success: false, message: "Validation error: tripId is required" });
+    }
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: "Validation error: Title is required" });
+    }
+
+    const access = await verifyTripAccess(targetTripId, req.user.id, "edit");
     if (access.error) return res.status(access.status).json({ success: false, message: access.error });
 
     const entry = await Journal.create({
-      trip: tripId,
-      day,
-      date,
-      title,
-      content,
-      photos: photos || [],
+      tripId: targetTripId,
+      trip: targetTripId,
+      day: Number(day || dayId || 1),
+      date: date || (timestamp ? new Date(timestamp) : new Date()),
+      title: title.trim(),
+      content: content || description || "",
+      photos: Array.isArray(photos) ? photos : [],
       mood: mood || "great",
-      highlights: highlights || [],
+      highlights: Array.isArray(highlights) ? highlights : [],
     });
 
     const userName = req.user.firstName || req.user.email;
-    await logActivity(tripId, req.user.id, `${userName} added journal entry for Day ${day}: "${title}"`);
+    await logActivity(targetTripId, req.user.id, `${userName} added journal entry for Day ${entry.day}: "${title}"`);
 
     // Reward +3 XP and check Journal Keeper achievement
-    const userObj = await User.findById(req.user.id);
-    if (userObj) {
-      userObj.xp = (userObj.xp || 0) + 3;
-      userObj.level = Math.floor(userObj.xp / 100) + 1;
-      const today = new Date().toISOString().split("T")[0];
-      userObj.lastActiveDate = today;
-      if (!userObj.achievements.includes("Journal Keeper")) {
-        userObj.achievements.push("Journal Keeper");
+    try {
+      const userObj = await User.findById(req.user.id);
+      if (userObj) {
+        userObj.xp = (userObj.xp || 0) + 3;
+        userObj.level = Math.floor(userObj.xp / 100) + 1;
+        const today = new Date().toISOString().split("T")[0];
+        userObj.lastActiveDate = today;
+        if (!userObj.achievements.includes("Journal Keeper")) {
+          userObj.achievements.push("Journal Keeper");
+        }
+        await userObj.save();
       }
-      await userObj.save();
+    } catch (xpErr) {
+      console.error("XP Reward Error:", xpErr);
     }
 
-    res.status(201).json({ success: true, message: "Journal entry created", entry });
+    res.status(201).json({ success: true, message: "Journal entry saved successfully.", entry });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Error creating journal entry:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to save journal entry in database" });
   }
 };
 
@@ -90,29 +106,31 @@ export const createJournalEntry = async (req, res) => {
 export const updateJournalEntry = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, content, photos, mood, highlights, date } = req.body;
+    const { title, content, description, photos, mood, highlights, date } = req.body;
 
     const entry = await Journal.findById(id);
     if (!entry) return res.status(404).json({ success: false, message: "Journal entry not found" });
 
-    const access = await verifyTripAccess(entry.trip, req.user.id, "edit");
+    const targetTripId = entry.tripId || entry.trip;
+    const access = await verifyTripAccess(targetTripId, req.user.id, "edit");
     if (access.error) return res.status(access.status).json({ success: false, message: access.error });
 
-    if (title     !== undefined) entry.title      = title;
-    if (content   !== undefined) entry.content    = content;
-    if (photos    !== undefined) entry.photos     = photos;
-    if (mood      !== undefined) entry.mood       = mood;
-    if (highlights!== undefined) entry.highlights = highlights;
-    if (date      !== undefined) entry.date       = date;
+    if (title       !== undefined) entry.title      = title.trim();
+    if (content     !== undefined || description !== undefined) entry.content = content !== undefined ? content : description;
+    if (photos      !== undefined) entry.photos     = Array.isArray(photos) ? photos : [];
+    if (mood        !== undefined) entry.mood       = mood;
+    if (highlights  !== undefined) entry.highlights = highlights;
+    if (date        !== undefined) entry.date       = date;
 
     await entry.save();
 
     const userName = req.user.firstName || req.user.email;
-    await logActivity(entry.trip, req.user.id, `${userName} updated journal entry for Day ${entry.day}: "${title || entry.title}"`);
+    await logActivity(targetTripId, req.user.id, `${userName} updated journal entry for Day ${entry.day}: "${title || entry.title}"`);
 
-    res.status(200).json({ success: true, message: "Journal entry updated", entry });
+    res.status(200).json({ success: true, message: "Journal entry updated successfully.", entry });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Error updating journal entry:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to update journal entry" });
   }
 };
 
@@ -123,15 +141,17 @@ export const deleteJournalEntry = async (req, res) => {
     const entry = await Journal.findById(id);
     if (!entry) return res.status(404).json({ success: false, message: "Journal entry not found" });
 
-    const access = await verifyTripAccess(entry.trip, req.user.id, "edit");
+    const targetTripId = entry.tripId || entry.trip;
+    const access = await verifyTripAccess(targetTripId, req.user.id, "edit");
     if (access.error) return res.status(access.status).json({ success: false, message: access.error });
 
     const userName = req.user.firstName || req.user.email;
-    await logActivity(entry.trip, req.user.id, `${userName} deleted journal entry for Day ${entry.day}: "${entry.title}"`);
+    await logActivity(targetTripId, req.user.id, `${userName} deleted journal entry for Day ${entry.day}: "${entry.title}"`);
 
     await Journal.findByIdAndDelete(id);
-    res.status(200).json({ success: true, message: "Journal entry deleted" });
+    res.status(200).json({ success: true, message: "Journal entry deleted successfully." });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("Error deleting journal entry:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to delete journal entry" });
   }
 };

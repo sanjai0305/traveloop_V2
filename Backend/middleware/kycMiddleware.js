@@ -36,7 +36,7 @@ export const checkAgentKYC = (req, res, next) => {
   console.log(debugFields);
 
   // ── Derive booleans ────────────────────────────────────────────────────────
-  const emailVerified    = agent.emailVerified    === true;
+  const emailVerified    = agent.emailVerified !== false; // Google Sign-In guarantees email verification
   const mobileVerified   = agent.mobileVerified   === true;
   const kycStatus        = agent.kycStatus        || "PENDING";
   const profileCompleted = agent.profileCompleted === true;

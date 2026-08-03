@@ -27,7 +27,11 @@ const protectAgent = async (req, res, next) => {
       const agent = await Agent.findById(decoded.id).select(
         "uid displayName companyName email phone gstNumber businessCategory " +
         "address city state country website instagram facebook logo profileImage " +
-        "status role isVerified emailVerified profileCompleted dob mobile mobileVerified gstNo companyLogo agentPhoto kycStatus isApproved"
+        "status role isVerified emailVerified profileCompleted dob mobile mobileVerified " +
+        "gstNo companyLogo agentPhoto kycStatus isApproved " +
+        "acceptedTerms privacyAccepted acceptedAt legalConsent termsVersion termsAcceptedAt " +
+        "referralCode referralCount tripSlots usedSlots bonusSlots purchasedSlots " +
+        "currentStep completedSteps profileCompletion onboardingComplete"
       );
 
       if (agent) {

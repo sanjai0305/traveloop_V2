@@ -32,7 +32,7 @@ export const deleteTrip = async (id: string, agentOtp?: string): Promise<{ succe
 };
 
 export const publishTrip = async (id: string): Promise<{ success: boolean; message: string; trip: AgentTrip }> => {
-  const response = await api.post("/agent/trips/publish", { id });
+  const response = await api.post(`/agent/trip/${id}/publish`, { id, tripId: id });
   return response.data;
 };
 

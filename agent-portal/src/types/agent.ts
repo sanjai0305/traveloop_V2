@@ -47,7 +47,7 @@ export interface Agent {
   isVerified?: boolean;
   documents?: DocumentUpload[];
 
-  // KYC Fields
+  // KYC & Onboarding State Machine Fields
   kycStatus?: "PENDING" | "EMAIL_VERIFIED" | "MOBILE_VERIFIED" | "KYC_COMPLETED" | "APPROVED";
   dob?: string;
   mobile?: string;
@@ -55,4 +55,8 @@ export interface Agent {
   agentPhoto?: string;
   companyLogo?: string;
   gstNo?: string;
+  currentStep?: number;
+  completedSteps?: number[];
+  profileCompletion?: number;
+  onboardingComplete?: boolean;
 }

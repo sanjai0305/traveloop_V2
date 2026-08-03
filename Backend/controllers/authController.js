@@ -10,6 +10,19 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
 import { sendWelcomeEmail, sendTravelerOtpEmail } from "../services/emailService.js";
+
+// Helper to handle Mongoose duplicate key errors and hide internal details
+const handleMongooseError = (err, res) => {
+  if (err.name === "MongoServerError" && err.code === 11000) {
+    const field = Object.keys(err.keyPattern || {})[0] || "field";
+    return res.status(400).json({
+      success: false,
+      message: `${field} already exists. Please use a different value.`,
+    });
+  }
+  console.error(err);
+  return res.status(500).json({ success: false, message: "An unexpected error occurred. Please try again later." });
+};
 import { doc, setDoc, getDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import { db, auth as firebaseAuth } from "../config/firebase.js";
 import { createUserWithEmailAndPassword, signInAnonymously } from "firebase/auth";
@@ -460,22 +473,27 @@ export const registerUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // CREATE USER IN MONGODB
-    const newUser = await User.create({
-        firstName,
-        lastName,
-        email: email.trim().toLowerCase(),
-        phone,
-        city: city || "",
-        country: country || "",
-        additionalInfo: additionalInfo || "",
-        password: hashedPassword,
-        acceptedTerms: true,
-        termsAcceptedAt: new Date().toISOString(),
-        termsVersion: "2026-06",
-        firebaseUid: uid,
-        referredBy: inviterUser ? inviterUser.referralCode : "",
-      });
+      // CREATE USER IN MONGODB
+      let newUser;
+      try {
+        newUser = await User.create({
+          firstName,
+          lastName,
+          email: email.trim().toLowerCase(),
+          phone,
+          city: city || "",
+          country: country || "",
+          additionalInfo: additionalInfo || "",
+          password: hashedPassword,
+          acceptedTerms: true,
+          termsAcceptedAt: new Date().toISOString(),
+          termsVersion: "2026-06",
+          firebaseUid: uid,
+          referredBy: inviterUser ? inviterUser.referralCode : "",
+        });
+      } catch (dbErr) {
+        return handleMongooseError(dbErr, res);
+      }
 
     if (inviterUser) {
       await Referral.create({
@@ -598,16 +616,22 @@ export const loginUser = async (req, res) => {
           const salt = await bcrypt.genSalt(10);
           const hashedPassword = await bcrypt.hash(password, salt);
 
-          userRow = await User.create({
-            firstName,
-            lastName,
-            email: email.trim().toLowerCase(),
-            password: hashedPassword,
-            firebaseUid: fbUser.uid,
-            acceptedTerms: true,
-            termsAcceptedAt: new Date().toISOString(),
-            termsVersion: "2026-06",
-          });
+          let newUser;
+          try {
+            newUser = await User.create({
+              firstName,
+              lastName,
+              email: email.trim().toLowerCase(),
+              password: hashedPassword,
+              firebaseUid: fbUser.uid,
+              acceptedTerms: true,
+              termsAcceptedAt: new Date().toISOString(),
+              termsVersion: "2026-06",
+            });
+            userRow = newUser;
+          } catch (dbErr) {
+            return handleMongooseError(dbErr, res);
+          }
         }
       } catch (fbErr) {
         console.warn(`[Auto Recovery Warning] Firebase lookup failed:`, fbErr.message);

@@ -11,9 +11,9 @@ export const DemoCredentialsCard: React.FC<DemoCredentialsCardProps> = ({ onFill
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const demoData = [
-    { label: "Admin Email", value: "demo@traveloop.com", key: "email", icon: Mail },
-    { label: "Password", value: "Demo@123", key: "password", icon: Key },
-    { label: "Demo OTP", value: "482931", key: "otp", icon: ShieldAlert },
+    { label: "Admin Email", value: "admin@traveloop.ai", key: "email", icon: Mail },
+    { label: "Password", value: "Admin@123", key: "password", icon: Key },
+    { label: "Demo OTP", value: "123456", key: "otp", icon: ShieldAlert },
   ];
 
   const handleCopy = (value: string, key: string, e: React.MouseEvent) => {
@@ -25,7 +25,7 @@ export const DemoCredentialsCard: React.FC<DemoCredentialsCardProps> = ({ onFill
 
   const handleAutoFill = () => {
     if (onFillCredentials) {
-      onFillCredentials("demo@traveloop.com", "Demo@123");
+      onFillCredentials("admin@traveloop.ai", "Admin@123");
     }
   };
 
@@ -43,12 +43,12 @@ export const DemoCredentialsCard: React.FC<DemoCredentialsCardProps> = ({ onFill
           </div>
           <div>
             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              Demo Login
+              Demo Login Credentials
               <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-bold text-cyan-400 tracking-widest">
-                DEV ONLY
+                DEMO MODE
               </span>
             </h4>
-            <p className="text-[11px] text-slate-400">Click to view test credentials & credentials quick-fill</p>
+            <p className="text-[11px] text-slate-400">Click to view test credentials & auto-fill</p>
           </div>
         </div>
         <div className="text-slate-400">

@@ -45,6 +45,17 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   const getKycStep = (agent: any) => {
+    // 1. If onboardingComplete is true, agent is fully done!
+    if (agent.onboardingComplete) {
+      return 7;
+    }
+
+    // 2. If backend currentStep is set and valid (1..6), use it as the source of truth
+    if (typeof agent.currentStep === "number" && agent.currentStep >= 1 && agent.currentStep <= 6) {
+      return agent.currentStep;
+    }
+
+    // 3. Fallback evaluation logic if currentStep is not yet set in DB
     const hasGst = agent.gstNo || agent.gstNumber;
     const hasLogo = agent.companyLogo || agent.logo;
     const hasPhoto = agent.agentPhoto || agent.profileImage;
@@ -66,11 +77,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   };
 
   const kycStep = getKycStep(agent);
+  console.log(`[ProtectedRoute] Auth Check | Agent ID: ${agent._id} | Backend Current Step: ${agent.currentStep || 'N/A'} | Resolved KYC Step: ${kycStep} | Path: ${location.pathname}`);
 
   if (location.pathname !== "/complete-profile") {
     if (kycStep < 7) {
-      console.log(`[ProtectedRoute] KYC incomplete (step ${kycStep}) — redirecting to /complete-profile`);
-      return <Navigate to="/complete-profile" replace />;
+      console.log(`[ProtectedRoute] KYC incomplete (step ${kycStep}) — redirecting to /complete-profile?step=${kycStep}`);
+      return <Navigate to={`/complete-profile?step=${kycStep}`} replace />;
     }
   } else {
     if (kycStep === 7) {

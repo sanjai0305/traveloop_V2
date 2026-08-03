@@ -66,82 +66,40 @@ const TravelJournal = () => {
 
   const isViewer = trip?.role === "viewer";
 
-  useEffect(() => {
-    let unsubscribe = null;
-    const load = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        
-        // 1. Fetch trip
-        const tripRes = await fetch(getApiUrl(`trips/${id}`), {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const tripData = await tripRes.json();
-        if (tripData.success) setTrip(tripData.trip);
+  const fetchEntries = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("token");
 
-        // 2. Fetch journal entries from MongoDB for bootstrapping
-        const journalRes = await fetch(getApiUrl(`journal/${id}`), {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const journalData = await journalRes.json();
-        const journalFromDB = (journalData.success && journalData.entries) ? journalData.entries : [];
+      // 1. Fetch trip
+      const tripRes = await fetch(getApiUrl(`trips/${id}`), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const tripData = await tripRes.json();
+      if (tripData.success) setTrip(tripData.trip);
 
-        // Subscribe to Firestore journal subcollection
-        const journalColRef = collection(db, "trips", id, "journal");
-        const q = query(journalColRef);
-        unsubscribe = onSnapshot(q, async (snapshot) => {
-          if (snapshot.empty && journalFromDB.length > 0) {
-            // Auto-migrate from MongoDB to Firestore
-            for (const dbEntry of journalFromDB) {
-              const docRef = doc(db, "trips", id, "journal", dbEntry._id || dbEntry.id);
-              await setDoc(docRef, {
-                day: dbEntry.day || 1,
-                date: dbEntry.date || "",
-                title: dbEntry.title || "",
-                content: dbEntry.content || "",
-                mood: dbEntry.mood || "great",
-                highlights: dbEntry.highlights || [],
-                photos: dbEntry.photos || [],
-                createdAt: dbEntry.createdAt ? new Date(dbEntry.createdAt) : serverTimestamp(),
-                updatedAt: dbEntry.updatedAt ? new Date(dbEntry.updatedAt) : serverTimestamp()
-              });
-            }
-            return;
-          }
-
-          const journalList = [];
-          snapshot.forEach(docSnap => {
-            const data = docSnap.data();
-            journalList.push({
-              _id: docSnap.id,
-              id: docSnap.id,
-              ...data,
-              createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString(),
-              updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt || new Date().toISOString(),
-            });
-          });
-
-          // Sort by day asc
-          journalList.sort((a, b) => a.day - b.day);
-
-          setEntries(journalList);
-          setPendingSync(snapshot.metadata.hasPendingWrites);
-          setLoading(false);
-        }, (err) => {
-          console.error("Firestore journal subscribe error:", err);
-          setLoading(false);
-        });
-
-      } catch (err) {
-        console.error("Error loading journal details:", err);
-        setLoading(false);
+      // 2. Fetch journal entries from backend API
+      const journalRes = await fetch(getApiUrl(`journal/${id}`), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const journalData = await journalRes.json();
+      if (journalData.success && Array.isArray(journalData.entries)) {
+        // Sort by day asc
+        const list = [...journalData.entries].sort((a, b) => a.day - b.day);
+        setEntries(list);
+      } else {
+        toast.error(journalData.message || "Failed to load journal entries");
       }
-    };
-    load();
+    } catch (err) {
+      console.error("Error loading journal details:", err);
+      toast.error(err.message || "Network error loading journal entries");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+  useEffect(() => {
+    fetchEntries();
   }, [id]);
 
   const openAdd = (day) => {
@@ -153,12 +111,12 @@ const TravelJournal = () => {
   };
 
   const openEdit = (entry) => {
-    setEditing(entry._id);
+    setEditing(entry._id || entry.id);
     setFormDay(entry.day);
     setForm({
-      title: entry.title,
-      content: entry.content,
-      mood: entry.mood,
+      title: entry.title || "",
+      content: entry.content || entry.description || "",
+      mood: entry.mood || "great",
       highlights: [...(entry.highlights || [])],
       photos: [...(entry.photos || [])],
     });
@@ -167,68 +125,99 @@ const TravelJournal = () => {
   };
 
   const handleSave = async () => {
-    if (isViewer) { toast.error("You do not have permission to edit this journal"); return; }
-    if (!form.title.trim()) { toast.error("Title is required"); return; }
+    if (isViewer) {
+      toast.error("Permission denied: You do not have permission to edit this journal");
+      return;
+    }
+
+    if (!form.title.trim()) {
+      toast.error("Validation failed: Title is required");
+      return;
+    }
+
     setSaving(true);
     try {
       const token = localStorage.getItem("token");
+      if (!token) {
+        toast.error("Authentication expired: Please log in again");
+        setSaving(false);
+        return;
+      }
+
       const entryDayDate = trip?.startDate
         ? new Date(new Date(trip.startDate).getTime() + (formDay - 1) * 86400000).toISOString().split("T")[0]
-        : "";
-      
+        : new Date().toISOString().split("T")[0];
+
       const payload = {
+        tripId: id,
         day: Number(formDay),
+        dayId: Number(formDay),
         date: entryDayDate,
-        title: form.title,
-        content: form.content,
-        mood: form.mood,
-        highlights: form.highlights,
-        photos: form.photos,
-        updatedAt: serverTimestamp(),
+        title: form.title.trim(),
+        content: form.content || "",
+        description: form.content || "",
+        mood: form.mood || "great",
+        highlights: form.highlights || [],
+        photos: form.photos || [],
+        timestamp: new Date().toISOString(),
       };
 
-      if (editing) {
-        const docRef = doc(db, "trips", id, "journal", editing);
-        await updateDoc(docRef, payload);
-        toast.success("Journal entry updated!");
-      } else {
-        const journalColRef = collection(db, "trips", id, "journal");
-        const docRef = doc(journalColRef);
-        await setDoc(docRef, {
-          ...payload,
-          createdAt: serverTimestamp(),
-        });
-        toast.success("Journal entry saved!");
+      const url = editing ? getApiUrl(`journal/${editing}`) : getApiUrl("journal");
+      const method = editing ? "PUT" : "POST";
 
-        // Reward +3 XP on new entry creation
-        fetch(getApiUrl("profile/reward-xp"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ action: "journal_entry" })
-        }).catch(err => console.error("Failed to reward XP for journal entry:", err));
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        toast.success("Journal entry saved successfully.");
+        await fetchEntries();
+        setShowSheet(false);
+      } else {
+        const errorMsg = data.message || `Save failed with status code ${res.status}`;
+        console.error("Journal API Save Error:", errorMsg);
+        toast.error(errorMsg);
       }
-      setShowSheet(false);
     } catch (err) {
-      console.error("Journal save error in Firestore:", err);
-      toast.error("Failed to save entry");
+      console.error("Journal Save Network/Client Error:", err);
+      toast.error(err.message || "Network error while saving journal entry");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (entryId) => {
-    if (isViewer) { toast.error("You do not have permission to delete entries"); return; }
+    if (isViewer) {
+      toast.error("Permission denied: You do not have permission to delete entries");
+      return;
+    }
+
     if (!window.confirm("Are you sure you want to delete this journal entry?")) return;
+
     try {
-      const docRef = doc(db, "trips", id, "journal", entryId);
-      await deleteDoc(docRef);
-      toast.success("Entry deleted");
+      const token = localStorage.getItem("token");
+      const res = await fetch(getApiUrl(`journal/${entryId}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success("Journal entry deleted successfully.");
+        await fetchEntries();
+      } else {
+        toast.error(data.message || "Failed to delete entry");
+      }
     } catch (err) {
-      console.error("Failed to delete entry in Firestore:", err);
-      toast.error("Failed to delete entry");
+      console.error("Failed to delete entry:", err);
+      toast.error(err.message || "Network error deleting entry");
     }
   };
 

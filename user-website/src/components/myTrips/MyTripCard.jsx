@@ -125,7 +125,7 @@ const MyTripCard = ({
             right-5
           "
         >
-          <TripCardMenu />
+          <TripCardMenu tripId={id} />
         </div>
 
         {/* DESTINATION */}

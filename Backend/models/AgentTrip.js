@@ -327,6 +327,10 @@ const agentTripSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
     visible: {
       type: Boolean,
       default: false,
@@ -377,10 +381,14 @@ const agentTripSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    busAmenities: {
+      type: [String],
+      default: [],
+    },
     approvalStatus: {
       type: String,
-      enum: ["pending", "pending_approval", "approved", "rejected", "changes_requested", "draft"],
-      default: "pending",
+      enum: ["pending", "PENDING", "pending_approval", "PENDING_APPROVAL", "approved", "APPROVED", "rejected", "REJECTED", "changes_requested", "NEEDS_REVISION", "draft", "DRAFT"],
+      default: "PENDING_APPROVAL",
     },
     submittedAt: {
       type: Date,

@@ -32,4 +32,4 @@ export default admin;
 
 ## 3. Benefits
 - **Security**: No sensitive service account key files are written to disk or committed to Git.
-- **Portability**: Instantly compatible with standard containerized deployments (Docker), serverless hosts (Vercel, Railway), and cloud environments where credentials are injected via environment settings.
+- **Portability**: Instantly compatible with standard containerized deployments, serverless hosts (Vercel, Railway), and cloud environments where credentials are injected via environment settings.

@@ -422,6 +422,11 @@ export const updateTrip = async (req, res) => {
       longitude,
       image,
       scannedExpenseInfo,
+      // New fields from EditTrip page
+      currency,
+      travelType,
+      tags,
+      maxMembers,
     } = req.body;
 
     const oldTrip = await Trip.findById(req.params.id);
@@ -436,29 +441,37 @@ export const updateTrip = async (req, res) => {
       return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit this trip" });
     }
 
+    // Build update set — only include defined fields to avoid overwriting with undefined
+    const updateSet = {};
+    if (title       !== undefined) updateSet.title       = title;
+    if (destination !== undefined || destinationName !== undefined) {
+      updateSet.destination     = destination || destinationName;
+      updateSet.destinationName = destinationName || destination;
+    }
+    if (startDate   !== undefined) updateSet.startDate   = startDate;
+    if (endDate     !== undefined) updateSet.endDate     = endDate;
+    if (budget      !== undefined) updateSet.budget      = budget;
+    if (expenses    !== undefined) updateSet.expenses    = expenses;
+    if (isPublic    !== undefined) updateSet.isPublic    = isPublic;
+    if (shareToken  !== undefined) updateSet.shareToken  = shareToken;
+    if (travelers   !== undefined) updateSet.travelers   = travelers;
+    if (description !== undefined) updateSet.description = description;
+    if (status      !== undefined) updateSet.status      = status;
+    if (placeId     !== undefined) updateSet.placeId     = placeId;
+    if (formattedAddress !== undefined) updateSet.formattedAddress = formattedAddress;
+    if (country     !== undefined) updateSet.country     = country;
+    if (state       !== undefined) updateSet.state       = state;
+    if (latitude    !== undefined) updateSet.latitude    = latitude;
+    if (longitude   !== undefined) updateSet.longitude   = longitude;
+    if (image       !== undefined) updateSet.image       = image;
+    if (currency    !== undefined) updateSet.currency    = currency;
+    if (travelType  !== undefined) updateSet.travelType  = travelType;
+    if (tags        !== undefined) updateSet.tags        = tags;
+    if (maxMembers  !== undefined) updateSet.maxMembers  = maxMembers;
+
     const trip = await Trip.findByIdAndUpdate(
       req.params.id,
-      {
-        title,
-        destination: destination || destinationName,
-        startDate,
-        endDate,
-        budget,
-        expenses,
-        isPublic,
-        shareToken,
-        travelers,
-        description,
-        status,
-        destinationName: destinationName || destination,
-        placeId,
-        formattedAddress,
-        country,
-        state,
-        latitude,
-        longitude,
-        image,
-      },
+      updateSet,
       { returnDocument: "after", runValidators: true }
     );
 

@@ -7,6 +7,7 @@ import {
 import {
   loginAdmin,
   verifyAdmin2FA,
+  resendAdminOtp,
   logoutAdmin,
   getAdminProfile,
   getDashboardStats,
@@ -20,6 +21,7 @@ import {
   deleteAgent,
   getTrips,
   updateTrip,
+  approveTrip,
   deleteTrip,
   restoreTrip,
   purgeTrip,
@@ -42,6 +44,7 @@ const router = express.Router();
 // Public Authentication
 router.post("/login", loginAdmin);
 router.post("/verify-2fa", verifyAdmin2FA);
+router.post("/resend-otp", resendAdminOtp);
 router.post("/logout", logoutAdmin);
 
 // Profile (requires admin access)
@@ -64,13 +67,18 @@ router.delete("/agents/:id", verifySuperAdmin, deleteAgent);
 
 // Trips Moderation
 router.get("/trips", verifyAdmin, getTrips);
+router.get("/trips/pending", verifyAdmin, (req, res, next) => {
+  req.query.status = "PENDING_APPROVAL";
+  next();
+}, getTrips);
 router.patch("/trips/:id", verifyAdmin, updateTrip);
-router.post("/trips/:id/approve", verifyAdmin, (req, res, next) => {
-  req.body.approvalStatus = "approved";
+router.post("/trips/:id/approve", verifyAdmin, approveTrip);
+router.post("/trips/:id/reject", verifyAdmin, (req, res, next) => {
+  req.body.approvalStatus = "REJECTED";
   next();
 }, updateTrip);
-router.post("/trips/:id/reject", verifyAdmin, (req, res, next) => {
-  req.body.approvalStatus = "rejected";
+router.post("/trips/:id/request-changes", verifyAdmin, (req, res, next) => {
+  req.body.approvalStatus = "NEEDS_REVISION";
   next();
 }, updateTrip);
 router.delete("/trips/:id", verifyAdmin, deleteTrip);

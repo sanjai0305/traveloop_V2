@@ -283,13 +283,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             {admin && (
               <div className="flex items-center gap-3 pl-6 border-l border-slate-100">
                 <div className="text-right">
-                  <p className="text-xs font-bold text-slate-800">{admin.displayName}</p>
+                  <p className="text-xs font-bold text-slate-800">{admin.displayName || admin.name || "Traveloop Administrator"}</p>
                   <p className="text-[9px] text-[#14B8A6] font-extrabold uppercase tracking-widest mt-0.5">
                     {admin.role}
                   </p>
                 </div>
                 <div className="w-8 h-8 rounded-full bg-teal-50 border border-teal-100 flex items-center justify-center font-black text-[#14B8A6] text-xs">
-                  {admin.displayName[0].toUpperCase()}
+                  {(admin.displayName || admin.name || "A")[0].toUpperCase()}
                 </div>
               </div>
             )}

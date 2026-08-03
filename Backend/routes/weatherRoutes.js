@@ -1,6 +1,5 @@
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
-import { getCache, setCache, TTL } from "../services/cacheService.js";
 
 const router = express.Router();
 
@@ -43,19 +42,6 @@ router.get("/", protect, async (req, res) => {
   const { city } = req.query;
   if (!city) {
     return res.status(400).json({ success: false, message: "City query parameter is required" });
-  }
-
-  const cacheKey = `weather:${city.toLowerCase().trim()}`;
-  
-  // 1. Try reading from Redis Cache
-  try {
-    const cachedData = await getCache(cacheKey);
-    if (cachedData) {
-      console.log(`[Weather Cache] Hit for city: ${city}`);
-      return res.json(cachedData);
-    }
-  } catch (cacheErr) {
-    console.warn("[Weather Cache Error] Failed to fetch from Redis:", cacheErr.message);
   }
 
   // Fallback payload structure in case of total service failure
@@ -166,9 +152,6 @@ router.get("/", protect, async (req, res) => {
       forecast,
       warning
     };
-
-    // Save to Redis Cache (TTL = 2 hours / 7200 seconds)
-    await setCache(cacheKey, resultPayload, TTL.WEATHER);
 
     res.json(resultPayload);
   } catch (error) {

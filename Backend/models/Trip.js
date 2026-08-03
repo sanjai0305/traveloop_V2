@@ -76,6 +76,27 @@ const tripSchema = new mongoose.Schema(
       shopping: { type: Number, default: 0 },
       misc: { type: Number, default: 0 },
     },
+    // Extended fields for EditTrip page
+    currency: {
+      type: String,
+      default: "INR",
+    },
+    travelType: {
+      type: String,
+      default: "",
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
+    maxMembers: {
+      type: Number,
+      default: null,
+    },
+    description: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

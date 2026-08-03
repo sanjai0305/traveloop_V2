@@ -47,7 +47,7 @@ const seatBookingSchema = new mongoose.Schema(
     },
     /**
      * available  — nobody holding this seat
-     * reserved   — user is in seat-selection/payment flow (Redis TTL lock)
+     * reserved   — user is in seat-selection/payment flow (TTL lock)
      * booked     — payment completed, seat permanently taken
      */
     status: {
@@ -63,8 +63,7 @@ const seatBookingSchema = new mongoose.Schema(
       set: v => v ? v.toLowerCase() : v
     },
     /**
-     * ISO timestamp when the Redis reservation expires.
-     * Backend uses this as ground-truth fallback if Redis is unavailable.
+     * ISO timestamp when the reservation expires.
      */
     reservedUntil: {
       type: Date,
