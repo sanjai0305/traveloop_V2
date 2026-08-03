@@ -324,3 +324,46 @@ export const duplicateBudget = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// SYNC BUDGET — recalculate active budget from Firestore-driven updates and return it
+export const syncBudget = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+
+    if (!tripId || tripId === "undefined" || !mongoose.Types.ObjectId.isValid(tripId)) {
+      return res.status(400).json({ success: false, message: "Invalid tripId" });
+    }
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+
+    if (!hasTripPermission(trip, req.user.id, "read")) {
+      return res.status(403).json({ success: false, message: "Forbidden: No permission to view this trip" });
+    }
+
+    // Run recalculation
+    await recalculateBudget(tripId);
+
+    // Fetch and return the now-updated active budget
+    const activeBudget = await Budget.findOne({ tripId, isActive: true, isArchived: false });
+
+    if (!activeBudget) {
+      // No budget exists yet — return an empty shell so frontend doesn't crash
+      return res.json({
+        success: true,
+        budget: null,
+        message: "No active budget found"
+      });
+    }
+
+    res.json({
+      success: true,
+      budget: activeBudget
+    });
+  } catch (error) {
+    console.error("[syncBudget] Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

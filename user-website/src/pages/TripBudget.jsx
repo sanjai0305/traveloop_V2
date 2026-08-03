@@ -112,30 +112,43 @@ const TripBudget = () => {
 
   const fetchBudgets = React.useCallback(async () => {
     try {
+      if (!id || id === "undefined") {
+        console.error("[fetchBudgets] Invalid tripId:", id);
+        setBudgetsLoading(false);
+        return;
+      }
       const token = localStorage.getItem("token");
       const res = await fetch(getApiUrl(`budgets/${id}`), {
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        console.error("[fetchBudgets] API returned", res.status);
+        setBudgetsLoading(false);
+        return;
+      }
       const data = await res.json();
-      if (data.success) {
-        setBudgets(data.budgets || []);
-        const active = data.budgets?.find(b => b.isActive && !b.isArchived);
-        setActiveBudget(active || null);
-        if (active) {
-          setBudgetLimit(active.totalBudget);
-          if (active.currency) {
-            setSelectedCurrency(active.currency);
-          }
-        }
+      if (!data?.success) {
+        console.error("[fetchBudgets] Unexpected response:", data);
+        setBudgetsLoading(false);
+        return;
+      }
+      const budgetList = data.budgets ?? [];
+      setBudgets(budgetList);
+      const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+      setActiveBudget(active);
+      if (active) {
+        setBudgetLimit(Number(active.totalBudget) || 0);
+        if (active.currency) setSelectedCurrency(active.currency);
       }
     } catch (err) {
-      console.error("Failed to fetch budgets:", err);
+      console.error("[fetchBudgets] Failed to fetch budgets:", err);
     } finally {
       setBudgetsLoading(false);
     }
   }, [id]);
 
   const handleActivateBudget = async (budgetId) => {
+    if (!budgetId) return;
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(getApiUrl(`budgets/activate/${budgetId}`), {
@@ -143,21 +156,21 @@ const TripBudget = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success && data.budget) {
         setActiveBudget(data.budget);
-        setBudgetLimit(data.budget.totalBudget);
-        if (data.budget.currency) {
-          setSelectedCurrency(data.budget.currency);
-        }
+        setBudgetLimit(Number(data.budget.totalBudget) || 0);
+        if (data.budget.currency) setSelectedCurrency(data.budget.currency);
         // Refresh budgets list
         const res2 = await fetch(getApiUrl(`budgets/${id}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) setBudgets(data2.budgets || []);
+        if (data2?.success) setBudgets(data2.budgets ?? []);
+      } else if (!data?.success) {
+        console.error("[handleActivateBudget] Error:", data?.message);
       }
     } catch (err) {
-      console.error("Failed to activate budget:", err);
+      console.error("[handleActivateBudget] Failed:", err);
     }
   };
 
@@ -170,24 +183,25 @@ const TripBudget = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         // Refresh budgets list
         const res2 = await fetch(getApiUrl(`budgets/${id}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) {
-          setBudgets(data2.budgets || []);
-          const active = data2.budgets?.find(b => b.isActive && !b.isArchived);
-          setActiveBudget(active || null);
+        if (data2?.success) {
+          const budgetList = data2.budgets ?? [];
+          setBudgets(budgetList);
+          const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+          setActiveBudget(active);
           if (active) {
-            setBudgetLimit(active.totalBudget);
+            setBudgetLimit(Number(active.totalBudget) || 0);
             if (active.currency) setSelectedCurrency(active.currency);
           }
         }
       }
     } catch (err) {
-      console.error("Failed to duplicate budget:", err);
+      console.error("[handleDuplicateBudget] Failed:", err);
     }
   };
 
@@ -200,24 +214,25 @@ const TripBudget = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         // Refresh budgets list
         const res2 = await fetch(getApiUrl(`budgets/${id}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) {
-          setBudgets(data2.budgets || []);
-          const active = data2.budgets?.find(b => b.isActive && !b.isArchived);
-          setActiveBudget(active || null);
+        if (data2?.success) {
+          const budgetList = data2.budgets ?? [];
+          setBudgets(budgetList);
+          const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+          setActiveBudget(active);
           if (active) {
-            setBudgetLimit(active.totalBudget);
+            setBudgetLimit(Number(active.totalBudget) || 0);
             if (active.currency) setSelectedCurrency(active.currency);
           }
         }
       }
     } catch (err) {
-      console.error("Failed to archive budget:", err);
+      console.error("[handleArchiveBudget] Failed:", err);
     }
   };
 
@@ -231,24 +246,25 @@ const TripBudget = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         // Refresh budgets list
         const res2 = await fetch(getApiUrl(`budgets/${id}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) {
-          setBudgets(data2.budgets || []);
-          const active = data2.budgets?.find(b => b.isActive && !b.isArchived);
-          setActiveBudget(active || null);
+        if (data2?.success) {
+          const budgetList = data2.budgets ?? [];
+          setBudgets(budgetList);
+          const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+          setActiveBudget(active);
           if (active) {
-            setBudgetLimit(active.totalBudget);
+            setBudgetLimit(Number(active.totalBudget) || 0);
             if (active.currency) setSelectedCurrency(active.currency);
           }
         }
       }
     } catch (err) {
-      console.error("Failed to delete budget:", err);
+      console.error("[handleDeleteBudget] Failed:", err);
     }
   };
 
@@ -272,7 +288,7 @@ const TripBudget = () => {
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         setIsCreateBudgetOpen(false);
         setCreateForm({ budgetName: "", totalBudget: "", currency: "INR", category: "" });
         // Refresh budgets list
@@ -280,25 +296,30 @@ const TripBudget = () => {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) {
-          setBudgets(data2.budgets || []);
-          const active = data2.budgets?.find(b => b.isActive && !b.isArchived);
-          setActiveBudget(active || null);
+        if (data2?.success) {
+          const budgetList = data2.budgets ?? [];
+          setBudgets(budgetList);
+          const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+          setActiveBudget(active);
           if (active) {
-            setBudgetLimit(active.totalBudget);
+            setBudgetLimit(Number(active.totalBudget) || 0);
             if (active.currency) setSelectedCurrency(active.currency);
           }
         }
       } else {
-        alert(data.message || "Failed to create budget");
+        alert(data?.message || "Failed to create budget");
       }
     } catch (err) {
-      console.error("Create budget error:", err);
+      console.error("[handleCreateBudget] Error:", err);
     }
   };
 
   const handleEditBudgetSubmit = async (e) => {
     e.preventDefault();
+    if (!activeBudget?._id) {
+      console.error("[handleEditBudgetSubmit] No active budget to edit");
+      return;
+    }
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(getApiUrl(`budgets/update/${activeBudget._id}`), {
@@ -315,27 +336,28 @@ const TripBudget = () => {
         })
       });
       const data = await res.json();
-      if (data.success) {
+      if (data?.success) {
         setIsEditBudgetOpen(false);
         // Refresh budgets list
         const res2 = await fetch(getApiUrl(`budgets/${id}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         const data2 = await res2.json();
-        if (data2.success) {
-          setBudgets(data2.budgets || []);
-          const active = data2.budgets?.find(b => b.isActive && !b.isArchived);
-          setActiveBudget(active || null);
+        if (data2?.success) {
+          const budgetList = data2.budgets ?? [];
+          setBudgets(budgetList);
+          const active = budgetList.find(b => b?.isActive && !b?.isArchived) ?? null;
+          setActiveBudget(active);
           if (active) {
-            setBudgetLimit(active.totalBudget);
+            setBudgetLimit(Number(active.totalBudget) || 0);
             if (active.currency) setSelectedCurrency(active.currency);
           }
         }
       } else {
-        alert(data.message || "Failed to update budget");
+        alert(data?.message || "Failed to update budget");
       }
     } catch (err) {
-      console.error("Edit budget error:", err);
+      console.error("[handleEditBudgetSubmit] Error:", err);
     }
   };
 
@@ -512,21 +534,28 @@ const TripBudget = () => {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`
               }
-            }).then(res => res.json())
+            }).then(res => {
+                if (!res.ok) {
+                  console.warn("[BudgetSync] sync endpoint returned", res.status);
+                  return null;
+                }
+                return res.json();
+              })
               .then(data => {
+                if (!data) return;
                 if (data.success && data.budget) {
                   setActiveBudget(data.budget);
-                  setBudgetLimit(data.budget.totalBudget);
+                  setBudgetLimit(Number(data.budget.totalBudget) || 0);
                   // Refresh budgets list in background
                   const token2 = localStorage.getItem("token");
                   fetch(getApiUrl(`budgets/${id}`), {
                     headers: { Authorization: `Bearer ${token2}` }
                   }).then(r => r.json()).then(d => {
-                    if (d.success) setBudgets(d.budgets || []);
-                  }).catch(e => console.error(e));
+                    if (d?.success) setBudgets(d.budgets ?? []);
+                  }).catch(e => console.error("[BudgetSync] list refresh failed:", e));
                 }
               })
-              .catch(err => console.error("Firestore sync to backend failed:", err));
+              .catch(err => console.error("[BudgetSync] Firestore sync to backend failed:", err));
           }, (err) => {
             console.error("Firestore expenses subscribe error:", err);
             setLoading(false);
@@ -842,7 +871,7 @@ const TripBudget = () => {
       });
 
       // Also update the active budget on the backend!
-      if (activeBudget) {
+      if (activeBudget?._id) {
         await fetch(getApiUrl(`budgets/update/${activeBudget._id}`), {
           method: "PUT",
           headers: {
@@ -851,9 +880,9 @@ const TripBudget = () => {
           },
           body: JSON.stringify({
             totalBudget: Number(budgetLimit),
-            budgetName: activeBudget.budgetName,
+            budgetName: activeBudget?.budgetName ?? "",
             currency: selectedCurrency,
-            category: activeBudget.category
+            category: activeBudget?.category ?? ""
           }),
         });
         await fetchBudgets();
@@ -1350,15 +1379,15 @@ const TripBudget = () => {
 
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between col-span-2 sm:col-span-1">
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Budget Utilization</span>
-                <span className={`text-sm font-extrabold ${utilizationPercentage > 100 ? "text-rose-600" : "text-teal-600"}`}>
-                  {utilizationPercentage.toFixed(1)}%
+                <span className={`text-sm font-extrabold ${(utilizationPercentage ?? 0) > 100 ? "text-rose-600" : "text-teal-600"}`}>
+                  {Number(utilizationPercentage ?? 0).toFixed(1)}%
                 </span>
                 <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden">
                   <div 
                     className="h-full rounded-full transition-all duration-500" 
                     style={{ 
-                      width: `${Math.min(100, utilizationPercentage)}%`,
-                      backgroundColor: utilizationPercentage > 100 ? "#EF4444" : "#14B8B5"
+                      width: `${Math.min(100, Number(utilizationPercentage ?? 0))}%`,
+                      backgroundColor: (utilizationPercentage ?? 0) > 100 ? "#EF4444" : "#14B8B5"
                     }}
                   />
                 </div>
@@ -1466,8 +1495,10 @@ const TripBudget = () => {
                 ≈ {formatCurrency(totalSpent).split(" (")[0]}
               </span>
             )}
-            <span className={`text-[10px] font-bold mt-1 ${remainingBudget >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-              {remainingBudget >= 0 ? `₹${remainingBudget.toLocaleString()} left` : `₹${Math.abs(remainingBudget).toLocaleString()} over`}
+            <span className={`text-[10px] font-bold mt-1 ${(remainingBudget ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+              {(remainingBudget ?? 0) >= 0
+                ? `₹${Math.round(remainingBudget ?? 0).toLocaleString()} left`
+                : `₹${Math.abs(Math.round(remainingBudget ?? 0)).toLocaleString()} over`}
             </span>
           </div>
         </div>
@@ -1563,12 +1594,14 @@ const TripBudget = () => {
           <h3 className="text-sm font-bold text-slate-800 mb-4">Comparison Breakdown</h3>
           <div className="space-y-4 pt-2">
             {CATEGORIES.map((cat) => {
-              const spent = activeBudget && activeBudget.categories[cat.key]
-                ? (activeBudget.categories[cat.key].actual || 0)
-                : (expenses[cat.key] || 0);
-              const allocated = activeBudget && activeBudget.categories[cat.key]
-                ? (activeBudget.categories[cat.key].planned || 0)
-                : (budgetLimit / 5);
+              // Safe access: activeBudget.categories may be undefined on fresh budgets
+              const catData = activeBudget?.categories?.[cat.key] ?? null;
+              const spent = catData
+                ? (Number(catData.actual) || 0)
+                : (Number(expenses?.[cat.key]) || 0);
+              const allocated = catData
+                ? (Number(catData.planned) || 0)
+                : (Number(budgetLimit) / 5 || 0);
               const maxVal = Math.max(spent, allocated, 1);
               const spentPercent = (spent / maxVal) * 100;
               const allocatedPercent = (allocated / maxVal) * 100;
