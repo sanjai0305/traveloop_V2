@@ -94,21 +94,29 @@ class ChatTransport {
       this.prevMessages = messages;
     });
 
+    const userId = currentUser?._id || currentUser?.id;
+    const userName = currentUser ? `${currentUser.firstName || "Traveler"} ${currentUser.lastName || ""}`.trim() : "Traveler";
+    const userAvatar = currentUser?.avatar || "";
+
     // Update presence to online
-    updatePresence(tripId, currentUser.id, `${currentUser.firstName} ${currentUser.lastName}`, currentUser.avatar, true);
+    if (tripId && userId) {
+      updatePresence(tripId, userId, userName, userAvatar, true);
+    }
 
     // Subscribe to presence
     this.presenceUnsubscribe = subscribePresence(tripId, (users) => {
       const onlineUserIds = [];
       users.forEach((u) => {
-        if (u.status === "online") {
-          onlineUserIds.push(u.userId);
+        if (u && u.userId) {
+          if (u.status === "online") {
+            onlineUserIds.push(u.userId);
+          }
+          this.listeners.presence.forEach((cb) => cb({
+            userId: u.userId,
+            status: u.status || "offline",
+            lastActive: u.lastSeen ? new Date(u.lastSeen) : new Date(),
+          }));
         }
-        this.listeners.presence.forEach((cb) => cb({
-          userId: u.userId,
-          status: u.status,
-          lastActive: u.lastSeen ? new Date(u.lastSeen) : new Date(),
-        }));
       });
       
       this.listeners.roomPresence.forEach((cb) => cb({ onlineUserIds }));
@@ -116,7 +124,7 @@ class ChatTransport {
 
     // Subscribe to typing indicators
     this.typingUnsubscribe = subscribeTyping(tripId, (typingUsers) => {
-      const currentTypers = typingUsers.filter(tu => tu.typing && tu.userId !== currentUser.id);
+      const currentTypers = typingUsers.filter(tu => tu && tu.typing && tu.userId && tu.userId !== userId);
       
       this.prevTypers.forEach((pt) => {
         if (!currentTypers.some(ct => ct.userId === pt.userId)) {
@@ -138,12 +146,15 @@ class ChatTransport {
     if (!this.activeTripId) return;
     const tripId = this.activeTripId;
     const currentUser = this.getUser();
+    const userId = currentUser?._id || currentUser?.id;
+    const userName = currentUser ? `${currentUser.firstName || "Traveler"} ${currentUser.lastName || ""}`.trim() : "Traveler";
+    const userAvatar = currentUser?.avatar || "";
 
     // Mark presence offline
-    updatePresence(tripId, currentUser.id, `${currentUser.firstName} ${currentUser.lastName}`, currentUser.avatar, false);
-    
-    // Clear typing indicator
-    updateTyping(tripId, currentUser.id, `${currentUser.firstName} ${currentUser.lastName}`, false);
+    if (tripId && userId) {
+      updatePresence(tripId, userId, userName, userAvatar, false);
+      updateTyping(tripId, userId, userName, false);
+    }
 
     if (this.messageUnsubscribe) {
       this.messageUnsubscribe();

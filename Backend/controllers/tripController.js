@@ -1061,14 +1061,22 @@ export const getDestinationDetails = async (req, res) => {
 
 // INVITE COLLABORATOR
 export const inviteCollaborator = async (req, res) => {
+  console.log("\n==================================================");
+  console.log("[INVITE COLLABORATOR REQUEST]");
+  console.log("[Invite] Trip ID:", req.params.id);
+  console.log("[Invite] Payload:", JSON.stringify(req.body));
+  console.log("[Invite] Auth User:", req.user ? `${req.user._id || req.user.id} (${req.user.email})` : "UNAUTHENTICATED");
+
   try {
     const { email, role } = req.body;
     if (!email || !email.trim()) {
+      console.warn("[Invite Validation Failed]: Email is required");
       return res.status(400).json({ success: false, message: "Email is required" });
     }
 
     const trip = await Trip.findById(req.params.id);
     if (!trip) {
+      console.warn("[Invite Validation Failed]: Trip 404 Not Found");
       return res.status(404).json({ success: false, message: "Trip not found" });
     }
 
@@ -1077,16 +1085,19 @@ export const inviteCollaborator = async (req, res) => {
     const isOwner = ownerId === authUserId;
 
     if (!isOwner) {
+      console.warn(`[Invite Validation Failed]: 403 Forbidden. OwnerId=${ownerId}, AuthUserId=${authUserId}`);
       return res.status(403).json({ success: false, message: "Forbidden: Only the trip owner can invite collaborators" });
     }
 
     const invitee = await User.findOne({ email: email.trim().toLowerCase() });
     if (!invitee) {
+      console.warn(`[Invite Validation Failed]: 404 Invitee User not found for email ${email}`);
       return res.status(404).json({ success: false, message: "User with this email is not registered on Traveloop" });
     }
 
     if (invitee._id.toString() === authUserId) {
-      return res.status(400).json({ success: false, message: "You cannot invite yourself" });
+      console.warn("[Invite Validation Failed]: 409 Cannot invite self");
+      return res.status(409).json({ success: false, message: "You cannot invite yourself" });
     }
 
     const existingCollab = trip.collaborators?.find(
@@ -1095,9 +1106,11 @@ export const inviteCollaborator = async (req, res) => {
 
     if (existingCollab) {
       if (existingCollab.acceptedAt !== null) {
-        return res.status(409).json({ success: false, message: "User is already a collaborator on this trip" });
+        console.warn("[Invite Validation Failed]: 409 User is already a collaborator");
+        return res.status(409).json({ success: false, message: "User is already a collaborator" });
       } else {
-        return res.status(409).json({ success: false, message: "User already has a pending invitation for this trip" });
+        console.warn("[Invite Validation Failed]: 409 Invitation already pending");
+        return res.status(409).json({ success: false, message: "Invitation already pending" });
       }
     }
 
@@ -1108,6 +1121,7 @@ export const inviteCollaborator = async (req, res) => {
       acceptedAt: null,
     });
     await trip.save();
+    console.log("[Invite]: Collaborator record added to Trip successfully");
 
     const inviterName = req.user.firstName ? `${req.user.firstName} ${req.user.lastName || ""}`.trim() : req.user.email;
     const notification = await Notification.create({
@@ -1120,13 +1134,17 @@ export const inviteCollaborator = async (req, res) => {
       inviteStatus: "pending",
       role: role || "viewer",
     });
+    console.log("[Invite]: Notification created for invitee:", notification._id);
 
     // Realtime notification via socket
     try {
       if (req.io) {
         req.io.to(invitee._id.toString()).emit("notification", notification);
+        console.log("[Invite]: Realtime socket notification emitted to:", invitee._id.toString());
       }
-    } catch (_) {}
+    } catch (sockErr) {
+      console.error("[Invite Socket Error]:", sockErr.message);
+    }
 
     // Send Gmail Invitation Email
     try {
@@ -1138,8 +1156,9 @@ export const inviteCollaborator = async (req, res) => {
         role: role || "viewer",
         invite_link: inviteLink
       });
+      console.log("[Invite]: Gmail invitation sent to:", invitee.email);
     } catch (mailErr) {
-      console.error("Gmail Invite Send Failed:", mailErr.message);
+      console.error("[Invite Gmail Send Failed]:", mailErr.message);
     }
 
     res.status(200).json({
@@ -1148,7 +1167,7 @@ export const inviteCollaborator = async (req, res) => {
       notification,
     });
   } catch (error) {
-    console.error("Invite Collaborator Error:", error);
+    console.error("[Invite Collaborator Internal Error]:", error.stack || error);
     res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
   }
 };
@@ -1283,15 +1302,20 @@ export const updateCollaboratorRole = async (req, res) => {
 
 // ACCEPT INVITE
 export const acceptInvite = async (req, res) => {
+  console.log("\n==================================================");
+  console.log("[ACCEPT INVITE REQUEST]");
+  console.log("[AcceptInvite] NotificationId/Params:", req.params);
+  console.log("[AcceptInvite] Auth User:", req.user ? `${req.user._id || req.user.id}` : "UNAUTHENTICATED");
+
   try {
-    const { notificationId } = req.params;
+    const notificationId = req.params.notificationId || req.params.id;
     const notification = await Notification.findById(notificationId);
     if (!notification) {
-      return res.status(404).json({ success: false, message: "Invitation not found" });
+      return res.status(404).json({ success: false, message: "Invitation notification not found" });
     }
 
     if (notification.inviteStatus !== "pending") {
-      return res.status(400).json({ success: false, message: "Invitation already processed" });
+      return res.status(409).json({ success: false, message: "Invitation already processed" });
     }
 
     const trip = await Trip.findById(notification.trip);
@@ -1299,55 +1323,101 @@ export const acceptInvite = async (req, res) => {
       return res.status(404).json({ success: false, message: "Trip associated with invite not found" });
     }
 
-    const collab = trip.collaborators.find(
-      (c) => c.userId && (c.userId._id || c.userId).toString() === req.user.id.toString()
+    const authUserId = (req.user._id || req.user.id)?.toString();
+    let collab = trip.collaborators.find(
+      (c) => c.userId && (c.userId._id || c.userId).toString() === authUserId
     );
+
     if (collab) {
       collab.acceptedAt = new Date();
-      await trip.save();
+    } else {
+      trip.collaborators.push({
+        userId: authUserId,
+        role: notification.role || "viewer",
+        invitedAt: notification.createdAt || new Date(),
+        acceptedAt: new Date(),
+      });
     }
+    await trip.save();
 
     notification.inviteStatus = "accepted";
     notification.read = true;
     await notification.save();
 
-    const userName = req.user.firstName || req.user.email;
-    await triggerNotification(
-      trip.owner || trip.user,
-      "Invitation Accepted 🎉",
-      `${userName} accepted your invitation to collaborate on "${trip.title}"`,
-      "success",
-      trip._id
-    );
+    const userName = req.user.firstName ? `${req.user.firstName} ${req.user.lastName || ""}`.trim() : req.user.email;
+    const ownerId = trip.userId || trip.owner;
+    if (ownerId) {
+      const ownerNotif = await Notification.create({
+        user: ownerId,
+        title: "Invitation Accepted 🎉",
+        message: `${userName} accepted your invitation to collaborate on "${trip.title}"`,
+        type: "trip",
+        trip: trip._id,
+        isInvite: false,
+      });
+
+      try {
+        if (req.io) {
+          req.io.to(ownerId.toString()).emit("notification", ownerNotif);
+        }
+      } catch (_) {}
+    }
 
     res.status(200).json({
       success: true,
-      message: "Invitation accepted!",
+      message: "Invitation accepted successfully!",
+      trip,
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("[AcceptInvite Error]:", error.stack || error);
+    res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
   }
 };
 
 // DECLINE INVITE
 export const declineInvite = async (req, res) => {
+  console.log("\n==================================================");
+  console.log("[DECLINE INVITE REQUEST]");
+  console.log("[DeclineInvite] NotificationId/Params:", req.params);
+  console.log("[DeclineInvite] Auth User:", req.user ? `${req.user._id || req.user.id}` : "UNAUTHENTICATED");
+
   try {
-    const { notificationId } = req.params;
+    const notificationId = req.params.notificationId || req.params.id;
     const notification = await Notification.findById(notificationId);
     if (!notification) {
-      return res.status(404).json({ success: false, message: "Invitation not found" });
+      return res.status(404).json({ success: false, message: "Invitation notification not found" });
     }
 
     if (notification.inviteStatus !== "pending") {
-      return res.status(400).json({ success: false, message: "Invitation already processed" });
+      return res.status(409).json({ success: false, message: "Invitation already processed" });
     }
 
+    const authUserId = (req.user._id || req.user.id)?.toString();
     const trip = await Trip.findById(notification.trip);
     if (trip) {
       trip.collaborators = trip.collaborators.filter(
-        (c) => c.userId && c.userId.toString() !== req.user.id.toString()
+        (c) => c.userId && (c.userId._id || c.userId).toString() !== authUserId
       );
       await trip.save();
+
+      const userName = req.user.firstName ? `${req.user.firstName} ${req.user.lastName || ""}`.trim() : req.user.email;
+      const ownerId = trip.userId || trip.owner;
+      if (ownerId) {
+        const ownerNotif = await Notification.create({
+          user: ownerId,
+          title: "Invitation Declined",
+          message: `${userName} declined your invitation to collaborate on "${trip.title}"`,
+          type: "trip",
+          trip: trip._id,
+          isInvite: false,
+        });
+
+        try {
+          if (req.io) {
+            req.io.to(ownerId.toString()).emit("notification", ownerNotif);
+          }
+        } catch (_) {}
+      }
     }
 
     notification.inviteStatus = "declined";
@@ -1359,7 +1429,8 @@ export const declineInvite = async (req, res) => {
       message: "Invitation declined!",
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("[DeclineInvite Error]:", error.stack || error);
+    res.status(500).json({ success: false, message: error.message || "Internal Server Error" });
   }
 };
 

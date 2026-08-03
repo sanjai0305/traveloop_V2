@@ -329,12 +329,16 @@ export const subscribeUnreadCount = (tripId, userId, callback) => {
 
 // Presence: update status
 export const updatePresence = async (tripId, userId, name, avatar, online) => {
+  if (!tripId || !userId) {
+    console.warn("[updatePresence] Skipped: tripId or userId is undefined");
+    return;
+  }
   try {
     const presenceRef = rRef(rtdb, `presence/${tripId}/${userId}`);
     const status = {
       userId,
-      name,
-      avatar,
+      name: name || "Traveler",
+      avatar: avatar || "",
       status: online ? "online" : "offline",
       lastSeen: Date.now(),
     };

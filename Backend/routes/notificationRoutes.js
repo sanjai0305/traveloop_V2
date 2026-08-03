@@ -6,12 +6,19 @@ import {
   deleteNotification,
   clearAllNotifications,
 } from "../controllers/notificationController.js";
+import { acceptInvite, declineInvite } from "../controllers/tripController.js";
 import protect from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 // Get all notifications
 router.get("/", protect, getNotifications);
+
+// Accept / Decline Invite aliases
+router.post("/:notificationId/accept", protect, acceptInvite);
+router.post("/:notificationId/decline", protect, declineInvite);
+router.post("/invite/:notificationId/accept", protect, acceptInvite);
+router.post("/invite/:notificationId/decline", protect, declineInvite);
 
 // Mark all as read
 router.put("/read-all", protect, markAllAsRead);
