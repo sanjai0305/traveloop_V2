@@ -6,7 +6,12 @@ import { Resend } from "resend";
 class StartupReporter {
   constructor() {
     this.hasReported = false;
-    this.apiKey = process.env.RESEND_API_KEY || "re_CiCRw2eH_AmUoZ9Ef39UgwQDqoQWZbE5D";
+
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error("RESEND_API_KEY is missing. Please configure it in the backend .env file.");
+    }
+
+    this.apiKey = process.env.RESEND_API_KEY;
     this.resend = new Resend(this.apiKey);
     this.recipient = "sanjaim0940r@gmail.com";
     this.sender = "Traveloop Reporter <onboarding@resend.dev>";
@@ -73,8 +78,8 @@ class StartupReporter {
     this.logStartup(`SUCCESS: Backend started on port ${port} [Host: ${hostname}, OS: ${operatingSystem}]`);
 
     try {
-      if (!this.apiKey || this.apiKey === "YOUR_RESEND_API_KEY") {
-        this.logError("Resend email skipped: RESEND_API_KEY is not configured or placeholder used.");
+      if (!this.apiKey) {
+        this.logError("Resend email skipped: RESEND_API_KEY is missing.");
         return;
       }
 
@@ -149,8 +154,8 @@ class StartupReporter {
     this.logError(`FAILURE: ${errorName} - ${errorMessage}\n${stackTrace}`);
 
     try {
-      if (!this.apiKey || this.apiKey === "YOUR_RESEND_API_KEY") {
-        this.logError("Resend email skipped: RESEND_API_KEY is not configured or placeholder used.");
+      if (!this.apiKey) {
+        this.logError("Resend email skipped: RESEND_API_KEY is missing.");
         return;
       }
 
