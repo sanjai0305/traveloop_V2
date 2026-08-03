@@ -216,6 +216,7 @@ const MobileAppBar = () => {
           await refreshUserData();
         }
         window.dispatchEvent(new CustomEvent("refreshTrips"));
+        navigate("/my-trips");
       } else {
         await fetchNotifications();
       }

@@ -919,7 +919,11 @@ const BuildItinerary = () => {
         },
         body: JSON.stringify({ email: email, role: inviteRole })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        toast.error(data.message || "Invitation already pending.");
+        return;
+      }
       if (data.success) {
         toast.success("Invitation sent successfully!");
         setInviteEmail("");
@@ -930,6 +934,7 @@ const BuildItinerary = () => {
         toast.error(data.message || "Failed to send invitation");
       }
     } catch (err) {
+      console.error("[BuildItinerary] Invite error:", err);
       toast.error("Failed to send invitation");
     } finally {
       setInviting(false);

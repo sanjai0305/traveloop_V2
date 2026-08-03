@@ -41,6 +41,10 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    role: {
+      type: String,
+      default: "viewer",
+    },
     read: {
       type: Boolean,
       default: false,
@@ -53,8 +57,23 @@ const notificationSchema = new mongoose.Schema(
   }
 );
 
-// Keep user/userId and trip/tripId in sync before saving
-// Mongoose 8: use async function with no `next` parameter — return value is awaited
+// Keep user/userId and trip/tripId in sync before validation and saving
+notificationSchema.pre("validate", function (next) {
+  if (this.user && !this.userId) {
+    this.userId = this.user;
+  }
+  if (this.userId && !this.user) {
+    this.user = this.userId;
+  }
+  if (this.trip && !this.tripId) {
+    this.tripId = this.trip;
+  }
+  if (this.tripId && !this.trip) {
+    this.trip = this.tripId;
+  }
+  if (typeof next === "function") next();
+});
+
 notificationSchema.pre("save", async function () {
   if (this.userId) {
     this.user = this.userId;

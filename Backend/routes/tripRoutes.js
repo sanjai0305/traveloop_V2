@@ -15,8 +15,12 @@ import {
   getNearbyDestinations,
   inviteCollaborator,
   getCollaborators,
+  getPendingInvitations,
+  resendInvitation,
   removeCollaborator,
   updateCollaboratorRole,
+  cancelInvitation,
+  leaveTrip,
   acceptInvite,
   declineInvite,
   getActivityLogs,
@@ -339,7 +343,15 @@ router.get(
 // V1.4 Collaboration routes
 router.post("/:id/invite", protect, inviteCollaborator);
 router.get("/:id/collaborators", protect, getCollaborators);
+router.get("/:id/pending-invitations", protect, getPendingInvitations);
+router.get("/:tripId/pending-invitations", protect, getPendingInvitations);
+router.post("/:id/invitations/:inviteId/resend", protect, resendInvitation);
+router.post("/:id/invite/resend", protect, resendInvitation);
 router.delete("/:id/collaborators/:userId", protect, removeCollaborator);
+router.delete("/:id/invitations/:inviteId", protect, cancelInvitation);
+router.delete("/:id/invitations", protect, cancelInvitation);
+router.post("/:id/leave", protect, leaveTrip);
+router.delete("/:id/leave", protect, leaveTrip);
 router.put("/:id/collaborators/:userId", protect, updateCollaboratorRole);
 router.post("/invite/:notificationId/accept", protect, acceptInvite);
 router.post("/invite/:notificationId/decline", protect, declineInvite);

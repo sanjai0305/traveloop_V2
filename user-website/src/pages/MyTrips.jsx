@@ -1,4 +1,4 @@
-﻿// src/pages/MyTrips.jsx — Manually Created Personal Trips ONLY
+// src/pages/MyTrips.jsx — Manually Created Personal Trips ONLY
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
@@ -103,9 +103,19 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, onDeleteClick, 
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent pointer-events-none" />
 
         <div className="absolute top-4 left-4 z-30 flex items-center gap-2">
-          <div className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-500 text-white backdrop-blur-md shadow-sm flex items-center gap-1">
-            🏕 Personal Plan
-          </div>
+          {trip.role === "editor" || trip.role === "Editor" ? (
+            <div className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-cyan-600 text-white backdrop-blur-md shadow-sm flex items-center gap-1">
+              ✏️ Editor
+            </div>
+          ) : trip.role === "viewer" || trip.role === "Viewer" ? (
+            <div className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-purple-600 text-white backdrop-blur-md shadow-sm flex items-center gap-1">
+              👁️ Viewer
+            </div>
+          ) : (
+            <div className="px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-600 text-white backdrop-blur-md shadow-sm flex items-center gap-1">
+              👑 Owner
+            </div>
+          )}
         </div>
 
         <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5">

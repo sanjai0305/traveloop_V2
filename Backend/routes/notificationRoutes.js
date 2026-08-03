@@ -14,11 +14,13 @@ const router = express.Router();
 // Get all notifications
 router.get("/", protect, getNotifications);
 
-// Accept / Decline Invite aliases
+// Accept / Decline / Reject Invite aliases
 router.post("/:notificationId/accept", protect, acceptInvite);
 router.post("/:notificationId/decline", protect, declineInvite);
+router.post("/:notificationId/reject", protect, declineInvite);
 router.post("/invite/:notificationId/accept", protect, acceptInvite);
 router.post("/invite/:notificationId/decline", protect, declineInvite);
+router.post("/invite/:notificationId/reject", protect, declineInvite);
 
 // Mark all as read
 router.put("/read-all", protect, markAllAsRead);

@@ -95,7 +95,17 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin === "capacitor://localhost" ||
+        origin === "http://localhost";
+      if (isAllowed) return callback(null, true);
+      return callback(null, true); // Fallback allow for dev
+    },
     credentials: true
   }
 });
@@ -114,8 +124,94 @@ io.on("connection", (socket) => {
   // Allow authenticated users to subscribe to their personal notification room
   socket.on("join_user_room", (userId) => {
     if (userId) {
-      socket.join(`user_${userId}`);
-      console.log(`[Socket.io] Client ${socket.id} joined user room: user_${userId}`);
+      socket.join(userId.toString());
+      socket.join(`user_${userId.toString()}`);
+      console.log(`[Socket.io] Client ${socket.id} joined user rooms: ${userId} & user_${userId}`);
+    }
+  });
+
+  // ── Real-Time Trip Collaboration Events ──
+  socket.on("join_trip", ({ tripId, user }) => {
+    if (tripId) {
+      socket.join(`trip_${tripId}`);
+      socket.join(`trip:${tripId}`);
+      socket.join(tripId);
+      socket.currentTripId = tripId;
+      socket.userData = user;
+      console.log(`[Socket.io] User ${user?.name || user?.email || socket.id} joined trip rooms: trip_${tripId} & trip:${tripId}`);
+      socket.to(`trip_${tripId}`).emit("user_joined_trip", { user, socketId: socket.id });
+    }
+  });
+
+  socket.on("leave_trip", ({ tripId, user }) => {
+    if (tripId) {
+      socket.leave(`trip_${tripId}`);
+      socket.to(`trip_${tripId}`).emit("user_left_trip", { user, socketId: socket.id });
+    }
+  });
+
+  socket.on("trip_update", ({ tripId, type, data, user }) => {
+    if (tripId) {
+      console.log(`[Socket.io] Live trip_update (${type}) broadcast to room trip_${tripId}`);
+      socket.to(`trip_${tripId}`).emit("trip_update", { type, data, user, timestamp: new Date() });
+    }
+  });
+
+  socket.on("typing", ({ tripId, user, field }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("user_typing", { user, field });
+      socket.to(`trip_${tripId}`).emit("chat:typing", { user, field });
+    }
+  });
+
+  socket.on("stop_typing", ({ tripId, user, field }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("user_stop_typing", { user, field });
+      socket.to(`trip_${tripId}`).emit("chat:stopTyping", { user, field });
+    }
+  });
+
+  // Enterprise Chat Socket Handlers
+  socket.on("chat:join", ({ tripId, user }) => {
+    if (tripId) {
+      socket.join(`trip_${tripId}`);
+      console.log(`[Socket.io] User ${user?.name || socket.id} joined chat room: trip_${tripId}`);
+    }
+  });
+
+  socket.on("chat:leave", ({ tripId }) => {
+    if (tripId) {
+      socket.leave(`trip_${tripId}`);
+    }
+  });
+
+  socket.on("chat:message", (data) => {
+    if (data && data.tripId) {
+      socket.to(`trip_${data.tripId}`).emit("chat:message", data);
+    }
+  });
+
+  socket.on("chat:typing", ({ tripId, user }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("chat:typing", { user });
+    }
+  });
+
+  socket.on("chat:stopTyping", ({ tripId, user }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("chat:stopTyping", { user });
+    }
+  });
+
+  socket.on("chat:reaction", ({ tripId, messageId, reactions }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("chat:reaction", { messageId, reactions });
+    }
+  });
+
+  socket.on("chat:readReceipt", ({ tripId, messageId, userId }) => {
+    if (tripId) {
+      socket.to(`trip_${tripId}`).emit("chat:readReceipt", { messageId, userId, readAt: new Date() });
     }
   });
 
@@ -139,6 +235,9 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    if (socket.currentTripId) {
+      socket.to(`trip_${socket.currentTripId}`).emit("user_left_trip", { user: socket.userData, socketId: socket.id });
+    }
     console.log(`[Socket.io] Client disconnected: ${socket.id}`);
   });
 });
@@ -278,6 +377,7 @@ app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/v1/auth", authLimiter, authRoutes);
 app.use("/api/legal", legalRoutes);
 app.use("/api/trips", tripRoutes);
+app.use("/api/my-trips", tripRoutes);
 app.use("/api/itinerary", itineraryRoutes);
 app.use("/api/checklist", checklistRoutes);
 app.use("/api/notes", notesRoutes);
