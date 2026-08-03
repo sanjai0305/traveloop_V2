@@ -715,7 +715,7 @@ const Dashboard = () => {
                         </div>
 
                         <button
-                          onClick={() => navigate(`/activities/${trip._id}`)}
+                          onClick={() => navigate(`/trips/${trip._id}/activities`)}
                           className="h-9 px-4 rounded-xl bg-gradient-to-r from-[#06B6D4] to-[#2563EB] text-white font-extrabold text-xs shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/35 flex items-center gap-1 cursor-pointer transition-all"
                         >
                           <span>Book Now</span>

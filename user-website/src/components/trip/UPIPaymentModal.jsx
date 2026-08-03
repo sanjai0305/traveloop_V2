@@ -311,9 +311,18 @@ const UPIPaymentModal = ({
             console.log("Payment Success");
             setTimeout(() => onSuccess(bookingRef || resolvedBookingId), 1600);
           } else {
-            setError(verifyData.message || "Payment verification failed. Please contact support.");
+            // Never expose raw MongoDB / transaction errors to the user
+            const rawMsg = verifyData.message || "";
+            const isTechError = rawMsg.toLowerCase().includes("transaction") ||
+              rawMsg.toLowerCase().includes("mongo") ||
+              rawMsg.toLowerCase().includes("replica") ||
+              rawMsg.toLowerCase().includes("standalone");
+            const friendlyMsg = isTechError
+              ? "Booking could not be completed. Please try again."
+              : (rawMsg || "Payment verification failed. Please contact support.");
+            setError(friendlyMsg);
             setPhase("failed");
-            toast.error(verifyData.message || "Payment verification failed.");
+            toast.error(friendlyMsg);
           }
         } catch (verifyErr) {
           console.error("[Payment] Verify network error:", verifyErr);

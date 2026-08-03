@@ -324,34 +324,42 @@ export const Trips: React.FC = () => {
     }
   };
 
-  // Action: Open Reject Modal
-  const handleOpenRejectModal = (trip: Trip) => {
+  // Action: Open Reject / Needs Changes Modal
+  const handleOpenRejectModal = (trip: Trip & { isNeedsChangesMode?: boolean }) => {
     setRejectModalTrip(trip);
     setRejectReasonInput("");
   };
 
-  // Action: Submit Rejection
+  // Action: Submit Rejection or Request Changes
   const handleConfirmRejection = async () => {
     if (!rejectModalTrip) return;
-    const finalReason = rejectReasonInput.trim() || "Does not comply with platform listing policies";
+    const isNeedsChanges = (rejectModalTrip as any).isNeedsChangesMode;
+    const defaultReason = isNeedsChanges ? "Please update mandatory trip details before approval" : "Does not comply with platform listing policies";
+    const finalReason = rejectReasonInput.trim() || defaultReason;
 
     setRejectLoading(true);
     try {
-      console.log(`[Admin Trips] Rejecting trip ${rejectModalTrip._id} — Reason: ${finalReason}`);
-      const res = await api.post(`/admin/trips/${rejectModalTrip._id}/reject`, {
+      const endpoint = isNeedsChanges ? `/admin/trips/${rejectModalTrip._id}/request-changes` : `/admin/trips/${rejectModalTrip._id}/reject`;
+      const targetStatus = isNeedsChanges ? "NEEDS_CHANGES" : "REJECTED";
+
+      console.log(`[Admin Trips] ${isNeedsChanges ? "Requesting changes for" : "Rejecting"} trip ${rejectModalTrip._id} — Reason: ${finalReason}`);
+      const res = await api.post(endpoint, {
         reason: finalReason,
         rejectionReason: finalReason,
+        comments: finalReason,
+        approvalStatus: targetStatus,
+        status: targetStatus,
       });
 
       if (res.data.success) {
-        console.log(`[Admin Trips] Trip ${rejectModalTrip._id} REJECTED`);
+        console.log(`[Admin Trips] Trip ${rejectModalTrip._id} updated to ${targetStatus}`);
         setTrips((prev) =>
           prev.map((t) =>
             t._id === rejectModalTrip._id
               ? normalizeTrip({
                   ...t,
-                  approvalStatus: "REJECTED",
-                  status: "REJECTED",
+                  approvalStatus: targetStatus,
+                  status: targetStatus,
                   published: false,
                   visibleToTravelers: false,
                   rejectionReason: finalReason,
@@ -364,8 +372,8 @@ export const Trips: React.FC = () => {
         setRejectReasonInput("");
       }
     } catch (err) {
-      console.error("[Admin Trips] Failed to reject trip:", err);
-      alert("Failed to reject trip.");
+      console.error("[Admin Trips] Action failed:", err);
+      alert(`Failed to ${isNeedsChanges ? "request changes for" : "reject"} trip.`);
     } finally {
       setRejectLoading(false);
     }
@@ -693,6 +701,17 @@ export const Trips: React.FC = () => {
                       </button>
                     )}
 
+                    {/* Needs Changes Action */}
+                    {isPending && (
+                      <button
+                        onClick={() => handleOpenRejectModal({ ...trip, isNeedsChangesMode: true })}
+                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95"
+                      >
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>Needs Changes</span>
+                      </button>
+                    )}
+
                     {/* Reject Action */}
                     {isPending && (
                       <button
@@ -881,8 +900,20 @@ export const Trips: React.FC = () => {
                 Close Audit View
               </button>
 
-              {detailsModalTrip.approvalStatus === "pending" && (
+              {(detailsModalTrip.approvalStatus === "pending" || detailsModalTrip.approvalStatus === "PENDING_APPROVAL" || detailsModalTrip.status === "PENDING_APPROVAL") && (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tripToReq = { ...detailsModalTrip, isNeedsChangesMode: true };
+                      setDetailsModalTrip(null);
+                      handleOpenRejectModal(tripToReq);
+                    }}
+                    className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs transition-all flex items-center gap-1.5"
+                  >
+                    <AlertTriangle className="w-4 h-4" /> Request Changes
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

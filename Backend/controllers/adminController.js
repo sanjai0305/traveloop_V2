@@ -888,25 +888,26 @@ export const updateTrip = async (req, res) => {
 
     if (approvalStatus !== undefined) {
       const normalizedStatus = approvalStatus.toUpperCase();
-      if (!["PENDING", "APPROVED", "REJECTED", "NEEDS_REVISION"].includes(normalizedStatus)) {
+      if (!["PENDING", "PENDING_APPROVAL", "APPROVED", "REJECTED", "NEEDS_REVISION", "NEEDS_CHANGES"].includes(normalizedStatus)) {
         return res.status(400).json({ success: false, message: "Invalid approval status" });
       }
 
       if (normalizedStatus === "APPROVED") {
-        trip.approvalStatus = "approved";
-        trip.publishStatus = "published";
+        trip.approvalStatus = "APPROVED";
+        trip.publishStatus = "APPROVED";
         trip.status = "APPROVED";
         trip.published = true;
+        trip.isPublished = true;
         trip.visibleToTravelers = true;
         trip.publishedAt = new Date();
         trip.approvedAt = new Date();
         trip.reviewedAt = new Date();
-        trip.approvedBy = req.admin ? req.admin.email || "Admin" : "Admin";
-        trip.reviewedBy = req.admin ? req.admin.email || "Admin" : "Admin";
+        trip.approvedBy = req.admin ? req.admin.email || req.admin._id || "Admin" : "Admin";
+        trip.reviewedBy = req.admin ? req.admin.email || req.admin._id || "Admin" : "Admin";
 
         console.log(`[ADMIN APPROVAL] Trip approved for ID: ${id}`);
         await trip.save();
-        console.log(`[ADMIN APPROVAL] Mongo updated: status=APPROVED, published=true, visibleToTravelers=true`);
+        console.log(`[ADMIN APPROVAL] Mongo updated: status=APPROVED, isPublished=true, visibleToTravelers=true`);
 
         // Mark associated AdminNotification as read
         try {
@@ -1129,17 +1130,17 @@ export const approveTrip = async (req, res) => {
 
     console.log("Updating Status...");
     // Update statuses for Mongoose schema (approvalStatus enum is lowercase: "approved")
-    trip.approvalStatus = "approved";
+    trip.approvalStatus = "APPROVED";
     trip.status = "APPROVED";
-    trip.publishStatus = "published";
+    trip.publishStatus = "APPROVED";
     trip.published = true;
     trip.isPublished = true;
     trip.visibleToTravelers = true;
     trip.approvedAt = new Date();
     trip.publishedAt = new Date();
     trip.reviewedAt = new Date();
-    trip.approvedBy = req.admin ? req.admin._id || req.admin.id || req.admin.email || "Admin" : "Admin";
-    trip.reviewedBy = req.admin ? req.admin._id || req.admin.id || req.admin.email || "Admin" : "Admin";
+    trip.approvedBy = req.admin ? (req.admin._id || req.admin.id || req.admin.email || "Admin").toString() : "Admin";
+    trip.reviewedBy = req.admin ? (req.admin._id || req.admin.id || req.admin.email || "Admin").toString() : "Admin";
 
     console.log("Saving Trip...");
     try {

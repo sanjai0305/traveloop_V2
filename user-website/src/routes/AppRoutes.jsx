@@ -48,6 +48,8 @@ const TripAiAssistantPage = lazy(() => import("../pages/TripAiAssistantPage"));
 const EditTrip = lazy(() => import("../pages/EditTrip"));
 const NoteEditor = lazy(() => import("../pages/NoteEditor"));
 const NoteView = lazy(() => import("../pages/NoteView"));
+const TripActivitiesPage = lazy(() => import("../pages/TripActivitiesPage"));
+const ActivityEditorPage = lazy(() => import("../pages/ActivityEditorPage"));
 
 // PROTECTED ROUTE
 import ProtectedRoute from "./ProtectedRoute";
@@ -201,7 +203,41 @@ const AppRoutes = () => {
             }
           />
 
-          {/* ACTIVITIES */}
+          {/* TRIP ACTIVITIES */}
+          <Route
+            path="/trips/:tripId/activities/new"
+            element={
+              <ProtectedRoute>
+                <ActivityEditorPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trips/:tripId/activities/:activityId/edit"
+            element={
+              <ProtectedRoute>
+                <ActivityEditorPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trips/:tripId/activities"
+            element={
+              <ProtectedRoute>
+                <TripActivitiesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* EXPLORE PAGE */}
+          <Route
+            path="/explore"
+            element={
+              <ProtectedRoute>
+                <Activities />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/activities/:id?"
             element={

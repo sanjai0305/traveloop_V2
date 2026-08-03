@@ -279,86 +279,111 @@ const confirmPassengerSeats = async (booking, travellers, tripId, userId, io) =>
 // @desc    Verify payment signature and record booking
 // @access  Private (Traveler)
 router.post("/verify", protect, async (req, res) => {
-  console.log("=== PAYMENT VERIFICATION REQUEST (INCOMING REQUEST) ===");
-  console.log("[Razorpay Verify] Incoming Request Body:", JSON.stringify(req.body));
-  console.log("[Razorpay Verify] razorpay_order_id:", req.body.razorpay_order_id);
-  console.log("[Razorpay Verify] razorpay_payment_id:", req.body.razorpay_payment_id);
-  console.log("[Razorpay Verify] razorpay_signature:", req.body.razorpay_signature);
-  console.log("[Razorpay Verify] bookingId:", req.body.bookingId);
+  console.log("\n===== STEP 1: PAYMENT VERIFICATION REQUEST RECEIVED =====");
+  console.log("[Verify] Headers:", JSON.stringify({ authorization: req.headers.authorization ? "Bearer ***" : "MISSING", "content-type": req.headers["content-type"] }));
+  console.log("[Verify] Full Body:", JSON.stringify(req.body));
+  console.log("[Verify] User:", req.user ? `id=${req.user._id || req.user.id}` : "NOT AUTHENTICATED");
 
   const {
     razorpay_order_id,
     razorpay_payment_id,
     razorpay_signature,
-    bookingPayload,
     bookingId
   } = req.body;
 
-  // Verify credentials exist. If missing, return 400 instead of 500.
+  console.log("[Verify] razorpay_order_id:", razorpay_order_id || "MISSING");
+  console.log("[Verify] razorpay_payment_id:", razorpay_payment_id || "MISSING");
+  console.log("[Verify] razorpay_signature:", razorpay_signature ? razorpay_signature.slice(0, 10) + "..." : "MISSING");
+  console.log("[Verify] bookingId:", bookingId || "MISSING");
+
+  // ── STEP 2: Validate required fields ──────────────────────────────────────
+  console.log("\n===== STEP 2: VALIDATE PAYLOAD =====");
+
+  if (!razorpay_order_id) {
+    console.error("[Verify] FAIL: Missing razorpay_order_id");
+    return res.status(400).json({ success: false, error: "Missing razorpay_order_id" });
+  }
+  if (!razorpay_payment_id) {
+    console.error("[Verify] FAIL: Missing razorpay_payment_id");
+    return res.status(400).json({ success: false, error: "Missing razorpay_payment_id" });
+  }
+  if (!razorpay_signature) {
+    console.error("[Verify] FAIL: Missing razorpay_signature");
+    return res.status(400).json({ success: false, error: "Missing razorpay_signature" });
+  }
+  if (!bookingId) {
+    console.error("[Verify] FAIL: Missing bookingId");
+    return res.status(400).json({ success: false, error: "Missing bookingId" });
+  }
+  console.log("[Verify] PASS: All required fields present");
+
+  // ── STEP 3: Check Razorpay credentials ────────────────────────────────────
+  console.log("\n===== STEP 3: VERIFY RAZORPAY CREDENTIALS =====");
   const key_id = process.env.RAZORPAY_KEY_ID;
   const key_secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
+  console.log("[Verify] RAZORPAY_KEY_ID present:", !!key_id);
+  console.log("[Verify] RAZORPAY_KEY_SECRET present:", !!key_secret, "length:", key_secret?.length || 0);
 
   if (!key_id || !key_secret) {
-    console.error("[Razorpay Verify] Payment Error: Razorpay credentials missing");
-    const errorMsg = "Razorpay credentials missing on the server";
-    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-    return res.status(400).json({ success: false, message: errorMsg });
+    console.error("[Verify] FAIL: Razorpay credentials missing");
+    return res.status(500).json({ success: false, error: "Payment gateway configuration error. Contact support." });
   }
+  console.log("[Verify] PASS: Razorpay credentials loaded");
 
-  // 1. Enforce strict signature verification
-  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    const errorMsg = "Missing Razorpay payment verification fields (order_id, payment_id, or signature)";
-    console.error("[Razorpay Verify] Payment Error:", errorMsg);
-    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-    return res.status(400).json({ success: false, message: errorMsg });
-  }
-
-  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  // ── STEP 4: Verify Razorpay signature ─────────────────────────────────────
+  console.log("\n===== STEP 4: VERIFY RAZORPAY SIGNATURE =====");
+  const hmacBody = razorpay_order_id + "|" + razorpay_payment_id;
   const expectedSignature = crypto
     .createHmac("sha256", key_secret)
-    .update(body.toString())
+    .update(hmacBody)
     .digest("hex");
 
-  const isMockPayment = (process.env.NODE_ENV !== "production" || razorpay_order_id.startsWith("order_mock_")) && razorpay_signature === "mock_signature";
-  if (expectedSignature !== razorpay_signature && !isMockPayment) {
-    const errorMsg = "Payment verification failed (Signature mismatch)";
-    console.error("[Razorpay Verify] Payment Error:", errorMsg);
-    console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-    return res.status(400).json({ success: false, message: errorMsg });
-  }
+  console.log("[Verify] Expected Signature (first 16):", expectedSignature.slice(0, 16) + "...");
+  console.log("[Verify] Received Signature (first 16):", razorpay_signature.slice(0, 16) + "...");
+  const signatureMatch = expectedSignature === razorpay_signature;
+  console.log("[Verify] Signature match:", signatureMatch);
 
-  // 2. Resolve or Load Booking and Finalize Atomically
+  const isMockPayment = (process.env.NODE_ENV !== "production" ||
+    razorpay_order_id.startsWith("order_mock_")) &&
+    razorpay_signature === "mock_signature";
+
+  if (!signatureMatch && !isMockPayment) {
+    console.error("[Verify] FAIL: Signature mismatch — payment rejected");
+    return res.status(400).json({ success: false, error: "Invalid payment signature. Payment verification failed." });
+  }
+  console.log("[Verify] PASS: Signature verified ✓", isMockPayment ? "(mock)" : "");
+
   let booking = null;
   let paymentDoc = null;
   let session = null;
 
   try {
     const userId = req.user._id || req.user.id;
-    const lookupId = bookingId || razorpay_order_id;
 
-    // Load booking draft first
+    // ── STEP 5: Load booking draft ───────────────────────────────────────────
+    console.log("\n===== STEP 5: LOAD BOOKING DRAFT =====");
+    console.log("[Verify] Looking up booking by id:", bookingId, "or orderId:", razorpay_order_id);
+
     booking = await Booking.findOne({
       $or: [
-        { bookingId: lookupId },
-        { _id: mongoose.Types.ObjectId.isValid(lookupId) ? lookupId : null },
+        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
+        { bookingId: bookingId },
         { orderId: razorpay_order_id }
-      ].filter(Boolean)
+      ].filter(q => Object.values(q)[0] !== null)
     });
 
     if (!booking) {
-      const errorMsg = `Booking draft not found for lookupId: ${lookupId} or orderId: ${razorpay_order_id}`;
-      console.error("[Razorpay Verify] Payment Error:", errorMsg);
-      console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-      return res.status(404).json({ success: false, message: errorMsg });
+      console.error("[Verify] FAIL: Booking not found for id:", bookingId, "orderId:", razorpay_order_id);
+      return res.status(404).json({ success: false, error: "Booking not found. Please contact support." });
     }
+    console.log("[Verify] PASS: Booking found — bookingId:", booking.bookingId, "_id:", booking._id);
+    console.log("[Verify] Booking status:", booking.status, "| paymentStatus:", booking.paymentStatus);
+    console.log("[Verify] Booking pricePaid (INR):", booking.pricePaid, "| seatNumbers:", booking.seatNumbers);
+    console.log("[Verify] Booking tripId:", booking.tripId);
 
-    console.log("[Razorpay Verify] Trip ID:", booking.tripId);
-    console.log("[Razorpay Verify] Booking Amount (Rupees):", booking.pricePaid);
-    console.log("[Razorpay Verify] Expected Amount (Paise):", Math.round(booking.pricePaid * 100));
-
-    // Prevent duplicate verification
-    if (booking.status === "PAID" || booking.paymentStatus === "Paid") {
-      console.log("[Razorpay Verify] Verification Response: Success (Already Paid)");
+    // ── Prevent duplicate verification ──────────────────────────────────────
+    if (booking.status === "PAID" || booking.paymentStatus === "PAID") {
+      console.log("[Verify] Booking already PAID — returning cached success");
       return res.status(200).json({
         success: true,
         bookingId: booking.bookingId,
@@ -368,68 +393,107 @@ router.post("/verify", protect, async (req, res) => {
       });
     }
 
-    // Verify Amount and Currency against Razorpay API
+    // ── STEP 6: Fetch Razorpay order & verify amount ─────────────────────────
+    console.log("\n===== STEP 6: VERIFY AMOUNT AND CURRENCY =====");
     if (!isMockPayment) {
       let rzpOrder;
       try {
         const instance = getRazorpayInstance();
         rzpOrder = await instance.orders.fetch(razorpay_order_id);
-        console.log("[Razorpay Verify] Razorpay Response (Order Fetch):", JSON.stringify(rzpOrder));
+        console.log("[Verify] Razorpay Order:", JSON.stringify({
+          id: rzpOrder.id,
+          amount: rzpOrder.amount,
+          currency: rzpOrder.currency,
+          status: rzpOrder.status
+        }));
       } catch (rzpOrderErr) {
-        console.error("[Razorpay Verify] Payment Error: Failed to fetch order from Razorpay API:", rzpOrderErr.message || rzpOrderErr);
-        console.log("[Razorpay Verify] Verification Response: Failure - Failed to fetch order from Razorpay API");
+        console.error("[Verify] FAIL: Cannot fetch Razorpay order:", rzpOrderErr.message);
         return res.status(400).json({
           success: false,
-          message: rzpOrderErr.message || "Failed to fetch order details from Razorpay",
-          razorpayError: rzpOrderErr
+          error: `Failed to verify order with Razorpay: ${rzpOrderErr.message || "API error"}`
         });
       }
 
+      // Use integer paise comparison to avoid floating-point errors
       const expectedAmountPaise = Math.round(booking.pricePaid * 100);
+      console.log("[Verify] Expected amount (paise):", expectedAmountPaise, "| Razorpay amount (paise):", rzpOrder.amount);
+
       if (rzpOrder.amount !== expectedAmountPaise) {
-        const errorMsg = `Payment amount mismatch. Booking expects ${expectedAmountPaise} paise, Razorpay order has ${rzpOrder.amount} paise.`;
-        console.error("[Razorpay Verify] Payment Error:", errorMsg);
-        console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-        return res.status(400).json({ success: false, message: errorMsg });
+        console.error("[Verify] FAIL: Amount mismatch");
+        return res.status(400).json({
+          success: false,
+          error: `Payment amount mismatch. Expected ₹${booking.pricePaid} (${expectedAmountPaise} paise) but Razorpay order has ${rzpOrder.amount} paise.`
+        });
       }
       if (rzpOrder.currency !== "INR") {
-        const errorMsg = `Payment currency verification failed. Expected INR, got ${rzpOrder.currency}`;
-        console.error("[Razorpay Verify] Payment Error:", errorMsg);
-        console.log("[Razorpay Verify] Verification Response: Failure -", errorMsg);
-        return res.status(400).json({ success: false, message: errorMsg });
+        console.error("[Verify] FAIL: Currency mismatch:", rzpOrder.currency);
+        return res.status(400).json({
+          success: false,
+          error: `Currency mismatch. Expected INR but received ${rzpOrder.currency}.`
+        });
       }
+      console.log("[Verify] PASS: Amount and currency verified ✓");
+    } else {
+      console.log("[Verify] Skipping amount check for mock payment");
     }
 
-
-    // Ensure seats are still reserved for this user and not expired/booked
-    const SeatBooking = mongoose.model("SeatBooking");
-    const now = new Date();
+    // ── STEP 7: Validate seats ───────────────────────────────────────────────
+    // IMPORTANT: At this point Razorpay has already captured the payment.
+    // We MUST NOT reject due to a soft seat-lock TTL expiry.
+    // We only block if the seat was genuinely booked by a different booking.
+    console.log("\n===== STEP 7: VALIDATE SEATS =====");
+    const SeatBookingModel = mongoose.model("SeatBooking");
     for (const seatNum of booking.seatNumbers) {
-      const seatDoc = await SeatBooking.findOne({ tripId: booking.tripId, seatNumber: seatNum });
+      console.log("[Verify] Checking seat:", seatNum);
+      const seatDoc = await SeatBookingModel.findOne({ tripId: booking.tripId, seatNumber: seatNum });
       if (!seatDoc) {
-        return res.status(400).json({ success: false, message: `Seat ${seatNum} not found.` });
+        console.warn("[Verify] Seat document not found for", seatNum, "— will be created during finalization");
+        continue; // SeatBooking may not exist yet for new trips — finalize will create it
       }
+      console.log("[Verify] Seat", seatNum, "status:", seatDoc.status,
+        "| reservedByUserId:", seatDoc.reservedByUserId,
+        "| bookingId:", seatDoc.bookingId);
+
+      // Only hard-block if booked by a different booking
       if (seatDoc.status === "booked" && String(seatDoc.bookingId) !== String(booking._id)) {
-        return res.status(400).json({ success: false, message: `Seat ${seatNum} is already booked by another traveler.` });
+        console.error("[Verify] FAIL: Seat", seatNum, "is permanently booked by a different booking:", seatDoc.bookingId);
+        return res.status(400).json({
+          success: false,
+          error: `Seat ${seatNum} has already been booked by another traveler. Please contact support for a refund.`
+        });
       }
-      if (seatDoc.status === "reserved") {
-        if (String(seatDoc.reservedByUserId) !== String(userId)) {
-          return res.status(400).json({ success: false, message: `Seat ${seatNum} is reserved by another traveler.` });
-        }
-        if (seatDoc.reservedUntil && seatDoc.reservedUntil < now) {
-          return res.status(400).json({ success: false, message: `Reservation for seat ${seatNum} has expired.` });
-        }
-      }
+      // Seat is "available" or "reserved" by us — or TTL-expired but still reserved by us
+      // All such cases are safe to finalize (payment already captured)
+      console.log("[Verify] PASS: Seat", seatNum, "is safe to finalize");
     }
 
-    // Start Mongoose Transaction
-    try {
-      session = await mongoose.startSession();
-      session.startTransaction();
-    } catch (txInitErr) {
-      console.warn("[Transaction] MongoDB transactions not supported by deployment. Running sequentially.");
+    // Check if MongoDB deployment supports Replica Set / Transactions
+    const isReplicaSet = (() => {
+      try {
+        const topology = mongoose.connection?.client?.topology;
+        const type = topology?.description?.type;
+        return type && type !== "Single";
+      } catch (_) {
+        return false;
+      }
+    })();
+
+    if (isReplicaSet) {
+      try {
+        session = await mongoose.startSession();
+        session.startTransaction();
+      } catch (txInitErr) {
+        console.warn("[Transaction] MongoDB transactions not supported by deployment. Running sequentially.");
+        session = null;
+      }
+    } else {
+      console.log("[Payment Verify] Standalone MongoDB deployment detected. Executing booking finalization sequentially.");
       session = null;
     }
+
+    // ── STEP 8: Finalize Booking ─────────────────────────────────────────────
+    console.log("\n===== STEP 8: FINALIZE BOOKING =====");
+    console.log("[Verify] Starting BookingService.finalizeBooking for booking._id:", booking._id);
 
     let result;
     try {
@@ -440,24 +504,48 @@ router.post("/verify", protect, async (req, res) => {
         signature: razorpay_signature
       }, session);
 
-      if (session) {
+      if (session && typeof session.inTransaction === "function" && session.inTransaction()) {
         await session.commitTransaction();
+        console.log("[Verify] Transaction committed");
       }
     } catch (finalizeErr) {
+      console.error("[Verify] finalizeBooking error:", finalizeErr.message, finalizeErr.name);
       if (session) {
-        await session.abortTransaction();
+        try {
+          await session.abortTransaction();
+        } catch (_) {}
       }
-      throw finalizeErr;
+
+      // Retry sequentially without session if transaction fails due to standalone Mongo
+      if (session && (
+        finalizeErr.message?.includes("Transaction numbers are only allowed") ||
+        finalizeErr.name === "MongoServerError"
+      )) {
+        console.warn("[Verify] Retrying sequentially without session (standalone MongoDB)...");
+        result = await BookingService.finalizeBooking({
+          bookingId: booking._id,
+          paymentId: razorpay_payment_id,
+          orderId: razorpay_order_id,
+          signature: razorpay_signature
+        }, null);
+      } else {
+        throw finalizeErr;
+      }
     } finally {
       if (session) {
-        session.endSession();
+        try {
+          session.endSession();
+        } catch (_) {}
       }
     }
+    console.log("[Verify] PASS: BookingService.finalizeBooking completed");
 
     booking = result.booking;
     paymentDoc = result.payment;
+    console.log("[Verify] Booking finalized — bookingId:", booking.bookingId, "| status:", booking.status, "| paymentStatus:", booking.paymentStatus);
 
-    // 3. Emit real-time seat updates for newly confirmed seats
+    // ── STEP 9: Emit real-time seat updates ──────────────────────────────────
+    console.log("\n===== STEP 9: EMIT SEAT UPDATES =====");
     const io = req.app.get("io");
     if (io && booking.seatNumbers?.length > 0) {
       booking.seatNumbers.forEach((seatNum, idx) => {
@@ -471,9 +559,13 @@ router.post("/verify", protect, async (req, res) => {
           age: traveler.age || 0
         });
       });
+      console.log("[Verify] Seat update events emitted for seats:", booking.seatNumbers);
+    } else {
+      console.log("[Verify] No io instance or no seats to emit");
     }
 
-    // 4. Trigger PDF ticket pass generation and send confirmation email asynchronously
+    // ── STEP 10: Send confirmation email (non-blocking) ──────────────────────
+    console.log("\n===== STEP 10: SEND CONFIRMATION EMAIL =====");
     const trip = await AgentTrip.findById(booking.tripId);
     try {
       const { generateTicketPdf } = await import("../services/pdfService.js");
@@ -485,11 +577,14 @@ router.post("/verify", protect, async (req, res) => {
       
       const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
       await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
-      console.log(`[Payment Verify API] Confirmation email sent to ${passengerEmail}`);
+      console.log(`[Verify] Confirmation email sent to ${passengerEmail}`);
     } catch (emailErr) {
-      console.error("[Payment Verify API] Failed to send ticket pass email:", emailErr.message);
+      console.error("[Verify] Email send failed (non-fatal):", emailErr.message);
     }
 
+    // ── STEP 11: Return success ──────────────────────────────────────────────
+    console.log("\n===== STEP 11: SUCCESS RESPONSE =====");
+    console.log("[Verify] Returning success. bookingId:", booking.bookingId, "paymentId:", razorpay_payment_id);
     res.status(200).json({
       success: true,
       bookingId: booking.bookingId,
@@ -499,8 +594,40 @@ router.post("/verify", protect, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("[Razorpay Verify & Record] Error:", error);
-    res.status(400).json({ success: false, message: error.message || "Payment Verification Failed" });
+    console.error("\n===== PAYMENT VERIFY UNHANDLED ERROR =====");
+    console.error("[Verify] Error name:", error.name);
+    console.error("[Verify] Error message:", error.message);
+    console.error("[Verify] Error stack:", error.stack?.split("\n").slice(0, 5).join("\n"));
+
+    // Rollback seat reservations if booking failed before PAID
+    if (booking && booking._id && booking.status !== "PAID") {
+      try {
+        const SeatBookingModel = mongoose.model("SeatBooking");
+        if (booking.seatNumbers && booking.seatNumbers.length > 0) {
+          await SeatBookingModel.updateMany(
+            { tripId: booking.tripId, seatNumber: { $in: booking.seatNumbers }, bookingId: booking._id },
+            { $set: { status: "available", bookingId: null, passengerId: null, reservedUntil: null } }
+          );
+          console.log(`[Verify Rollback] Released seats ${booking.seatNumbers.join(", ")} for failed booking ${booking.bookingId}`);
+        }
+      } catch (rollbackErr) {
+        console.error("[Payment Verify Rollback] Seat rollback error:", rollbackErr.message);
+      }
+    }
+
+    const isTechError = error.message && (
+      error.message.includes("Mongo") ||
+      error.message.includes("Transaction") ||
+      error.message.includes("replica") ||
+      error.message.includes("standalone") ||
+      error.name === "MongoServerError"
+    );
+    const cleanMsg = isTechError
+      ? "Booking could not be completed due to a server error. Please contact support."
+      : (error.message || "Booking could not be completed. Please try again.");
+
+    console.error("[Verify] Returning 400 with message:", cleanMsg);
+    res.status(400).json({ success: false, message: cleanMsg });
   }
 });
 

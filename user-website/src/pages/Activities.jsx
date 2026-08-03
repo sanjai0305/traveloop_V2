@@ -3,7 +3,7 @@
 // New: AI-powered destination discovery mode when no trip is selected.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import MainLayout from "../layouts/MainLayout";
 import PageHeader from "../components/common/PageHeader";
@@ -181,84 +181,133 @@ const SkeletonCard = ({ i }) => (
 
 // ─── Published Trip Card ──────────────────────────────────────────────────────
 const PublishedTripCard = ({ trip, onClick }) => {
-  const discountAmount = (trip.originalPrice || 0) - (trip.offerPrice || trip.pricePerPerson || 0);
+  const price = trip.offerPrice || trip.pricePerPerson || 0;
+  const originalPrice = trip.originalPrice || 0;
+  const discountAmount = originalPrice > price ? originalPrice - price : 0;
+  const rating = trip.rating || 4.9;
+  const reviews = trip.reviewCount || trip.reviews || 128;
+  const duration = trip.duration || (trip.days ? `${trip.days} Days` : "Multi-Day");
+  const hostName = trip.agent?.companyName || trip.agent?.displayName || "Verified Host";
+  const seatsLeft = trip.availableSeats ?? trip.totalSeats ?? 12;
 
   return (
     <motion.div
-      whileHover={{ y: -2 }}
+      whileHover={{ y: -3 }}
       onClick={onClick}
-      className="premium-card bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col cursor-pointer"
+      className="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer flex flex-col justify-between h-[360px] max-h-[380px] w-full"
     >
-      <div className="relative h-44 w-full">
+      {/* Top Image Section (Height 175px) */}
+      <div className="relative h-[175px] w-full overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800">
         <img
-          src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80"}
+          src={trip.coverImage || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"}
           alt={trip.title}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          loading="lazy"
         />
-        <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-teal-500 text-white text-[9px] font-extrabold uppercase tracking-wider">
-          Published
-        </span>
-        {discountAmount > 0 && (
-          <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[9px] font-extrabold uppercase tracking-wider">
-            SAVE ₹{new Intl.NumberFormat('en-IN').format(discountAmount)}
-          </span>
-        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-transparent" />
+
+        {/* Top Left — Duration Badge */}
+        <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur-md border border-white/10 text-white text-[10px] font-extrabold flex items-center gap-1 shadow-md">
+          <Clock size={11} className="text-teal-400" />
+          <span>{duration}</span>
+        </div>
+
+        {/* Top Right — Save Badge & Wishlist Heart */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+          {discountAmount > 0 ? (
+            <div className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[9px] font-black uppercase tracking-wider shadow-md">
+              SAVE ₹{new Intl.NumberFormat("en-IN").format(discountAmount)}
+            </div>
+          ) : (
+            <div className="px-2 py-0.5 rounded-full bg-teal-500/90 text-white text-[9px] font-black uppercase tracking-wider shadow-md">
+              Verified
+            </div>
+          )}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            className="w-7 h-7 rounded-full bg-slate-950/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:text-rose-400 transition-colors"
+          >
+            <Heart size={13} />
+          </button>
+        </div>
+
+        {/* Bottom Overlay Title & Destination */}
+        <div className="absolute bottom-2.5 left-2.5 right-2.5 text-white">
+          <p className="text-[10px] font-black uppercase tracking-wider text-teal-300 flex items-center gap-1">
+            <MapPin size={10} className="text-teal-400 shrink-0" />
+            <span className="truncate">{trip.destinations?.join(" → ") || trip.destination || "Popular Destination"}</span>
+          </p>
+          <h3 className="text-sm font-black leading-tight line-clamp-1 drop-shadow-sm mt-0.5">
+            {trip.title}
+          </h3>
+        </div>
       </div>
 
-      <div className="p-4 flex-1 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <span className="text-[10px] text-slate-450 dark:text-slate-500 font-bold uppercase tracking-wider block truncate max-w-[65%]">
-              👤 {trip.agent?.companyName || "Verified Agent"}
+      {/* Card Content Body */}
+      <div className="p-3.5 flex-1 flex flex-col justify-between bg-white dark:bg-slate-900">
+        <div className="space-y-1.5">
+          {/* Host & Rating Row */}
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5 truncate max-w-[65%]">
+              <span className="w-5 h-5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 font-black text-[10px] flex items-center justify-center shrink-0">
+                {hostName.charAt(0).toUpperCase()}
+              </span>
+              <span className="truncate text-slate-700 dark:text-slate-300 text-[11px] font-semibold">{hostName}</span>
             </span>
-            <span className="text-[9px] text-teal-600 dark:text-teal-400 font-extrabold uppercase tracking-wider bg-teal-50 dark:bg-teal-900/20 px-1.5 py-0.5 rounded">
-              {trip.category || "Group"}
-            </span>
+
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-900/50 text-amber-700 dark:text-amber-300 text-[10px] font-black shrink-0">
+              <Star size={10} className="fill-amber-400 text-amber-400" />
+              <span>{rating.toFixed(1)}</span>
+              <span className="text-slate-400 font-normal">({reviews})</span>
+            </div>
           </div>
 
-          <h3 className="text-sm font-extrabold text-slate-850 dark:text-white leading-tight line-clamp-1">{trip.title}</h3>
-          
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1">
-            <MapPin size={11} className="text-teal-500" />
-            <span className="truncate">{trip.destinations?.join(" → ")}</span>
-          </p>
-
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
-            <Calendar size={10} />
-            <span>{trip.startDate} to {trip.endDate} ({trip.duration})</span>
-          </p>
-
-          <div className="flex items-center gap-2 mt-2 py-1.5 border-y border-slate-50 dark:border-slate-750">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">
-              🚌 {trip.busType}
-            </span>
-            <span className="text-slate-200 dark:text-slate-700">|</span>
-            <span className="text-[10px] text-rose-500 font-bold animate-pulse">
-              🔥 {trip.availableSeats} seats left
-            </span>
+          {/* Quick Info Tags */}
+          <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400 pt-0.5">
+            {trip.startDate && (
+              <span className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-700/60">
+                <Calendar size={10} className="text-teal-500" />
+                <span>{new Date(trip.startDate).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}</span>
+              </span>
+            )}
+            {trip.busType && (
+              <span className="bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-100 dark:border-slate-700/60 truncate">
+                🚌 {trip.busType}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between mt-3 pt-1">
+        {/* Bottom CTA Row */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
           <div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-extrabold text-slate-850 dark:text-white">
-                ₹{new Intl.NumberFormat('en-IN').format(trip.offerPrice || trip.pricePerPerson || 0)}
+            {seatsLeft <= 5 && (
+              <span className="text-[9px] font-black text-rose-500 uppercase tracking-wider block">
+                🔥 {seatsLeft} left
               </span>
-              {trip.originalPrice > 0 && (
-                <span className="text-[10px] text-slate-400 line-through">
-                  ₹{new Intl.NumberFormat('en-IN').format(trip.originalPrice)}
+            )}
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base font-black text-slate-900 dark:text-white">
+                ₹{new Intl.NumberFormat("en-IN").format(price)}
+              </span>
+              {originalPrice > price && (
+                <span className="text-[11px] text-slate-400 line-through font-semibold">
+                  ₹{new Intl.NumberFormat("en-IN").format(originalPrice)}
                 </span>
               )}
             </div>
-            <span className="text-[9px] text-slate-400 block font-semibold">per person</span>
           </div>
 
-          <button
-            className="px-4 py-2 rounded-xl bg-teal-500 text-white font-extrabold text-[10px]"
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-teal-700 hover:from-teal-600 hover:to-teal-800 text-white font-black text-xs shadow-sm flex items-center gap-1 shrink-0"
           >
-            Book Now
-          </button>
+            <span>Book Now</span>
+            <ArrowRight size={12} />
+          </motion.button>
         </div>
       </div>
     </motion.div>
@@ -268,6 +317,8 @@ const PublishedTripCard = ({ trip, onClick }) => {
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 const Activities = () => {
   const { id }   = useParams();
+  const [searchParams] = useSearchParams();
+  const importToTripId = searchParams.get("importToTrip");
   const navigate  = useNavigate();
   const toast     = useToast();
 
@@ -505,25 +556,35 @@ const Activities = () => {
   const handleOpenAddSelector = (activity) => { setSelectedAct(activity); setShowDaySelector(true); };
   const handleAddConfirm = async (dayNum) => {
     if (!selectedAct) return;
+    const targetTripId = importToTripId || id;
     try {
       setAdding(true);
       const token    = localStorage.getItem("token");
-      const response = await fetch(getApiUrl("itinerary/create"), {
+      const endpoint = targetTripId ? `trips/${targetTripId}/activities` : "itinerary/create";
+      const response = await fetch(getApiUrl(endpoint), {
         method:  "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body:    JSON.stringify({
-          trip:     id,
+          trip:     targetTripId,
           day:      dayNum,
-          time:     "10:00",
+          time:     "10:00 AM",
           title:    selectedAct.title || selectedAct.name,
-          place:    selectedAct.location || trip?.destination,
+          place:    selectedAct.location || selectedAct.vicinity || trip?.destination || "",
+          cost:     selectedAct.estimatedCost || selectedAct.price || 0,
           budget:   selectedAct.estimatedCost || selectedAct.price || 0,
-          category: selectedAct.category || "Activity",
+          category: selectedAct.category || selectedAct.type || "Sightseeing",
           note:     selectedAct.description || "",
         }),
       });
       const data = await response.json();
-      if (data.success) { toast.success(`Added to Day ${dayNum} itinerary!`); setShowDaySelector(false); setSelectedAct(null); }
+      if (data.success) {
+        toast.success(`Activity imported to Day ${dayNum}!`);
+        setShowDaySelector(false);
+        setSelectedAct(null);
+        if (targetTripId) {
+          navigate(`/trips/${targetTripId}/activities`);
+        }
+      }
     } catch (_) { toast.error("Failed to add to itinerary"); } finally { setAdding(false); }
   };
 
@@ -571,6 +632,23 @@ const Activities = () => {
           tripTitle={trip?.title}
           tripId={id}
         />
+
+        {importToTripId && (
+          <div className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white px-4 py-3.5 rounded-2xl mb-5 flex items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles size={18} className="text-amber-300 shrink-0" />
+              <span className="text-xs font-extrabold truncate">
+                Import Mode: Select an activity to copy it into your trip!
+              </span>
+            </div>
+            <button
+              onClick={() => navigate(`/trips/${importToTripId}/activities`)}
+              className="px-3.5 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-black transition-all cursor-pointer shrink-0"
+            >
+              ← Back to Trip
+            </button>
+          </div>
+        )}
 
         {/* ── Trip info / Explore header ──────────────────────────────── */}
         {trip ? (

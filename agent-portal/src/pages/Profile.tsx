@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import * as React from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
@@ -14,6 +15,8 @@ import {
 import { GlassCard, Button, Input, ImageUploadBox } from "../components/ui";
 import { updateAgentProfile } from "../services/authService";
 import { useAuthStore } from "../store/authStore";
+
+import ErrorWidget from "../components/ErrorWidget";
 
 /* ────────────────────────────────────────────────────────────────────────────
    Helpers
@@ -39,13 +42,7 @@ interface ProfileErrorBoundaryProps {
 }
 
 class ProfileErrorBoundary extends React.Component<ProfileErrorBoundaryProps, ErrorBoundaryState> {
-  props: ProfileErrorBoundaryProps;
   state: ErrorBoundaryState = { hasError: false };
-
-  constructor(props: ProfileErrorBoundaryProps) {
-    super(props);
-    this.props = props;
-  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -55,36 +52,41 @@ class ProfileErrorBoundary extends React.Component<ProfileErrorBoundaryProps, Er
     console.error("[Profile Error Boundary]", error, info.componentStack);
   }
 
+  handleReset = () => {
+    (this as any).setState({ hasError: false, error: undefined });
+  };
+
   render() {
-    if (this.state.hasError) {
+    const current = (this as any).state || {};
+    if (current.hasError) {
+      if (ErrorWidget) {
+        return (
+          <ErrorWidget
+            title="Unable to load profile"
+            message="Please complete onboarding or reload the page. If the issue persists, log out and sign in again."
+            error={current.error}
+            onReload={this.handleReset}
+          />
+        );
+      }
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-8">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center">
-            <AlertTriangle className="w-8 h-8 text-amber-500" />
-          </div>
           <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">
             Unable to load profile
           </h2>
-          <p className="text-sm text-slate-400 dark:text-slate-500 text-center max-w-xs">
-            Please complete onboarding or reload the page. If the issue persists, log out and sign in again.
-          </p>
           <button
-            onClick={() => window.location.reload()}
-            className="mt-2 px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:opacity-90 transition-all"
+            onClick={this.handleReset}
+            className="px-6 py-3 rounded-xl bg-teal-600 text-white font-bold text-sm"
           >
-            Reload Page
+            Retry
           </button>
-          {this.state.error && (
-            <p className="text-[10px] text-slate-300 dark:text-slate-700 font-mono mt-1">
-              {this.state.error.message}
-            </p>
-          )}
         </div>
       );
     }
-    return this.props.children;
+    return (this as any).props?.children;
   }
 }
+
 
 /* ────────────────────────────────────────────────────────────────────────────
    Profile Form

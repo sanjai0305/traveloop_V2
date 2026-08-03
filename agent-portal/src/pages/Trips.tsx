@@ -2863,9 +2863,13 @@ export const Trips: React.FC = () => {
                       trip.offerPrice &&
                       trip.originalPrice > trip.offerPrice;
 
-                    const isPending = trip.status === "pending_approval" || trip.approvalStatus === "pending";
-                    const isApproved = trip.status === "published" || trip.approvalStatus === "approved";
-                    const isRejected = trip.status === "rejected" || trip.approvalStatus === "rejected";
+                    const rawStatus = (trip.status || "").toLowerCase();
+                    const rawApproval = (trip.approvalStatus || "").toLowerCase();
+
+                    const isPending = rawStatus === "pending_approval" || rawApproval === "pending_approval" || rawApproval === "pending";
+                    const isApproved = rawStatus === "approved" || rawApproval === "approved" || (rawStatus === "published" && trip.isPublished === true);
+                    const isRejected = rawStatus === "rejected" || rawApproval === "rejected";
+                    const isNeedsChanges = rawStatus.includes("change") || rawStatus.includes("revision") || rawApproval.includes("change") || rawApproval.includes("revision");
 
                     return (
                       <GlassCard key={trip._id} className="premium-card flex flex-col justify-between p-0 overflow-hidden border border-slate-200/80 dark:border-slate-800">
@@ -2888,7 +2892,7 @@ export const Trips: React.FC = () => {
                             {isApproved ? (
                               <div className="flex flex-col items-end gap-0.5">
                                 <span className="bg-emerald-500 text-white px-2.5 py-1 rounded-full border border-emerald-400 font-extrabold text-[9px] uppercase tracking-wider shadow backdrop-blur-md">
-                                  🟢 Published
+                                  🟢 Approved
                                 </span>
                                 {(trip.publishedAt || trip.approvedAt) && (
                                   <span className="bg-slate-900/90 text-emerald-300 text-[8px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md border border-emerald-500/30">
@@ -2896,6 +2900,10 @@ export const Trips: React.FC = () => {
                                   </span>
                                 )}
                               </div>
+                            ) : isNeedsChanges ? (
+                              <span className="bg-amber-500 text-white px-2.5 py-1 rounded-full border border-amber-400 font-extrabold text-[9px] uppercase tracking-wider shadow backdrop-blur-md">
+                                🟠 Needs Changes
+                              </span>
                             ) : isRejected ? (
                               <span className="bg-rose-500 text-white px-2.5 py-1 rounded-full border border-rose-400 font-extrabold text-[9px] uppercase tracking-wider shadow backdrop-blur-md">
                                 🔴 Rejected
@@ -2930,10 +2938,21 @@ export const Trips: React.FC = () => {
                           {isPending && (
                             <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 text-amber-800 dark:text-amber-300 text-xs font-medium space-y-1">
                               <p className="font-extrabold flex items-center gap-1 text-[11px] uppercase tracking-wider text-amber-900 dark:text-amber-200">
-                                <Clock size={13} className="text-amber-500" /> Submitted For Admin Review
+                                <Clock size={13} className="text-amber-500" /> Pending Admin Approval
                               </p>
                               <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                                Your trip has been submitted for review. It will be published after Admin approval.
+                                Your trip has been submitted. Waiting for Admin approval.
+                              </p>
+                            </div>
+                          )}
+
+                          {isNeedsChanges && (
+                            <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 text-amber-800 dark:text-amber-300 text-xs font-medium space-y-1">
+                              <p className="font-extrabold flex items-center gap-1 text-[11px] uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                                <AlertTriangle size={13} className="text-amber-500" /> Changes Requested by Admin
+                              </p>
+                              <p className="text-[11px] text-amber-900 dark:text-amber-100 italic font-semibold">
+                                Reason: "{trip.rejectionReason || trip.rejectReason || "Please update trip details"}"
                               </p>
                             </div>
                           )}
@@ -2941,7 +2960,7 @@ export const Trips: React.FC = () => {
                           {isRejected && (
                             <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 text-rose-800 dark:text-rose-300 text-xs font-medium space-y-1">
                               <p className="font-extrabold flex items-center gap-1 text-[11px] uppercase tracking-wider text-rose-900 dark:text-rose-200">
-                                <AlertTriangle size={13} className="text-rose-500" /> Revision Required by Admin
+                                <AlertTriangle size={13} className="text-rose-500" /> Rejected by Admin
                               </p>
                               <p className="text-[11px] text-rose-900 dark:text-rose-100 italic font-semibold">
                                 Reason: "{trip.rejectionReason || trip.rejectReason || "Does not comply with policies"}"
@@ -2988,10 +3007,10 @@ export const Trips: React.FC = () => {
                                   ✓ Published Live
                                 </div>
                               ) : isPending ? (
-                                <div className="flex-1 text-center py-2 px-2 bg-amber-50 text-amber-700 font-extrabold text-xs rounded-xl border border-amber-200 animate-pulse">
+                                <div className="flex-1 text-center py-2 px-2 bg-amber-50 text-amber-700 font-extrabold text-xs rounded-xl border border-amber-200 cursor-not-allowed">
                                   🟡 Pending Approval
                                 </div>
-                              ) : isRejected ? (
+                              ) : (isRejected || isNeedsChanges) ? (
                                 <Button
                                   variant="primary"
                                   size="sm"

@@ -129,13 +129,20 @@ router.post("/accept", async (req, res) => {
         });
       }
 
-      agent.legalConsent = legalConsentData;
-      agent.acceptedTerms = true;
-      agent.privacyAccepted = true;
-      agent.acceptedAt = timestamp;
-      agent.termsAcceptedAt = timestamp;
-      agent.termsVersion = version;
-      await agent.save();
+      agent = await Agent.findByIdAndUpdate(
+        agent._id,
+        {
+          $set: {
+            legalConsent: legalConsentData,
+            acceptedTerms: true,
+            privacyAccepted: true,
+            acceptedAt: timestamp,
+            termsAcceptedAt: timestamp,
+            termsVersion: version,
+          }
+        },
+        { returnDocument: "after", runValidators: false }
+      );
 
       const agentObj = agent.toObject();
       delete agentObj.password;

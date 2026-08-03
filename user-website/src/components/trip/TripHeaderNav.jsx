@@ -17,6 +17,7 @@ const TripHeaderNav = ({ trip, tripId, activeFeature }) => {
 
   const NAV_ACTIONS = [
     { id: "itinerary",     label: "Itinerary",     icon: ListTodo,     path: `/build-itinerary/${tripId}` },
+    { id: "activities",    label: "Activities",    icon: Compass,      path: `/trips/${tripId}/activities` },
     { id: "collaboration", label: "Collaboration", icon: Users,        path: `/trips/${tripId}/collaboration` },
     { id: "flights",       label: "Flights",       icon: Plane,        path: `/trips/${tripId}/flights` },
     { id: "chat",          label: "Trip Chat",     icon: MessageSquare,path: `/trips/${tripId}/chat` },

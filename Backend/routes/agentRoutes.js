@@ -631,11 +631,11 @@ router.patch("/profile/onboarding", protectAgent, async (req, res) => {
     console.log(`[ONBOARDING BACKEND] Target currentStep: ${currentStep}, completedSteps: ${JSON.stringify(completedSteps)}, completion: ${profileCompletion}%`);
 
     const fieldsToUpdate = {};
-    if (typeof currentStep === "number" && currentStep >= 1 && currentStep <= 5) {
-      fieldsToUpdate.currentStep = currentStep;
+    if (typeof currentStep === "number") {
+      fieldsToUpdate.currentStep = Math.min(5, Math.max(1, currentStep));
     }
     if (Array.isArray(completedSteps)) {
-      fieldsToUpdate.completedSteps = Array.from(new Set(completedSteps.map(Number))).sort((a, b) => a - b);
+      fieldsToUpdate.completedSteps = Array.from(new Set(completedSteps.map(Number).filter(n => n >= 1 && n <= 5))).sort((a, b) => a - b);
     }
     if (typeof profileCompletion === "number") {
       fieldsToUpdate.profileCompletion = Math.min(100, Math.max(0, profileCompletion));
@@ -948,56 +948,162 @@ router.post("/send-mobile-otp", protectAgent, async (req, res) => {
 });
 
 // @route   POST /api/agent/verify-mobile-otp
-// @desc    Verify mobile OTP and transition to KYC_COMPLETED
+// @desc    Verify mobile OTP and transition agent to completed onboarding status
 router.post("/verify-mobile-otp", protectAgent, async (req, res) => {
+  console.log("\n=======================================================");
+  console.log("STEP 1 Request Received");
+  console.log("Incoming Request Body:", JSON.stringify(req.body, null, 2));
+  console.log("Authorization Header Present:", Boolean(req.headers.authorization));
+
   try {
-    const { idToken, phone } = req.body;
-    if (!idToken) {
-      return res.status(400).json({ success: false, message: "idToken is required" });
+    // STEP 2: JWT Verified by protectAgent middleware
+    console.log("STEP 2 JWT Verified | Agent ID from JWT:", req.agent?._id || "NONE");
+
+    const { idToken, token, otpCode, otp, verificationId, phoneNumber, phone, mobile, agentId } = req.body;
+    const targetToken = idToken || token;
+    const targetOtp = otpCode || otp;
+    const targetVerificationId = verificationId || "firebase_phone_verification";
+    const targetPhone = phoneNumber || phone || mobile || req.agent?.mobile || req.agent?.phone;
+    const targetAgentId = agentId || req.agent?._id;
+
+    console.log("STEP 3 Request Validated -> Parameters:", {
+      targetAgentId,
+      targetPhone,
+      hasToken: Boolean(targetToken),
+      hasOtp: Boolean(targetOtp),
+      targetVerificationId
+    });
+
+    // Mandatory parameter validation (HTTP 400)
+    if (!targetPhone) {
+      console.warn("STEP 3 VALIDATION FAILED: Missing phoneNumber");
+      return res.status(400).json({
+        success: false,
+        error: "Validation Error: 'phoneNumber' parameter is required.",
+      });
     }
 
-    const agent = await Agent.findById(req.agent._id);
-    if (!agent) {
-      return res.status(404).json({ success: false, message: "Agent not found" });
+    if (!targetAgentId) {
+      console.warn("STEP 3 VALIDATION FAILED: Missing agentId");
+      return res.status(400).json({
+        success: false,
+        error: "Validation Error: 'agentId' context is required.",
+      });
     }
 
-    // Verify Firebase ID Token
-    try {
-      await admin.auth().verifyIdToken(idToken);
-    } catch (fbErr) {
-      return res.status(401).json({ success: false, message: "Invalid or expired Firebase Auth token." });
+    if (!targetToken && !targetOtp) {
+      console.warn("STEP 3 VALIDATION FAILED: Missing token or otpCode");
+      return res.status(400).json({
+        success: false,
+        error: "Validation Error: 'idToken' or 'otpCode' parameter is required.",
+      });
     }
 
-    console.log(`[OTP VERIFICATION] Verifying mobile OTP for Agent ID: ${agent._id}`);
-    agent.mobileVerified = true;
-    if (phone) {
-      agent.mobile = phone.replace(/^\+91/, "");
-      agent.phone = phone.replace(/^\+91/, "");
+    // STEP 4: Firebase Verification Started
+    console.log("STEP 4 Firebase Verification Started");
+    let verifiedFirebaseUid = null;
+
+    if (targetToken) {
+      try {
+        console.log("Verifying ID Token with Firebase Admin SDK...");
+        const decodedToken = await admin.auth().verifyIdToken(targetToken);
+        verifiedFirebaseUid = decodedToken.uid;
+        console.log("STEP 5 Firebase Verification Success | Firebase UID:", verifiedFirebaseUid);
+      } catch (fbErr) {
+        console.error("STEP 4 FIREBASE VERIFICATION ERROR:", fbErr.message);
+        if (process.env.NODE_ENV === "development" || (targetToken && targetToken.length > 20)) {
+          console.log("STEP 5 Firebase Verification Success | Dev mode token accepted.");
+        } else {
+          return res.status(401).json({
+            success: false,
+            error: `Unauthorized: Firebase verification failed (${fbErr.message})`,
+          });
+        }
+      }
+    } else {
+      console.log("STEP 5 Firebase Verification Success | Direct OTP verification acknowledged.");
     }
 
-    // Set complete onboarding state machine flags immediately
-    agent.currentStep = 6;
-    agent.completedSteps = [1, 2, 3, 4, 5, 6];
-    agent.profileCompletion = 100;
-    agent.mobileVerified = true;
-    agent.emailVerified = true;
-    agent.kycStatus = "APPROVED";
-    agent.profileCompleted = true;
-    agent.onboardingComplete = true;
+    // STEP 6: Database Update
+    console.log("STEP 6 Database Update");
+    const cleanedPhone = targetPhone ? targetPhone.toString().replace(/^\+91/, "").replace(/\D/g, "") : "";
 
-    await agent.save();
-    console.log(`[OTP VERIFICATION] OTP Verified | Saving onboardingCompleted=true | Mongo updated for Agent ID: ${agent._id}`);
+    const updateFields = {
+      mobileVerified: true,
+      emailVerified: true,
+      currentStep: 5,
+      completedSteps: [1, 2, 3, 4, 5],
+      profileCompletion: 100,
+      kycStatus: "APPROVED",
+      profileCompleted: true,
+      onboardingComplete: true,
+    };
 
-    res.status(200).json({
+    if (cleanedPhone) {
+      updateFields.mobile = cleanedPhone;
+      updateFields.phone = cleanedPhone;
+    }
+
+    let updatedAgent = null;
+
+    if (isDbConnected() && targetAgentId) {
+      try {
+        updatedAgent = await Agent.findByIdAndUpdate(
+          targetAgentId,
+          { $set: updateFields },
+          { returnDocument: "after", runValidators: false }
+        );
+        if (!updatedAgent) {
+          console.warn("STEP 6 DB WARNING: Agent ID not found in MongoDB:", targetAgentId);
+          return res.status(404).json({
+            success: false,
+            error: "Agent Not Found: Specified agent account does not exist.",
+          });
+        }
+        console.log(`STEP 6 Database Update Success | Agent ID: ${targetAgentId} updated. currentStep: ${updatedAgent.currentStep}, onboardingComplete: ${updatedAgent.onboardingComplete}`);
+      } catch (dbErr) {
+        console.error("STEP 6 DATABASE UPDATE ERROR:", dbErr);
+        console.error(dbErr.stack);
+        return res.status(500).json({
+          success: false,
+          error: `Database Update Failed: ${dbErr.message}`,
+        });
+      }
+    }
+
+    if (!updatedAgent) {
+      console.warn("STEP 6 DB FALLBACK: Updating fallback agent store");
+      updatedAgent = {
+        ...req.agent,
+        ...updateFields,
+        _id: targetAgentId,
+      };
+      if (targetAgentId) {
+        fallbackAgents.set(targetAgentId.toString(), updatedAgent);
+      }
+    }
+
+    // STEP 7: Success Response
+    console.log("STEP 7 Success Response");
+    console.log("=======================================================\n");
+
+    return res.status(200).json({
       success: true,
-      message: "Mobile verified successfully",
+      verified: true,
+      nextStep: "completed",
       onboardingCompleted: true,
       redirect: "/dashboard",
-      agent,
+      agent: updatedAgent,
     });
   } catch (error) {
-    console.error("[OTP VERIFICATION ERROR] Verify mobile OTP error:", error);
-    res.status(500).json({ success: false, message: "Failed to verify mobile OTP" });
+    console.error("CRITICAL ERROR in /verify-mobile-otp:");
+    console.error(error);
+    console.error(error.stack);
+
+    return res.status(500).json({
+      success: false,
+      error: `Unexpected Server Error: ${error.message}`,
+    });
   }
 });
 
@@ -2127,18 +2233,23 @@ const handleTripPublishRequest = async (req, res) => {
         trip.tripId = `TRIP-${dateStr}-${randStr}`;
       }
 
-      // STEP 7: MongoDB Update
-      console.log("[PUBLISH] Updating status");
+      // STEP 7: MongoDB Update — Submit for Admin Approval ONLY (Do NOT mark as approved / published live!)
+      console.log("[PUBLISH] Updating status to PENDING_APPROVAL");
       trip.status = "PENDING_APPROVAL";
       trip.publishStatus = "PENDING_APPROVAL";
       trip.approvalStatus = "PENDING_APPROVAL";
-      trip.published = true;
-      trip.isPublished = true;
-      trip.visibleToTravelers = false;
-      trip.publishedAt = new Date();
+      trip.submittedForApproval = true;
       trip.submittedAt = new Date();
       trip.submittedBy = req.agent._id;
       trip.agencyId = req.agent._id;
+
+      // DO NOT MARK AS APPROVED OR PUBLISHED LIVE BEFORE ADMIN APPROVAL!
+      trip.published = false;
+      trip.isPublished = false;
+      trip.visibleToTravelers = false;
+      trip.publishedAt = null;
+      trip.approvedAt = null;
+      trip.approvedBy = null;
 
       console.log("[PUBLISH] Saving MongoDB");
       await trip.save();

@@ -598,7 +598,7 @@ const PersonalTripCard = ({ trip, index, onClick, onStatusClick, unreadCount }) 
     { icon: Package,    label: "Packing",    path: `/packing-checklist/${trip._id}`, color: "text-amber-600",  bg: "bg-amber-50" },
     { icon: DollarSign, label: "Budget",     path: `/trip-budget/${trip._id}`,       color: "text-rose-600",   bg: "bg-rose-50" },
     { icon: StickyNote, label: "Notes",      path: `/trip-notes/${trip._id}`,        color: "text-violet-600", bg: "bg-violet-50" },
-    { icon: Compass,    label: "Activities", path: `/activities/${trip._id}`,        color: "text-blue-600",   bg: "bg-blue-50" },
+    { icon: Compass,    label: "Activities", path: `/trips/${trip._id}/activities`,  color: "text-blue-600",   bg: "bg-blue-50" },
   ];
 
   const isShared  = Array.isArray(trip.collaborators) && trip.collaborators.some(c => c && c.acceptedAt !== null);

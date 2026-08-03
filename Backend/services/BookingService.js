@@ -533,13 +533,19 @@ export class BookingService {
   static async finalizeBooking(payload, session = null) {
     const { bookingId, paymentId, orderId, signature } = payload;
     
+    // Determine whether to pass session to mongoose operations
+    const useSession = (session && typeof session.inTransaction === "function" && session.inTransaction()) ? session : null;
+    const sessionOpts = useSession ? { session: useSession } : {};
+
     // Resolve Booking
-    const booking = await Booking.findOne({
+    const bookingQuery = Booking.findOne({
       $or: [
         { bookingId: bookingId },
         { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
       ].filter(Boolean)
-    }).session(session);
+    });
+    if (useSession) bookingQuery.session(useSession);
+    const booking = await bookingQuery;
 
     if (!booking) {
       throw new Error("Booking not found");
@@ -549,7 +555,9 @@ export class BookingService {
       return { booking, alreadyPaid: true };
     }
 
-    const trip = await AgentTrip.findById(booking.tripId).session(session);
+    const tripQuery = AgentTrip.findById(booking.tripId);
+    if (useSession) tripQuery.session(useSession);
+    const trip = await tripQuery;
     if (!trip) {
       throw new Error("Trip not found");
     }
@@ -594,7 +602,7 @@ export class BookingService {
       }));
     }
 
-    await booking.save({ session });
+    await booking.save(sessionOpts);
 
     // Increment Coupon usedCount if applied
     if (booking.couponCode && booking.couponCode.trim()) {
@@ -602,8 +610,9 @@ export class BookingService {
       const normalizedCode = booking.couponCode.trim().toUpperCase();
       await Coupon.updateOne(
         { couponCode: normalizedCode },
-        { $inc: { usedCount: 1 } }
-      ).session(session);
+        { $inc: { usedCount: 1 } },
+        sessionOpts
+      );
     }
 
     // Update Passengers and SeatBookings
@@ -618,6 +627,8 @@ export class BookingService {
       const pData = travellersList[i];
       const seatNumber = seatNumbersList[i] || pData.seatNumber;
       if (!seatNumber) continue;
+
+      const passengerOpts = { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, ...sessionOpts };
 
       const passenger = await Passenger.findOneAndUpdate(
         { bookingId: booking._id, seatNumber },
@@ -648,7 +659,7 @@ export class BookingService {
             timestamp: new Date().toISOString(),
           },
         },
-        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, session }
+        passengerOpts
       );
 
       createdPassengers.push(passenger);
@@ -665,7 +676,7 @@ export class BookingService {
           paymentStatus: "completed",
           reservedUntil: null,
         },
-        { session }
+        sessionOpts
       );
     }
 
@@ -679,8 +690,14 @@ export class BookingService {
     trip.bookingCount = (trip.bookingCount || 0) + 1;
 
     // Recalculate agent revenue and update wallet
-    const agent = await Agent.findById(trip.agentId || trip.agent).session(session);
-    const defaultCommSetting = await SystemSetting.findOne({ key: "default_commission" }).session(session);
+    const agentQuery = Agent.findById(trip.agentId || trip.agent);
+    if (useSession) agentQuery.session(useSession);
+    const agent = await agentQuery;
+
+    const commQuery = SystemSetting.findOne({ key: "default_commission" });
+    if (useSession) commQuery.session(useSession);
+    const defaultCommSetting = await commQuery;
+
     const defaultRate = defaultCommSetting ? defaultCommSetting.value : 10;
     const commRate = trip.commissionPercentage !== undefined ? trip.commissionPercentage : defaultRate;
 
@@ -688,12 +705,14 @@ export class BookingService {
     const agentAmount = booking.pricePaid - commissionAmount;
 
     trip.walletAmount = (trip.walletAmount || 0) + agentAmount;
-    await trip.save({ session });
+    await trip.save(sessionOpts);
 
     // Update Wallet balance
     const targetAgentId = trip.agentId || trip.agent;
     if (targetAgentId) {
-      let wallet = await Wallet.findOne({ agentId: targetAgentId }).session(session);
+      const walletQuery = Wallet.findOne({ agentId: targetAgentId });
+      if (useSession) walletQuery.session(useSession);
+      let wallet = await walletQuery;
       if (!wallet) {
         wallet = new Wallet({ agentId: targetAgentId });
       }
@@ -708,7 +727,7 @@ export class BookingService {
         netEarnings: agentAmount,
         status: "Completed",
       });
-      await wallet.save({ session });
+      await wallet.save(sessionOpts);
     }
 
     if (agent) {
@@ -716,7 +735,7 @@ export class BookingService {
       agent.totalRevenue = (agent.totalRevenue || 0) + booking.pricePaid;
       agent.pendingRevenue = (agent.pendingRevenue || 0) + agentAmount;
       agent.totalBookings = (agent.totalBookings || 0) + 1;
-      await agent.save({ session });
+      await agent.save(sessionOpts);
     }
 
     // Create Payment record
@@ -742,7 +761,7 @@ export class BookingService {
     };
 
     console.log("[finalizeBooking] Creating Payment record with payload:", paymentPayload);
-    const payment = await Payment.create([paymentPayload], { session });
+    const payment = await Payment.create([paymentPayload], sessionOpts);
     const paymentRecord = payment[0] || payment;
     console.log("[finalizeBooking] Payment Record created successfully:", paymentRecord);
 
@@ -766,7 +785,7 @@ export class BookingService {
         title: "New Booking Confirmed",
         message: `Traveler ${travellersList[0]?.name || "Traveler"} booked trip '${trip.title}' for ₹${booking.pricePaid}`,
         type: "booking",
-      }], { session });
+      }], sessionOpts);
     } catch (notifErr) {}
 
     const result = {

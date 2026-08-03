@@ -56,13 +56,14 @@ export const CompleteProfile: React.FC = () => {
   // Helper to persist step change to backend state machine
   const saveStepProgress = async (nextStep: number, formPayload?: Record<string, any>) => {
     try {
-      const completedList = Array.from(new Set([...(agent?.completedSteps || []), ...Array.from({ length: nextStep - 1 }, (_, i) => i + 1)]));
-      const compPercentage = Math.min(100, Math.round((nextStep / 5) * 100));
+      const clampedNextStep = Math.min(5, Math.max(1, nextStep));
+      const completedList = Array.from(new Set([...(agent?.completedSteps || []), ...Array.from({ length: clampedNextStep - 1 }, (_, i) => i + 1)]));
+      const compPercentage = Math.min(100, Math.round((clampedNextStep / 5) * 100));
 
-      console.log(`[ONBOARDING WIZARD] Saving step progress: Target Step=${nextStep}, CompletedSteps=${JSON.stringify(completedList)}, Completion=${compPercentage}%`);
+      console.log(`[ONBOARDING WIZARD] Saving step progress: Target Step=${clampedNextStep}, CompletedSteps=${JSON.stringify(completedList)}, Completion=${compPercentage}%`);
 
       const response = await api.patch("/agent/profile/onboarding", {
-        currentStep: nextStep,
+        currentStep: clampedNextStep,
         completedSteps: completedList,
         profileCompletion: compPercentage,
         formData: formPayload
@@ -117,16 +118,20 @@ export const CompleteProfile: React.FC = () => {
 
   // Calculate completion percentage dynamically
   const completionPercentage = useMemo(() => {
+    if (agent?.onboardingComplete) return 100;
     let score = 0;
-    if (name && dob && mobile) score += 25;
+    if (name && dob && mobile) score += 20;
     if (state && country) score += 20;
-    if (companyName && gstNo && companyLogo && agentPhoto) score += 25;
-    if (agent?.acceptedTerms || currentStep > 4) score += 15;
-    if (agent?.mobileVerified) score += 15;
-    return Math.min(100, Math.max(score, (currentStep - 1) * 20 + 10));
+    if (companyName && gstNo && companyLogo && agentPhoto) score += 20;
+    if (agent?.acceptedTerms || currentStep >= 4) score += 20;
+    if (agent?.mobileVerified || currentStep >= 5) score += 20;
+    const stepBasedPercent = Math.min(100, Math.round(((currentStep - 1) / 5) * 100) + 20);
+    return Math.min(100, Math.max(score, stepBasedPercent));
   }, [name, dob, mobile, state, country, companyName, gstNo, companyLogo, agentPhoto, currentStep, agent]);
 
   if (!agent) return null;
+
+  // Step 5: Mobile OTP Actions
 
   const handleNext = async () => {
     setErrorMsg("");
@@ -312,20 +317,63 @@ export const CompleteProfile: React.FC = () => {
     setLoading(true);
     try {
       if (!(window as any).confirmationResult) {
-        throw new Error("No active phone verification session found.");
+        throw new Error("No active phone verification session found. Please click 'Send Mobile SMS OTP' again.");
       }
-      const result = await (window as any).confirmationResult.confirm(mobileOtp);
-      const idToken = await result.user.getIdToken();
 
-      const response = await api.post("/agent/verify-mobile-otp", { idToken, phone: `+91${mobile}` });
+      console.log("[MOBILE OTP] Confirming OTP code with Firebase...");
+      const result = await (window as any).confirmationResult.confirm(mobileOtp);
+      
+      // 1. Retrieve Firebase User
+      const firebaseUser = result?.user || auth.currentUser;
+      console.log("[MOBILE OTP] Current Firebase User:", {
+        uid: firebaseUser?.uid || "N/A",
+        email: firebaseUser?.email || "N/A",
+        phoneNumber: firebaseUser?.phoneNumber || `+91${mobile}`
+      });
+
+      if (!firebaseUser) {
+        throw new Error("User is not authenticated with Firebase.");
+      }
+
+      // 2. Generate Firebase ID Token safely
+      let idToken = "";
+      try {
+        idToken = await firebaseUser.getIdToken(true);
+      } catch (tokenErr: any) {
+        console.warn("[MOBILE OTP] Force token refresh failed, trying standard getIdToken:", tokenErr?.message);
+        idToken = await firebaseUser.getIdToken();
+      }
+
+      if (!idToken) {
+        throw new Error("Firebase ID Token generation failed. Please try again.");
+      }
+
+      console.log("[MOBILE OTP] ID Token Generated | Length:", idToken.length);
+
+      const confirmationSession = (window as any).confirmationResult;
+      const verificationId = confirmationSession?.verificationId || confirmationSession?.params?.verificationId || "firebase_phone_verification";
+
+      console.log("[MOBILE OTP] API Request Started -> POST /agent/verify-mobile-otp");
+
+      // 3. Send Request to Backend
+      const response = await api.post("/agent/verify-mobile-otp", {
+        idToken,
+        otpCode: mobileOtp,
+        verificationId,
+        phoneNumber: `+91${mobile}`,
+        phone: `+91${mobile}`,
+        agentId: agent?._id || agent?.id
+      });
+
       if (response.data?.success) {
-        console.log("[MOBILE OTP] OTP Verified");
+        console.log("[MOBILE OTP] Backend confirmed OTP verification success");
         console.log("[MOBILE OTP] Saving onboardingCompleted=true");
-        console.log("[MOBILE OTP] Mongo updated");
-        
+
         // Update local auth store
-        updateAgent(response.data.agent);
-        console.log("[MOBILE OTP] Profile refreshed");
+        if (response.data.agent) {
+          updateAgent(response.data.agent);
+          console.log("[MOBILE OTP] Profile refreshed in auth store");
+        }
 
         if (response.data.onboardingCompleted || response.data.agent?.onboardingComplete) {
           console.log("[MOBILE OTP] Redirecting to Dashboard");
@@ -334,11 +382,12 @@ export const CompleteProfile: React.FC = () => {
           setSuccessMsg("Mobile verified successfully!");
         }
       } else {
-        setErrorMsg(response.data?.message || "Verification failed");
+        setErrorMsg(response.data?.error || response.data?.message || "Verification failed");
       }
     } catch (err: any) {
-      console.error("[MOBILE OTP ERROR] Firebase SMS verify error:", err);
-      setErrorMsg(err.message || "Invalid OTP code entered.");
+      console.error("[MOBILE OTP ERROR] Verification error:", err);
+      const serverMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Invalid OTP code entered.";
+      setErrorMsg(serverMsg);
     } finally {
       setLoading(false);
     }

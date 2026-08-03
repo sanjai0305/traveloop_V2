@@ -25,6 +25,10 @@ import {
   addSettlement,
   getExchangeRates,
   exportTripPDF,
+  getTripActivities,
+  createTripActivity,
+  updateTripActivity,
+  deleteTripActivity,
 } from "../controllers/tripController.js";
 import protect from "../middleware/authMiddleware.js";
 import AgentTrip from "../models/AgentTrip.js";
@@ -94,10 +98,14 @@ router.put("/:id/publish", protect, async (req, res) => {
     trip.status = "PENDING_APPROVAL";
     trip.publishStatus = "PENDING_APPROVAL";
     trip.approvalStatus = "PENDING_APPROVAL";
-    trip.isPublished = true;
-    trip.published = true;
+    trip.submittedForApproval = true;
+    trip.submittedAt = new Date();
+    trip.isPublished = false;
+    trip.published = false;
     trip.visibleToTravelers = false;
-    trip.publishedAt = new Date();
+    trip.publishedAt = null;
+    trip.approvedAt = null;
+    trip.approvedBy = null;
     await trip.save();
 
     res.status(200).json({
@@ -330,5 +338,11 @@ router.put("/:id/collaborators/:userId", protect, updateCollaboratorRole);
 router.post("/invite/:notificationId/accept", protect, acceptInvite);
 router.post("/invite/:notificationId/decline", protect, declineInvite);
 router.get("/:id/activity-log", protect, getActivityLogs);
+
+// Trip Activities endpoints
+router.get("/:tripId/activities", protect, getTripActivities);
+router.post("/:tripId/activities", protect, createTripActivity);
+router.put("/:tripId/activities/:activityId", protect, updateTripActivity);
+router.delete("/:tripId/activities/:activityId", protect, deleteTripActivity);
 
 export default router;

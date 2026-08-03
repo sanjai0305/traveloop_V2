@@ -54,6 +54,63 @@ export const connectDB = async () => {
       "Scuba Diving", "ATV Ride", "Zipline", "Kayaking"
     ]);
 
+    // One-time onboarding step migration (6-step -> 5-step clamp)
+    const migrateOnboardingSteps = async () => {
+      try {
+        const Agent = (await import("../models/Agent.js")).default;
+        // Clamp any agent with currentStep >= 6 to maximum step 5
+        const res6 = await Agent.updateMany(
+          { currentStep: { $gte: 6 } },
+          { $set: { currentStep: 5 } }
+        );
+        // Pull out any numbers > 5 from completedSteps
+        await Agent.updateMany(
+          { completedSteps: { $elemMatch: { $gt: 5 } } },
+          { $pull: { completedSteps: { $gt: 5 } } }
+        );
+        if (res6.modifiedCount > 0) {
+          console.log(`[Migration] Clamped ${res6.modifiedCount} agents from currentStep >= 6 to max step 5.`);
+        }
+      } catch (migErr) {
+        console.warn("[Migration Warning] Failed to migrate onboarding steps:", migErr.message);
+      }
+    };
+    await migrateOnboardingSteps();
+
+    // One-time trip status migration (Ensure PENDING_APPROVAL trips are NOT marked isPublished=true)
+    const migratePendingTripStatuses = async () => {
+      try {
+        const AgentTrip = (await import("../models/AgentTrip.js")).default;
+        const res = await AgentTrip.updateMany(
+          {
+            $or: [
+              { status: "PENDING_APPROVAL" },
+              { approvalStatus: "PENDING_APPROVAL" },
+              { approvalStatus: "pending" }
+            ],
+            $or: [
+              { isPublished: true },
+              { published: true }
+            ]
+          },
+          {
+            $set: {
+              isPublished: false,
+              published: false,
+              visibleToTravelers: false,
+              publishedAt: null
+            }
+          }
+        );
+        if (res.modifiedCount > 0) {
+          console.log(`[Migration] Reset isPublished=false for ${res.modifiedCount} pending trips.`);
+        }
+      } catch (migErr) {
+        console.warn("[Migration Warning] Failed to migrate pending trip statuses:", migErr.message);
+      }
+    };
+    await migratePendingTripStatuses();
+
     return conn;
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);

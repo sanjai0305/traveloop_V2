@@ -35,8 +35,21 @@ const protectAgent = async (req, res, next) => {
       );
 
       if (agent) {
+        let currentStepVal = agent.currentStep || 1;
+        if (currentStepVal > 5) {
+          currentStepVal = 5;
+          try {
+            await Agent.findByIdAndUpdate(agent._id, {
+              $set: { currentStep: 5, completedSteps: [1, 2, 3, 4, 5] },
+              $pull: { completedSteps: { $gt: 5 } }
+            });
+          } catch (clampErr) {
+            console.warn("[Agent Auth Middleware] Error clamping currentStep > 5:", clampErr.message);
+          }
+        }
         req.agent = {
           ...agent.toObject(),
+          currentStep: currentStepVal,
           _id: agent._id,
           firebaseUid: agent.uid || "",
           email: agent.email || ""

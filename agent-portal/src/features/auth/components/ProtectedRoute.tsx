@@ -47,15 +47,20 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const getKycStep = (agent: any) => {
     // 1. If onboardingComplete is true, agent is fully done!
     if (agent.onboardingComplete) {
-      return 7;
+      return 6; // Fully completed
     }
 
-    // 2. If backend currentStep is set and valid (1..6), use it as the source of truth
-    if (typeof agent.currentStep === "number" && agent.currentStep >= 1 && agent.currentStep <= 6) {
+    // 2. If backend currentStep is set and valid (1..5), use it as the source of truth
+    if (typeof agent.currentStep === "number" && agent.currentStep >= 1 && agent.currentStep <= 5) {
       return agent.currentStep;
     }
 
-    // 3. Fallback evaluation logic if currentStep is not yet set in DB
+    // 3. If currentStep >= 6, agent is completed
+    if (typeof agent.currentStep === "number" && agent.currentStep >= 6) {
+      return 6;
+    }
+
+    // 4. Fallback evaluation logic if currentStep is not yet set in DB
     const hasGst = agent.gstNo || agent.gstNumber;
     const hasLogo = agent.companyLogo || agent.logo;
     const hasPhoto = agent.agentPhoto || agent.profileImage;
@@ -64,28 +69,25 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     if (!profileDone) {
       return 1;
     }
-    if (agent.kycStatus !== "EMAIL_VERIFIED" && agent.kycStatus !== "MOBILE_VERIFIED" && agent.kycStatus !== "KYC_COMPLETED" && agent.kycStatus !== "APPROVED" && !agent.emailVerified) {
-      return 4;
-    }
     if (!agent.acceptedTerms || !agent.privacyAccepted) {
-      return 5;
+      return 4; // Step 4: Legal Consent
     }
     if (!agent.mobileVerified) {
-      return 6;
+      return 5; // Step 5: Mobile OTP
     }
-    return 7; // Completed!
+    return 6; // Fully completed!
   };
 
   const kycStep = getKycStep(agent);
   console.log(`[ProtectedRoute] Auth Check | Agent ID: ${agent._id} | Backend Current Step: ${agent.currentStep || 'N/A'} | Resolved KYC Step: ${kycStep} | Path: ${location.pathname}`);
 
   if (location.pathname !== "/complete-profile") {
-    if (kycStep < 7) {
+    if (kycStep < 6) {
       console.log(`[ProtectedRoute] KYC incomplete (step ${kycStep}) — redirecting to /complete-profile?step=${kycStep}`);
       return <Navigate to={`/complete-profile?step=${kycStep}`} replace />;
     }
   } else {
-    if (kycStep === 7) {
+    if (kycStep === 6) {
       console.log("[ProtectedRoute] KYC completed — redirecting to /dashboard");
       return <Navigate to="/dashboard" replace />;
     }

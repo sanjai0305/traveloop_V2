@@ -1799,3 +1799,194 @@ export const exportTripPDF = async (req, res) => {
     }
   }
 };
+
+// ── TRIP ACTIVITIES ENDPOINTS ───────────────────────────────────────────────
+
+// GET TRIP ACTIVITIES (GET /api/trips/:tripId/activities)
+export const getTripActivities = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+    if (!hasTripPermission(trip, req.user.id, "read")) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to view activities" });
+    }
+
+    const items = await Itinerary.find({ tripId }).sort({ day: 1, time: 1 });
+    const activities = (items || []).map(row => {
+      const obj = row.toObject ? row.toObject() : row;
+      return {
+        ...obj,
+        _id: row._id,
+        id: row._id,
+        trip: row.tripId,
+        tripId: row.tripId,
+        time: obj.time || "",
+        place: obj.place || "",
+        category: obj.category || "Sightseeing",
+        cost: obj.budget || 0,
+        budget: obj.budget || 0,
+        note: obj.description || obj.note || "",
+        duration: obj.duration || "1 hour",
+        rating: obj.rating || 4.5,
+        status: obj.status || "Planned",
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      trip,
+      activities,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// CREATE TRIP ACTIVITY (POST /api/trips/:tripId/activities)
+export const createTripActivity = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { title, day, time, place, category, cost, budget, note, description, duration, rating, status, image } = req.body;
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+    if (!hasTripPermission(trip, req.user.id, "create")) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit activities" });
+    }
+
+    const activityCost = Number(cost !== undefined ? cost : (budget || 0));
+
+    const newActivity = await Itinerary.create({
+      tripId,
+      day: parseInt(day) || 1,
+      title: title || "New Activity",
+      description: note || description || "",
+      note: note || description || "",
+      time: time || "",
+      place: place || "",
+      category: category || "Sightseeing",
+      budget: activityCost,
+      duration: duration || "1 hour",
+      rating: Number(rating) || 4.5,
+      status: status || "Planned",
+      image: image || "",
+    });
+
+    await recalculateBudget(tripId);
+
+    const userName = req.user.firstName || req.user.email;
+    await logActivity(tripId, req.user.id, `${userName} added activity: "${newActivity.title}" to Day ${newActivity.day}`);
+
+    res.status(201).json({
+      success: true,
+      message: "Activity Created",
+      activity: {
+        ...newActivity.toObject(),
+        _id: newActivity._id,
+        id: newActivity._id,
+        cost: newActivity.budget,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// UPDATE TRIP ACTIVITY (PUT /api/trips/:tripId/activities/:activityId)
+export const updateTripActivity = async (req, res) => {
+  try {
+    const { tripId, activityId } = req.params;
+    const { title, day, time, place, category, cost, budget, note, description, duration, rating, status, image } = req.body;
+
+    const row = await Itinerary.findById(activityId);
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Activity not found" });
+    }
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+    if (!hasTripPermission(trip, req.user.id, "update")) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to edit activities" });
+    }
+
+    const updateFields = {};
+    if (day !== undefined) updateFields.day = parseInt(day) || 1;
+    if (title !== undefined) updateFields.title = title;
+    if (note !== undefined || description !== undefined) {
+      const text = note || description || "";
+      updateFields.description = text;
+      updateFields.note = text;
+    }
+    if (time !== undefined) updateFields.time = time;
+    if (place !== undefined) updateFields.place = place;
+    if (category !== undefined) updateFields.category = category;
+    if (cost !== undefined || budget !== undefined) {
+      updateFields.budget = Number(cost !== undefined ? cost : budget) || 0;
+    }
+    if (duration !== undefined) updateFields.duration = duration;
+    if (rating !== undefined) updateFields.rating = Number(rating) || 4.5;
+    if (status !== undefined) updateFields.status = status;
+    if (image !== undefined) updateFields.image = image;
+
+    const updatedRow = await Itinerary.findByIdAndUpdate(activityId, updateFields, { returnDocument: "after" });
+
+    await recalculateBudget(tripId);
+
+    const userName = req.user.firstName || req.user.email;
+    await logActivity(tripId, req.user.id, `${userName} updated activity: "${updatedRow.title}" on Day ${updatedRow.day}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Activity Updated",
+      activity: {
+        ...updatedRow.toObject(),
+        _id: updatedRow._id,
+        id: updatedRow._id,
+        cost: updatedRow.budget,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// DELETE TRIP ACTIVITY (DELETE /api/trips/:tripId/activities/:activityId)
+export const deleteTripActivity = async (req, res) => {
+  try {
+    const { tripId, activityId } = req.params;
+
+    const row = await Itinerary.findById(activityId);
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Activity not found" });
+    }
+
+    const trip = await Trip.findById(tripId);
+    if (!trip) {
+      return res.status(404).json({ success: false, message: "Trip not found" });
+    }
+    if (!hasTripPermission(trip, req.user.id, "delete")) {
+      return res.status(403).json({ success: false, message: "Forbidden: You do not have permission to delete activities" });
+    }
+
+    const userName = req.user.firstName || req.user.email;
+    await logActivity(tripId, req.user.id, `${userName} deleted activity: "${row.title}" from Day ${row.day}`);
+
+    await Itinerary.findByIdAndDelete(activityId);
+
+    await recalculateBudget(tripId);
+
+    res.status(200).json({
+      success: true,
+      message: "Activity Deleted",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
