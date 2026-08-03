@@ -14,6 +14,20 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import { connectDB } from "./config/db.js";
 import mongoose from "mongoose";
 import sanitizeInput from "./middleware/sanitize.js";
+import { reportStartupSuccess, reportStartupFailure } from "./services/startupReporter.js";
+
+process.on("uncaughtException", (error) => {
+  console.error("[Fatal Error] Uncaught Exception during startup:", error);
+  reportStartupFailure(error).finally(() => {
+    process.exit(1);
+  });
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Fatal Error] Unhandled Rejection during startup:", reason);
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  reportStartupFailure(err);
+});
 
 import authRoutes from "./routes/authRoutes.js";
 import tripRoutes from "./routes/tripRoutes.js";
@@ -463,12 +477,18 @@ app.use(errorLogger);
    SERVER STARTUP
 ------------------------------ */
 
-await connectDB();
-
-
+try {
+  await connectDB();
+} catch (dbErr) {
+  console.error("Fatal MongoDB Connection Error:", dbErr);
+  await reportStartupFailure(dbErr);
+  process.exit(1);
+}
 
 if (!process.env.JWT_SECRET) {
-  throw new Error("FATAL: JWT_SECRET environment variable is missing!");
+  const jwtErr = new Error("FATAL: JWT_SECRET environment variable is missing!");
+  await reportStartupFailure(jwtErr);
+  throw jwtErr;
 }
 
 if (!process.env.RAZORPAY_KEY_ID) {
@@ -481,26 +501,31 @@ if (!process.env.RAZORPAY_KEY_SECRET && !process.env.RAZORPAY_SECRET) {
 
 let port = parseInt(process.env.PORT || "5000", 10);
 
-if (process.env.NODE_ENV === "production") {
-  server.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
-    console.log(`✅ MongoDB Connected`);
-    console.log(`✅ Socket.io enabled`);
-    console.log(`✅ Routes loaded successfully`);
+const handleServerSuccess = async (activePort) => {
+  console.log(`🚀 Server running on port ${activePort}`);
+  console.log(`✅ MongoDB Connected`);
+  console.log(`✅ Socket.io enabled`);
+  console.log(`✅ Routes loaded successfully`);
+
+  await reportStartupSuccess({
+    port: activePort,
+    mongoStatus: "Connected ✅",
+    firebaseStatus: "Initialized ✅",
+    socketStatus: "Enabled ✅",
+    expressStatus: "Running ✅",
   });
+};
+
+if (process.env.NODE_ENV === "production") {
+  server.listen(port, () => handleServerSuccess(port));
 } else {
   const maxPort = port + 2;
 
   const startServer = (p) => {
-    server.listen(p, () => {
-      console.log(`🚀 Server running on port ${p}`);
-      console.log(`✅ MongoDB Connected`);
-      console.log(`✅ Socket.io enabled`);
-      console.log(`✅ Routes loaded successfully`);
-    });
+    server.listen(p, () => handleServerSuccess(p));
   };
 
-  server.on("error", (e) => {
+  server.on("error", async (e) => {
     if (e.code === "EADDRINUSE") {
       console.log(`⚠️ Port ${port} is already in use.`);
       if (port < maxPort) {
@@ -509,27 +534,18 @@ if (process.env.NODE_ENV === "production") {
         startServer(port);
       } else {
         console.log("Backend already running on port 5000");
+        await reportStartupFailure(e);
         process.exit(0);
       }
     } else {
       console.error(e);
+      await reportStartupFailure(e);
       process.exit(1);
     }
   });
 
   startServer(port);
 }
-
-
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-});
-
-process.on("uncaughtException", (error) => {
-  console.error("Uncaught Exception thrown:", error);
-  process.exit(1);
-});
 
 const gracefulShutdown = async (signal) => {
   console.log(`\n[Server] Received ${signal}. Starting graceful shutdown...`);
