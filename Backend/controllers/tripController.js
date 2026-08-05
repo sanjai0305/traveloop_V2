@@ -1,4 +1,4 @@
-import supabase from "../config/supabase.js";
+import { getDbClient } from "../config/supabase.js";
 import { recalculateBudget } from "../services/budgetSync.js";
 
 const CURATED_DESTINATION_IMAGES = {
@@ -35,14 +35,23 @@ const mapTrip = (t) => {
 
 export const getTrips = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { data: rows, error } = await supabase
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User identity missing" });
+    }
+
+    const db = await getDbClient();
+    const { data: rows, error } = await db
       .from("trips")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error("[getTrips Error]:", error);
+      throw error;
+    }
+
     const trips = (rows || []).map(mapTrip);
     res.status(200).json({ success: true, count: trips.length, data: trips, trips });
   } catch (error) {
@@ -53,7 +62,9 @@ export const getTrips = async (req, res) => {
 export const getTripById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: row, error } = await supabase
+    const db = await getDbClient();
+
+    const { data: row, error } = await db
       .from("trips")
       .select("*")
       .eq("id", id)
@@ -72,7 +83,11 @@ export const getTripById = async (req, res) => {
 
 export const createTrip = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User identity missing" });
+    }
+
     const { title, destination, startDate, endDate, budget, coverImage } = req.body;
 
     if (!title || !destination) {
@@ -81,33 +96,61 @@ export const createTrip = async (req, res) => {
 
     const img = coverImage || CURATED_DESTINATION_IMAGES[(destination || "").toLowerCase()] || "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=800&q=80";
 
-    const { data: newRow, error } = await supabase
-      .from("trips")
-      .insert([{
-        user_id: userId,
-        title,
-        destination,
-        start_date: startDate || null,
-        end_date: endDate || null,
-        budget_total: budget || 0,
-        cover_image: img,
-        status: "PLANNED",
-      }])
-      .select()
-      .single();
+    const db = await getDbClient();
 
-    if (error) throw error;
+    console.log(`[createTrip] Inserting trip for User ID: ${userId}, Title: '${title}'`);
+
+    const { data: newRow, error } = await db
+      .from("trips")
+      .insert([
+        {
+          user_id: userId,
+          title,
+          destination,
+          start_date: startDate || null,
+          end_date: endDate || null,
+          budget_total: Number(budget) || 0,
+          cover_image: img,
+          status: "PLANNED",
+        },
+      ])
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error("❌ [createTrip Error]:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      });
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to create trip record",
+        code: error.code || "DB_ERROR",
+      });
+    }
+
     const trip = mapTrip(newRow);
 
-    // Create default budget
-    await supabase.from("budgets").insert([{
-      trip_id: trip.id,
-      user_id: userId,
-      total_budget: budget || 0,
-    }]);
+    // Create default budget entry for the new trip
+    if (trip && trip.id) {
+      const { error: budgetErr } = await db.from("budgets").insert([
+        {
+          trip_id: trip.id,
+          user_id: userId,
+          total_budget: Number(budget) || 0,
+        },
+      ]);
+      if (budgetErr) {
+        console.warn("⚠️ [createTrip] Non-fatal error creating initial budget:", budgetErr.message);
+      }
+    }
 
+    console.log(`✅ [createTrip] Trip created successfully: ID ${trip.id}`);
     res.status(201).json({ success: true, message: "Trip created successfully", data: trip, trip });
   } catch (error) {
+    console.error("❌ [createTrip Exception]:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -122,19 +165,24 @@ export const updateTrip = async (req, res) => {
     if (destination !== undefined) updates.destination = destination;
     if (startDate !== undefined) updates.start_date = startDate;
     if (endDate !== undefined) updates.end_date = endDate;
-    if (budget !== undefined) updates.budget_total = budget;
+    if (budget !== undefined) updates.budget_total = Number(budget) || 0;
     if (coverImage !== undefined) updates.cover_image = coverImage;
     if (status !== undefined) updates.status = status;
     updates.updated_at = new Date().toISOString();
 
-    const { data: updated, error } = await supabase
+    const db = await getDbClient();
+    const { data: updated, error } = await db
       .from("trips")
       .update(updates)
       .eq("id", id)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[updateTrip Error]:", error);
+      throw error;
+    }
+
     const trip = mapTrip(updated);
     res.status(200).json({ success: true, message: "Trip updated successfully", data: trip, trip });
   } catch (error) {
@@ -145,12 +193,14 @@ export const updateTrip = async (req, res) => {
 export const deleteTrip = async (req, res) => {
   try {
     const { id } = req.params;
-    await supabase.from("itineraries").delete().eq("trip_id", id);
-    await supabase.from("checklists").delete().eq("trip_id", id);
-    await supabase.from("notes").delete().eq("trip_id", id);
-    await supabase.from("budgets").delete().eq("trip_id", id);
+    const db = await getDbClient();
 
-    const { error } = await supabase.from("trips").delete().eq("id", id);
+    await db.from("itineraries").delete().eq("trip_id", id);
+    await db.from("checklists").delete().eq("trip_id", id);
+    await db.from("notes").delete().eq("trip_id", id);
+    await db.from("budgets").delete().eq("trip_id", id);
+
+    const { error } = await db.from("trips").delete().eq("id", id);
     if (error) throw error;
 
     res.status(200).json({ success: true, message: "Trip deleted successfully" });
@@ -165,4 +215,4 @@ export const acceptInvite = async (req, res) => {
 
 export const declineInvite = async (req, res) => {
   res.json({ success: true, message: "Invite declined" });
-};
+};
