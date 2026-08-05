@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { VerifyOtpLocationState } from "./VerifyOtp";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
 import {
@@ -88,13 +89,14 @@ export const Auth: React.FC = () => {
           } else {
             localStorage.removeItem("admin_dev_otp");
           }
+          const otpLocationState: VerifyOtpLocationState = {
+            email: email.trim().toLowerCase(),
+            otp: receivedOtp,
+            preToken: tempToken,
+            development: !!res.data.development,
+          };
           navigate("/admin/verify-otp", {
-            state: {
-              email: email.trim().toLowerCase(),
-              otp: receivedOtp,
-              preToken: tempToken,
-              development: !!res.data.development,
-            },
+            state: otpLocationState,
           });
         } else {
           const { token, admin } = res.data;

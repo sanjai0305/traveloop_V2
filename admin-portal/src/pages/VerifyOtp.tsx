@@ -14,12 +14,19 @@ function formatTimer(secs: number): string {
   return `${m}:${s}`;
 }
 
+export interface VerifyOtpLocationState {
+  email?: string;
+  otp?: string;
+  preToken?: string;
+  development?: boolean;
+}
+
 export const VerifyOtp: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
 
-  const state = location.state as { email?: string; otp?: string; development?: boolean } | null;
+  const state = location.state as VerifyOtpLocationState | null;
   const email = state?.email || localStorage.getItem("admin_pending_email") || DEV_EMAIL;
 
   // Single state for current development OTP
