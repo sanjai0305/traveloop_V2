@@ -337,14 +337,21 @@ const UPIPaymentModal = ({
     };
 
     try {
+      console.log("Razorpay Options", rzpOptions);
       const rzp = new window.Razorpay(rzpOptions);
-      rzp.on("payment.failed", (failureResponse) => {
-        console.error("[Payment] Razorpay payment.failed:", failureResponse);
-        const desc = failureResponse?.error?.description || "Payment failed.";
-        setError(`Payment failed: ${desc}`);
+      rzp.on("payment.failed", function (response) {
+        console.error("========== RAZORPAY PAYMENT FAILED ==========");
+        console.error("Error Object:", response.error);
+        console.error("Code:", response.error?.code);
+        console.error("Description:", response.error?.description);
+        console.error("Source:", response.error?.source);
+        console.error("Step:", response.error?.step);
+        console.error("Reason:", response.error?.reason);
+        console.error("Metadata:", response.error?.metadata);
+        console.error("=============================================");
+        setError(response.error?.description || "Payment failed. Please try again.");
         setPhase("failed");
-        toast.error(`Payment failed: ${desc}`);
-        console.log("Payment Failed");
+        toast.error(response.error?.description || "Payment failed");
         
         // Immediately release seats in backend
         const token = localStorage.getItem("token");

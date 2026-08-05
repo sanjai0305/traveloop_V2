@@ -969,33 +969,62 @@ export const sendDriverOtpEmail = async (to, otpCode) => {
   }
 };
 
-export const sendAdminOtpEmail = async (to, otpCode) => {
-  if (isBlockedEmail(to)) {
-    console.warn(`[Email Service] Outgoing Admin OTP email blocked for: ${to}`);
-    return;
+export const sendAdminOtpEmail = async (to, otpCode, name) => {
+  const recipient = typeof to === "object" ? to.to : to;
+  const otp = typeof to === "object" ? to.otp || to.otpCode : otpCode;
+  const adminName = typeof to === "object" ? to.name || "Admin" : name || "Admin";
+
+  console.log(`\n==================================================`);
+  console.log(`[Email Service] Initiating Admin OTP Email delivery`);
+  console.log(`[Email Service] Recipient Email: '${recipient}'`);
+  console.log(`[Email Service] Generated OTP: '${otp}'`);
+
+  if (isBlockedEmail(recipient)) {
+    console.warn(`⚠️ [Email Service] Outgoing Admin OTP email blocked for domain: ${recipient}`);
+    return { success: false, message: "Blocked local domain" };
   }
+
   const transporter = await createTransporter();
-  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER;
+  const senderEmail = process.env.EMAIL_FROM || process.env.GOOGLE_SENDER_EMAIL || process.env.GMAIL_USER || "support@traveloop.com";
 
   const html = EMAIL_TEMPLATE_WRAPPER(`
     <div style="text-align: center; margin-bottom: 24px;">
       <span style="font-size: 48px;">🛡️</span>
     </div>
-    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Admin Verification</h2>
-    <p>Your Admin Verification Code is <strong>${otpCode}</strong>. Expires in 10 minutes.</p>
+    <h2 style="color: #1e293b; margin-top: 0; text-align: center; font-size: 22px; font-weight: 700;">Admin Security Verification</h2>
+    <p>Hi <strong>${adminName}</strong>,</p>
+    <p>Your Admin Portal Security Verification Code is:</p>
+    
+    <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0; border: 2px solid ${BRAND_COLOR};">
+      <span style="color: #64748b; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; display: block; margin-bottom: 8px;">Admin OTP Code</span>
+      <h3 style="margin: 0; color: ${BRAND_COLOR}; font-size: 40px; font-weight: 800; letter-spacing: 8px;">${otp}</h3>
+      <span style="color: #94a3b8; font-size: 12px; display: block; margin-top: 12px;">Valid for <strong>5 minutes</strong>.</span>
+    </div>
+    <p style="color: #64748b; font-size: 12px;">If you did not request this code, please immediately contact security@traveloop.com.</p>
   `);
 
   const mailOptions = {
     from: `"Traveloop Admin Security" <${senderEmail}>`,
-    to,
-    subject: "Traveloop Admin Verification Code",
+    to: recipient,
+    subject: `Traveloop Admin Verification Code: ${otp}`,
     html,
   };
 
   try {
-    return await transporter.sendMail(mailOptions);
+    console.log(`[Email Service] Sending Admin OTP email to ${recipient} via SMTP/Transporter...`);
+    const info = await sendMailWithRetry(transporter, mailOptions);
+
+    console.log(`✅ [Email Service] SMTP connection & mail delivery SUCCESS!`);
+    console.log(`  - Provider Response: ${info.response || "250 OK"}`);
+    console.log(`  - Message ID: ${info.messageId || "N/A"}`);
+    console.log(`  - Accepted Recipients:`, info.accepted || [recipient]);
+    console.log(`==================================================\n`);
+
+    return info;
   } catch (err) {
-    console.error("[Email Service] sendAdminOtpEmail error:", err.message);
+    console.error(`❌ [Email Service] Admin OTP Email Delivery FAILED:`, err.message);
+    console.error(`  - Delivery Failure Reason: ${err.stack || err.message}`);
+    console.log(`==================================================\n`);
     throw err;
   }
 };

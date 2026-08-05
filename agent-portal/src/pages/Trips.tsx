@@ -67,6 +67,8 @@ import {
   createMasterEntry,
   getAgentSlots,
 } from "../services/tripService";
+import { getAIDemands } from "../services/aiService";
+import type { DemandItem } from "../services/aiService";
 import { formatCurrency, formatDate } from "../utils";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
@@ -369,6 +371,14 @@ export const Trips: React.FC = () => {
     enabled: isProfileCompleted,
   });
 
+  // ── AI Demand Intelligence ────────────────────────────────────────
+  const [aiDemandsExpanded, setAiDemandsExpanded] = React.useState(true);
+  const { data: aiDemandsData, isLoading: aiDemandsLoading } = useQuery({
+    queryKey: ["ai-demands"],
+    queryFn: () => getAIDemands(),
+    staleTime: 5 * 60 * 1000, // 5 min cache
+  });
+
   const trips = (data as any)?.trips || (Array.isArray(data) ? data : []);
 
   const {
@@ -456,6 +466,28 @@ export const Trips: React.FC = () => {
       customCancellationPolicy: "",
     },
   });
+
+  // ── Auto-prefill form if navigated from Travel Demand Marketplace ──────
+  useEffect(() => {
+    const prefillStr = sessionStorage.getItem("ai_demand_prefill");
+    if (prefillStr) {
+      try {
+        const demand = JSON.parse(prefillStr);
+        sessionStorage.removeItem("ai_demand_prefill");
+        if (demand.destination) {
+          setEditorOpen(true);
+          setValue("destinations", [demand.destination]);
+          if (demand.avg_budget) setValue("offerPrice" as any, demand.avg_budget);
+          if (demand.avg_duration) setValue("duration" as any, demand.avg_duration);
+          if (demand.theme) setValue("tripType", demand.theme);
+          setActiveTab(1);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } catch (e) {
+        console.warn("Failed to parse ai_demand_prefill:", e);
+      }
+    }
+  }, [setValue]);
 
   const { fields: itineraryFields, replace: replaceItinerary } = useFieldArray({
     control,
@@ -2778,6 +2810,27 @@ export const Trips: React.FC = () => {
       ) : (
         /* Trips Grid List */
         (() => {
+          // Helper: pre-fill Create Trip form from an AI demand card
+          const prefillFromDemand = (demand: DemandItem) => {
+            setEditingTripId(null);
+            setSelectedTemplate(null);
+            setShowTemplateSelector(false);
+            setEditorOpen(true);
+            setValue("destinations", [demand.destination]);
+            setValue("budget" as any, demand.avg_budget || "");
+            setValue("duration" as any, demand.avg_duration || "");
+            setValue("tripType", demand.theme || "Group Tour");
+            setActiveTab(1);
+            // Scroll to form
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          };
+
+          const aiDemands: DemandItem[] = (
+            (aiDemandsData as any)?.top_destinations ||
+            (aiDemandsData as any)?.demands ||
+            []
+          ).slice(0, 6);
+
           const displayTrips = trips.filter((t: any) => {
             const status = (t.status || "").toLowerCase();
             const approvalStatus = (t.approvalStatus || "").toLowerCase();
@@ -2802,7 +2855,95 @@ export const Trips: React.FC = () => {
 
           return (
             <div className="space-y-6">
+
+              {/* ───── AI RECOMMENDED TRIPS ────────────────────────── */}
+              {(aiDemandsLoading || aiDemands.length > 0) && (
+                <div className="rounded-3xl border border-violet-200/60 dark:border-violet-900/40 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/30 p-6 shadow-md">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md shadow-violet-500/25">
+                        <Sparkles size={20} className="text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-slate-900 dark:text-white">AI Recommended Trips</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Based on live user search demand</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAiDemandsExpanded(v => !v)}
+                      className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:underline"
+                    >
+                      {aiDemandsExpanded ? "Collapse" : "Expand"}
+                    </button>
+                  </div>
+
+                  {aiDemandsExpanded && (
+                    aiDemandsLoading ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[...Array(3)].map((_, i) => (
+                          <div key={i} className="h-44 rounded-2xl bg-violet-100/50 dark:bg-violet-900/20 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {aiDemands.map((demand: DemandItem, idx: number) => (
+                          <div
+                            key={demand.destination + idx}
+                            className="rounded-2xl bg-white dark:bg-slate-900 border border-violet-100 dark:border-violet-900/50 p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin size={13} className="text-violet-500 shrink-0" />
+                                  <span className="text-sm font-black text-slate-900 dark:text-white">{demand.destination}</span>
+                                </div>
+                                {demand.theme && (
+                                  <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
+                                    {demand.theme}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-lg font-black text-violet-600">{demand.demand_score?.toFixed(0) ?? "—"}</div>
+                                <div className="text-[9px] text-slate-400 font-bold uppercase">Demand</div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+                                <div className="text-slate-400 font-bold">Users Waiting</div>
+                                <div className="font-black text-slate-800 dark:text-slate-100">{demand.users_waiting ?? demand.intent_count ?? "—"}</div>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+                                <div className="text-slate-400 font-bold">Avg Budget</div>
+                                <div className="font-black text-slate-800 dark:text-slate-100">{demand.avg_budget || "—"}</div>
+                              </div>
+                              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2">
+                                <div className="text-slate-400 font-bold">Avg Duration</div>
+                                <div className="font-black text-slate-800 dark:text-slate-100">{demand.avg_duration || "—"}</div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => prefillFromDemand(demand)}
+                              className="w-full h-8 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <Plus size={13} />
+                              Create Trip
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* ───── Filter Tabs Header Bar ───────────────────── */}
               {/* Filter Tabs Header Bar */}
+
               <div className="flex gap-2 overflow-x-auto border-b border-slate-200/80 dark:border-slate-800 pb-3 scrollbar-none">
                 {[
                   { id: "all", label: "All Packages", count: trips.length },
@@ -2858,24 +2999,25 @@ export const Trips: React.FC = () => {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {displayTrips.map((trip: any) => {
-                    const hasSaving =
-                      trip.originalPrice &&
-                      trip.offerPrice &&
-                      trip.originalPrice > trip.offerPrice;
+                    const rawStatus = String(trip.status || "").toLowerCase();
+                    const rawApproval = String(trip.approvalStatus || trip.approval_status || "").toUpperCase();
 
-                    const rawStatus = (trip.status || "").toLowerCase();
-                    const rawApproval = (trip.approvalStatus || "").toLowerCase();
+                    const isApproved = rawApproval === "APPROVED" || rawStatus === "published" || trip.isPublished === true;
+                    const isPending = (rawApproval === "PENDING" || rawApproval === "PENDING_APPROVAL" || rawStatus === "pending") && !isApproved;
+                    const isRejected = rawApproval === "REJECTED" || rawStatus === "rejected";
+                    const isNeedsChanges = rawStatus.includes("change") || rawStatus.includes("revision") || rawApproval.includes("CHANGE");
+                    const isDraft = !isApproved && !isPending && !isRejected && !isNeedsChanges;
 
-                    const isPending = rawStatus === "pending_approval" || rawApproval === "pending_approval" || rawApproval === "pending";
-                    const isApproved = rawStatus === "approved" || rawApproval === "approved" || (rawStatus === "published" && trip.isPublished === true);
-                    const isRejected = rawStatus === "rejected" || rawApproval === "rejected";
-                    const isNeedsChanges = rawStatus.includes("change") || rawStatus.includes("revision") || rawApproval.includes("change") || rawApproval.includes("revision");
+                    const priceVal = Number(trip.price_per_person ?? trip.pricePerPerson ?? trip.offerPrice ?? trip.price ?? 0);
+                    const availSeatsVal = trip.available_seats ?? trip.availableSeats ?? trip.available_slots ?? trip.availableSlots ?? trip.total_slots ?? trip.totalSeats ?? 20;
+                    const totalSeatsVal = trip.total_slots ?? trip.totalSeats ?? trip.total_seats ?? 20;
+                    const startDateVal = trip.start_date || trip.startDate || trip.created_at;
 
                     return (
-                      <GlassCard key={trip._id} className="premium-card flex flex-col justify-between p-0 overflow-hidden border border-slate-200/80 dark:border-slate-800">
+                      <GlassCard key={trip._id || trip.id} className="premium-card flex flex-col justify-between p-0 overflow-hidden border border-slate-200/80 dark:border-slate-800">
                         <div className="relative h-48 w-full bg-slate-100 dark:bg-slate-800">
-                          {trip.coverImage ? (
-                            <img src={trip.coverImage} alt={trip.title} className="w-full h-full object-cover" />
+                          {trip.coverImage || trip.thumbnail || (trip.images && trip.images[0]) ? (
+                            <img src={trip.coverImage || trip.thumbnail || trip.images[0]} alt={trip.title} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full bg-gradient-to-tr from-teal-400 to-emerald-500 flex items-center justify-center text-white font-bold text-3xl">
                               🏖️
@@ -2884,7 +3026,7 @@ export const Trips: React.FC = () => {
 
                           <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-900/80 text-white text-[10px] font-black backdrop-blur-md shadow flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5 text-teal-400" />
-                            {trip.duration || "Multi-Day"}
+                            {trip.duration || `${trip.duration_days || 1} Days`}
                           </div>
 
                           {/* Status Badge Overlay */}
@@ -2894,9 +3036,9 @@ export const Trips: React.FC = () => {
                                 <span className="bg-emerald-500 text-white px-2.5 py-1 rounded-full border border-emerald-400 font-extrabold text-[9px] uppercase tracking-wider shadow backdrop-blur-md">
                                   🟢 Approved
                                 </span>
-                                {(trip.publishedAt || trip.approvedAt) && (
+                                {(trip.publishedAt || trip.published_at || trip.approvedAt) && (
                                   <span className="bg-slate-900/90 text-emerald-300 text-[8px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md border border-emerald-500/30">
-                                    Published: {formatDate(trip.publishedAt || trip.approvedAt)}
+                                    Published: {formatDate(trip.publishedAt || trip.published_at || trip.approvedAt)}
                                   </span>
                                 )}
                               </div>
@@ -2924,7 +3066,7 @@ export const Trips: React.FC = () => {
                           <div>
                             <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400 text-xs font-extrabold mb-1">
                               <MapPin size={13} />
-                              <span>{trip.originCity || "Origin"} → {trip.destinations?.join(", ") || "Destinations"}</span>
+                              <span>{trip.originCity || "Origin"} → {trip.destination || (trip.destinations && trip.destinations.join(", ")) || "Destination"}</span>
                             </div>
                             <h3 className="text-base font-black text-slate-900 dark:text-white leading-snug line-clamp-1">
                               {trip.title}
@@ -2938,10 +3080,10 @@ export const Trips: React.FC = () => {
                           {isPending && (
                             <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 text-amber-800 dark:text-amber-300 text-xs font-medium space-y-1">
                               <p className="font-extrabold flex items-center gap-1 text-[11px] uppercase tracking-wider text-amber-900 dark:text-amber-200">
-                                <Clock size={13} className="text-amber-500" /> Pending Admin Approval
+                                <Clock size={13} className="text-amber-500" /> Waiting for Admin Approval
                               </p>
                               <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                                Your trip has been submitted. Waiting for Admin approval.
+                                Your trip has been submitted for review. It will become visible in the marketplace upon admin approval.
                               </p>
                             </div>
                           )}
@@ -2971,10 +3113,10 @@ export const Trips: React.FC = () => {
                           <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-3">
                             <div className="flex items-center justify-between text-xs font-bold text-slate-500">
                               <span className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-teal-500" /> {formatDate(trip.startDate)}
+                                <Calendar className="w-3.5 h-3.5 text-teal-500" /> {startDateVal ? formatDate(startDateVal) : "Date TBD"}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Bus className="w-3.5 h-3.5 text-teal-500" /> {trip.vehicleType || "Bus"}
+                                <Bus className="w-3.5 h-3.5 text-teal-500" /> {trip.bus_type || trip.vehicleType || "Bus"}
                               </span>
                             </div>
 
@@ -2983,19 +3125,14 @@ export const Trips: React.FC = () => {
                                 <span className="text-[10px] text-slate-400 block uppercase font-bold">Price / Person</span>
                                 <div className="flex items-baseline gap-1.5">
                                   <h4 className="text-base font-black text-slate-900 dark:text-white">
-                                    ₹{Number(trip.offerPrice || trip.pricePerPerson || 0).toLocaleString("en-IN")}
+                                    ₹{priceVal.toLocaleString("en-IN")}
                                   </h4>
-                                  {hasSaving && (
-                                    <span className="text-xs text-slate-400 line-through font-semibold">
-                                      ₹{Number(trip.originalPrice).toLocaleString("en-IN")}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                               <div className="text-right">
                                 <span className="text-[10px] text-slate-400 block uppercase font-bold">Available Seats</span>
                                 <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full inline-block mt-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200/50">
-                                  {trip.availableSeats ?? trip.totalSeats} / {trip.totalSeats} seats
+                                  {availSeatsVal} / {totalSeatsVal} seats
                                 </span>
                               </div>
                             </div>
@@ -3003,12 +3140,22 @@ export const Trips: React.FC = () => {
                             {/* Card Footer Actions */}
                             <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                               {isApproved ? (
-                                <div className="flex-1 text-center py-2 px-2 bg-emerald-50 text-emerald-700 font-extrabold text-xs rounded-xl border border-emerald-200">
-                                  ✓ Published Live
+                                <div className="flex-1 flex gap-2">
+                                  <div className="flex-1 text-center py-2 px-2 bg-emerald-50 text-emerald-700 font-extrabold text-xs rounded-xl border border-emerald-200">
+                                    ✓ Published Live
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openEditMode(trip)}
+                                    className="text-xs py-2 font-bold px-4"
+                                  >
+                                    View
+                                  </Button>
                                 </div>
                               ) : isPending ? (
                                 <div className="flex-1 text-center py-2 px-2 bg-amber-50 text-amber-700 font-extrabold text-xs rounded-xl border border-amber-200 cursor-not-allowed">
-                                  🟡 Pending Approval
+                                  🟡 Waiting for Admin Approval
                                 </div>
                               ) : (isRejected || isNeedsChanges) ? (
                                 <Button
@@ -3029,15 +3176,6 @@ export const Trips: React.FC = () => {
                                   Publish
                                 </Button>
                               )}
-
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openEditMode(trip)}
-                                className="flex-1 text-xs py-2 font-bold"
-                              >
-                                Edit
-                              </Button>
 
                               <Button
                                 variant="ghost"

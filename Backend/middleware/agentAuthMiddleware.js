@@ -1,12 +1,14 @@
 import jwt from "jsonwebtoken";
-import Agent from "../models/Agent.js";
+import supabase from "../config/supabase.js";
 
 export const fallbackAgents = new Map();
 
 const protectAgent = async (req, res, next) => {
   let token;
 
-  console.log(`\n[Agent Auth Middleware] Checking authorization for ${req.method} ${req.originalUrl}`);
+  console.log(
+    `\n[Agent Auth Middleware] Checking authorization for ${req.method} ${req.originalUrl}`
+  );
 
   if (!process.env.JWT_SECRET) {
     console.error("[Agent Auth Middleware] JWT_SECRET is missing.");
@@ -23,48 +25,42 @@ const protectAgent = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const agentId = decoded.id || decoded.agentId;
 
-      const agent = await Agent.findById(decoded.id).select(
-        "uid displayName companyName email phone gstNumber businessCategory " +
-        "address city state country website instagram facebook logo profileImage " +
-        "status role isVerified emailVerified profileCompleted dob mobile mobileVerified " +
-        "gstNo companyLogo agentPhoto kycStatus isApproved " +
-        "acceptedTerms privacyAccepted acceptedAt legalConsent termsVersion termsAcceptedAt " +
-        "referralCode referralCount tripSlots usedSlots bonusSlots purchasedSlots " +
-        "currentStep completedSteps profileCompletion onboardingComplete"
-      );
+      let { data: agent } = await supabase
+        .from("agents")
+        .select("*")
+        .eq("id", agentId)
+        .maybeSingle();
 
       if (agent) {
-        let currentStepVal = agent.currentStep || 1;
+        console.log(`✅ Supabase Agent Loaded: ${agent.id}`);
+        let currentStepVal = agent.current_step || 1;
         if (currentStepVal > 5) {
           currentStepVal = 5;
-          try {
-            await Agent.findByIdAndUpdate(agent._id, {
-              $set: { currentStep: 5, completedSteps: [1, 2, 3, 4, 5] },
-              $pull: { completedSteps: { $gt: 5 } }
-            });
-          } catch (clampErr) {
-            console.warn("[Agent Auth Middleware] Error clamping currentStep > 5:", clampErr.message);
-          }
         }
         req.agent = {
-          ...agent.toObject(),
+          _id: agent.id,
+          id: agent.id,
+          agencyName: agent.agency_name,
+          ownerName: agent.owner_name,
           currentStep: currentStepVal,
-          _id: agent._id,
-          firebaseUid: agent.uid || "",
-          email: agent.email || ""
+          completedSteps: agent.completed_steps || [1, 2, 3, 4, 5],
+          kycStatus: agent.kyc_status || "APPROVED",
+          isApproved: agent.status === "APPROVED",
+          ...agent,
         };
       }
 
       if (!req.agent) {
-        const fallback = fallbackAgents.get(decoded.id);
+        const fallback = fallbackAgents.get(agentId);
         if (fallback) {
           req.agent = fallback;
         }
       }
 
       if (!req.agent) {
-        console.warn(`[Agent Auth] Agent lookup failed for ID: ${decoded.id}`);
+        console.warn(`[Agent Auth] Agent lookup failed for ID: ${agentId}`);
         return res.status(401).json({
           success: false,
           message: "Agent account not found",
@@ -75,7 +71,10 @@ const protectAgent = async (req, res, next) => {
       next();
     } catch (error) {
       console.error("[Agent Auth Error]:", error);
-      if (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError") {
+      if (
+        error.name === "TokenExpiredError" ||
+        error.name === "JsonWebTokenError"
+      ) {
         return res.status(401).json({
           success: false,
           message: "Session expired or invalid token. Please log in again.",

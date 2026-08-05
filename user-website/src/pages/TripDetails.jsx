@@ -248,25 +248,25 @@ export const TripDetails = () => {
           headers["Authorization"] = `Bearer ${token}`;
         }
         const res = await fetch(getApiUrl(`trips/published/${id}`), { headers });
-        const data = await res.json();
-        console.log("Trip Response:", data);
-        console.log("Trip:", data?.trip);
-        console.log("Images:", data?.trip?.coverImages);
-        console.log("Itinerary:", data?.trip?.itinerary);
-        console.log("Hotels:", data?.trip?.hotels);
-        console.log("Transport:", data?.trip?.transport);
-        console.log("Activities:", data?.trip?.activities);
-        console.log("Packing:", data?.trip?.packingChecklist);
-        if (data.success && data.trip) {
-          setTrip(data.trip);
-          setBookedSeats(data.bookedSeatNumbers || []);
-          if (data.trip.pickupLocation) {
-            setPickupLocation(data.trip.pickupLocation);
+        const responseData = await res.json();
+        console.log("Trip API Response:", responseData);
+        console.log("Mapped Trip:", responseData?.trip);
+        console.log("Images:", responseData?.trip?.coverImages || responseData?.trip?.images);
+        console.log("Itinerary:", responseData?.trip?.itinerary);
+        console.log("Hotels:", responseData?.trip?.hotels);
+        console.log("Transport:", responseData?.trip?.transport);
+        console.log("Activities:", responseData?.trip?.activities);
+        console.log("Packing:", responseData?.trip?.packingChecklist);
+        if (responseData.success && responseData.trip) {
+          setTrip(responseData.trip);
+          setBookedSeats(responseData.bookedSeatNumbers || []);
+          if (responseData.trip.pickupLocation) {
+            setPickupLocation(responseData.trip.pickupLocation);
           }
-        } else if (data.success && !data.trip) {
+        } else if (responseData.success && !responseData.trip) {
           setError("No trip details available");
         } else {
-          setError(data.message || "Trip not found");
+          setError(responseData.message || "Trip not found");
         }
       } catch (err) {
         setError("Error connecting to server. Please try again.");

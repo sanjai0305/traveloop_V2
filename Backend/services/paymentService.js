@@ -1,10 +1,5 @@
 import crypto from "crypto";
-import mongoose from "mongoose";
-import Booking from "../models/Booking.js";
-import Payment from "../models/Payment.js";
-import AgentTrip from "../models/AgentTrip.js";
-import Passenger from "../models/Passenger.js";
-import SeatBooking from "../models/SeatBooking.js";
+import supabase from "../config/supabase.js";
 
 export class PaymentService {
   /** Create a payment lock on a booking */
@@ -26,15 +21,12 @@ export class PaymentService {
   static async generateQR(bookingId, amount, tripId, userId) {
     const upiMerchantId = process.env.UPI_MERCHANT_ID || "travelloop@okaxis";
     const merchantName = process.env.UPI_MERCHANT_NAME || "TravelLoop Merchant";
-    
-    // Generate UPI Payment URI Scheme (RFC compliant)
+
     const transactionId = `TXN${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`;
     const upiLink = `upi://pay?pa=${upiMerchantId}&pn=${encodeURIComponent(merchantName)}&tr=${transactionId}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Booking ${bookingId}`)}`;
-    
+
     const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiLink)}`;
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes expiry
-
-
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     return {
       qrImage,
@@ -45,138 +37,69 @@ export class PaymentService {
     };
   }
 
-  /** Mock verification logic for collect flows / QR payments */
+  /** Manual / instant payment confirmation logic */
   static async confirmManualPayment(bookingId, paymentMethod = "upi_qr", transactionId, upiReference = "") {
-    // Fetch active lock
-    const booking = await Booking.findById(bookingId);
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select("*")
+      .or(`id.eq.${bookingId},booking_code.eq.${bookingId}`)
+      .maybeSingle();
+
     if (!booking) throw new Error("Booking not found");
 
-    const trip = await AgentTrip.findById(booking.tripId);
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", booking.agent_trip_id)
+      .maybeSingle();
+
     if (!trip) throw new Error("Trip not found");
 
-
-
-    // Generate unique ticketId and verificationCode
     const randDigits = Math.floor(100000 + Math.random() * 900000).toString();
-    booking.ticketId = `TLP-2026-${randDigits}`;
-    
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let code = "TLP-";
-    for (let i = 0; i < 7; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    booking.verificationCode = code;
-    
-    // Update payment status
-    booking.paymentStatus = "PAID";
-    booking.status = "Paid";
-    booking.bookingStatus = "confirmed";
-    booking.paymentVerified = true;
-    booking.paymentDate = new Date();
-    
-    booking.qrToken = Buffer.from(JSON.stringify({
-      bookingId: booking._id.toString(),
-      ticketId: booking.ticketId,
-      verificationCode: booking.verificationCode,
-      seatNumber: booking.assignedSeat || booking.seatNumbers?.[0] || "",
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).getTime(),
-    })).toString("base64");
+    const ticketId = `TLP-2026-${randDigits}`;
+    const code = `TLP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
 
-    await booking.save();
+    const { data: updatedBooking } = await supabase
+      .from("bookings")
+      .update({
+        payment_status: "PAID",
+        booking_status: "CONFIRMED",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", booking.id)
+      .select()
+      .single();
 
-    // Confirm passenger and seat status
-    const travellersList = booking.travellers || [];
-    const seatNumbersList = booking.seatNumbers || [];
-    for (let i = 0; i < travellersList.length; i++) {
-      const pData = travellersList[i];
-      const seatNumber = seatNumbersList[i] || pData.seatNumber;
-
-      if (!seatNumber) continue;
-
-      // 1. Create/update Passenger document
-      const passenger = await Passenger.findOneAndUpdate(
-        { bookingId: booking._id, seatNumber },
-        {
-          bookingId: booking._id,
-          bookingRef: booking.bookingId,
-          tripId: booking.tripId,
-          userId: booking.userId,
-          name: pData.name || "",
-          age: Number(pData.age) || 0,
-          gender: pData.gender || "Other",
-          phone: pData.phone || "",
-          emergencyContact: pData.emergencyContact || booking.contactNumber || "",
-          seatNumber,
-          seatPreference: pData.seatPreference || "No Preference",
-          seatType: pData.seatType || "Window",
-          specialRequest: pData.specialRequest || "",
-          status: "active",
-          paymentStatus: "completed",
-          qrPayload: {
-            bookingId: booking.bookingId || String(booking._id),
-            tripId: String(booking.tripId),
-            passenger: pData.name,
-            seat: seatNumber,
-            gender: pData.gender,
-            age: pData.age,
-            timestamp: new Date().toISOString(),
-          },
-        },
-        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
-      );
-
-      // 2. Mark SeatBooking as booked
-      await SeatBooking.updateOne(
-        { tripId: booking.tripId, seatNumber },
-        {
-          status: "booked",
-          bookingId: booking._id,
-          passengerId: passenger._id,
-          passengerName: pData.name || "",
-          gender: pData.gender || "Other",
-          age: Number(pData.age) || 0,
-          paymentStatus: "completed",
-          reservedUntil: null,
-        }
-      );
-    }
-
-    // Create payment ledger record
-    const payment = await Payment.create({
-      bookingId: booking._id,
-      bookingRef: booking.bookingId,
-      tripId: booking.tripId,
-      userId: booking.userId,
-      amount: booking.pricePaid,
-      paymentMethod,
-      gateway: "manual",
-      status: "PAID",
-      transactionId: transactionId || `TXN_MAN_${Date.now()}`,
-      upiReference,
-    });
-
-    // Remove lock
-    await this.unlockPayment(bookingId);
-
-
+    // Insert payment record
+    const { data: payment } = await supabase
+      .from("payments")
+      .insert([{
+        booking_id: booking.id,
+        user_id: booking.user_id,
+        amount: booking.final_amount || booking.total_amount,
+        currency: "INR",
+        status: "PAID",
+        method: paymentMethod,
+        razorpay_payment_id: transactionId || `TXN_MAN_${Date.now()}`,
+      }])
+      .select()
+      .single();
 
     // Trigger PDF generation and confirmation email
     try {
       const { generateTicketPdf } = await import("./pdfService.js");
       const { sendBookingConfirmationEmail } = await import("./emailService.js");
-      
-      const primaryTraveler = travellersList[0] || {};
-      const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
-      const passengerEmail = primaryTraveler.email || "traveler@traveloop.app";
-      
-      const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
-      await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
-      console.log(`[Payment Service] Booking confirmation email sent to ${passengerEmail}`);
+
+      const passengerName = "Valued Traveler";
+      const passengerEmail = "traveler@traveloop.app";
+
+      const pdfBuffer = await generateTicketPdf(updatedBooking || booking, trip, passengerName);
+      await sendBookingConfirmationEmail(passengerEmail, passengerName, updatedBooking || booking, trip, pdfBuffer);
     } catch (emailErr) {
-      console.error("[Payment Service] Failed to send ticket pass email:", emailErr.message);
+      console.warn("[Payment Service Notice] Email sending notice:", emailErr.message);
     }
 
-    return { booking, payment };
+    return { booking: updatedBooking || booking, payment };
   }
 }
 

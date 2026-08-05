@@ -18,6 +18,9 @@ export const useAuth = () => {
     setError(null);
     try {
       const res = await loginWithGoogleFirebase();
+      if (!res || !res.token || !res.agent) {
+        throw new Error("Agent Portal backend response missing token or agent profile.");
+      }
       setAuth(res.token, res.agent);
       return res.agent;
     } catch (e: any) {

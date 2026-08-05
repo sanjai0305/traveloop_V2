@@ -8,7 +8,9 @@ import TripHeaderNav from "../components/trip/TripHeaderNav";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/mobile/MobileToast";
 import { getApiUrl } from "../utils/api";
+import { sendChatMessage } from "../services/aiService";
 import {
+
   Sparkles, Send, Bot, Compass, DollarSign, MapPin, Sun,
   ShieldAlert, Luggage, CheckCircle2, RefreshCw, MessageSquare,
   ArrowRight, PhoneCall, HelpCircle
@@ -68,7 +70,7 @@ const TripAiAssistantPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
 
-  const handleSendPrompt = (promptText) => {
+  const handleSendPrompt = async (promptText) => {
     const textToSend = promptText || input.trim();
     if (!textToSend) return;
 
@@ -83,18 +85,27 @@ const TripAiAssistantPage = () => {
     if (!promptText) setInput("");
     setThinking(true);
 
-    // Simulate AI response stream
-    setTimeout(() => {
-      const aiReply = {
-        id: `ai-${Date.now()}`,
-        role: "assistant",
-        text: `Here is my AI recommendation for "${textToSend}": For ${trip?.destination || "your destination"}, I recommend starting your day early at 8:30 AM to beat the crowd, grouping nearby attractions together, and reserving local transport passes online.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      };
-      setMessages(prev => [...prev, aiReply]);
-      setThinking(false);
-    }, 1200);
+    // Build context-enriched prompt using trip details
+    const contextPrefix = trip
+      ? `[Trip Context: "${trip.title}" to ${trip.destination}${trip.startDate ? `, departing ${trip.startDate}` : ""}]\n\n`
+      : "";
+    const enrichedMessage = `${contextPrefix}${textToSend}`;
+
+    // Stable session ID per page visit (not per tab)
+    const sessionId = `trip-assist-${tripId || "general"}`;
+
+    const result = await sendChatMessage(enrichedMessage, sessionId);
+    setThinking(false);
+
+    const aiReply = {
+      id: `ai-${Date.now()}`,
+      role: "assistant",
+      text: result.response || "I couldn't generate a response. Please try again.",
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    };
+    setMessages(prev => [...prev, aiReply]);
   };
+
 
   return (
     <MainLayout>

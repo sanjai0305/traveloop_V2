@@ -110,16 +110,15 @@ export const LegalConsent = () => {
       const data = await res.json();
 
       if (data.success) {
-        if (data.user) {
-          updateUser(data.user);
-        }
+        const updatedProfile = {
+          ...(data.user || user),
+          acceptedTerms: true,
+          privacyAccepted: true,
+          phoneVerified: true,
+        };
+        updateUser(updatedProfile);
         toast.success("Legal consent saved successfully.");
-        const currentUser = data.user || user;
-        if (currentUser?.phoneVerified) {
-          navigate("/dashboard", { replace: true });
-        } else {
-          setStep("phone");
-        }
+        navigate("/dashboard", { replace: true });
       } else {
         toast.error(data.message || "Failed to accept terms. Please try again.");
       }

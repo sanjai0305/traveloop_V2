@@ -354,20 +354,39 @@ const SeatLayoutModal = ({
       const res = await fetch(getApiUrl(`seats/${trip._id}`), {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
-      if (data.success) {
-        setSeats(data.seats || []);
-        setCounters(data.counters || {});
-        setLayout(data.layout || { rows: [], seatsPerRow: 4 });
+      const responseData = await res.json();
+      
+      console.log("Seat API Response:", responseData);
+      console.log("Bus Type:", responseData.busType || trip.busType || "Bus");
+      console.log("Total Seats:", responseData.totalSeats || trip.totalSeats || 30);
+      
+      if (responseData.success) {
+        const fetchedSeats = responseData.seats || [];
+        setSeats(fetchedSeats);
+        setCounters(responseData.counters || {});
+
+        let layoutObj = responseData.layout;
+        if (!layoutObj || !layoutObj.rows || layoutObj.rows.length === 0) {
+          console.warn("[SeatLayoutModal] Missing layout.rows from API. Dynamically deriving rows...");
+          const extractedRows = [...new Set(fetchedSeats.map((s) => s.row))].filter(Boolean);
+          layoutObj = {
+            rows: extractedRows.length > 0 ? extractedRows : ["A", "B", "C", "D", "E", "F", "G", "H"],
+            seatsPerRow: 4,
+          };
+        }
+
+        console.log("Seat Layout:", layoutObj);
+        setLayout(layoutObj);
       } else {
-        setError(data.message || "Failed to load seat map");
+        setError(responseData.message || "Failed to load seat map");
       }
     } catch (err) {
+      console.error("[SeatLayoutModal] Fetch error:", err);
       setError("Connection error. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [trip._id]);
+  }, [trip._id, trip.busType, trip.totalSeats]);
 
   useEffect(() => {
     fetchSeats();

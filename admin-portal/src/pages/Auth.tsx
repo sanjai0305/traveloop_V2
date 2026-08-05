@@ -72,6 +72,13 @@ export const Auth: React.FC = () => {
         localStorage.setItem("admin_pending_email", email.trim().toLowerCase());
         localStorage.setItem("admin_pending_pass", password);
 
+        const tempToken = res.data.preToken || res.data.token;
+        if (tempToken) {
+          console.log(`[ADMIN LOGIN] Storing temporary preToken in localStorage (admin_token): ${tempToken.substring(0, 15)}...`);
+          localStorage.setItem("admin_token", tempToken);
+          localStorage.setItem("admin_pre_token", tempToken);
+        }
+
         if (res.data.twoFactorRequired || res.data.requiresOTP || res.data.twoFactorEnabled !== false) {
           console.log(`[ADMIN LOGIN] Redirecting to OTP verification page (/admin/verify-otp)`);
           const receivedOtp = res.data.otp || res.data.debugOtp || null;
@@ -85,6 +92,7 @@ export const Auth: React.FC = () => {
             state: {
               email: email.trim().toLowerCase(),
               otp: receivedOtp,
+              preToken: tempToken,
               development: !!res.data.development,
             },
           });

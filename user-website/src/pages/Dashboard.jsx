@@ -1,6 +1,7 @@
 // src/pages/Dashboard.jsx — Enterprise SaaS Redesign (Airbnb + Stripe + Linear + Apple)
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { getUserRecommendations } from "../services/aiService";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
@@ -121,6 +122,10 @@ const Dashboard = () => {
   const [exploreLoading, setExploreLoading] = useState(false);
   const [exploreQuery, setExploreQuery]     = useState("");
 
+  // ── AI Recommendations ─────────────────────────────────────────────────────
+  const [aiRecs, setAiRecs]           = useState([]);
+  const [aiRecsLoading, setAiRecsLoading] = useState(false);
+
   const exploreCache = useRef({});
   const searchDebounce = useRef(null);
   const abortRef = useRef(null);
@@ -211,6 +216,34 @@ const Dashboard = () => {
   useEffect(() => {
     fetchTrips();
   }, [fetchTrips]);
+
+  // Fetch AI recommendations on mount
+  useEffect(() => {
+    const fetchAiRecs = async () => {
+      setAiRecsLoading(true);
+      try {
+        const result = await getUserRecommendations();
+        if (result?.recommendations?.length > 0) {
+          setAiRecs(result.recommendations.slice(0, 6));
+        } else if (publishedTrips?.length > 0) {
+          setAiRecs(publishedTrips.slice(0, 6).map((t, idx) => ({
+            trip_id: t._id,
+            title: t.title,
+            destination: t.destinations?.[0] || t.originCity || "Popular Destination",
+            price: `₹${t.offerPrice || t.pricePerPerson || 4999}`,
+            duration: t.duration || "Multi-Day",
+            thumbnail: t.coverImage || DEFAULT_IMAGES[idx % DEFAULT_IMAGES.length],
+            reason: "Top trending group trip package matched for you.",
+          })));
+        }
+      } catch (err) {
+        console.warn("[Dashboard] AI recommendations failed:", err);
+      } finally {
+        setAiRecsLoading(false);
+      }
+    };
+    fetchAiRecs();
+  }, [publishedTrips]);
 
   useEffect(() => {
     const handleTripDeleted = (deletedId) => {
@@ -468,6 +501,104 @@ const Dashboard = () => {
 
         {/* ── AI ASSISTANT BANNER CARD ── */}
         <AIAssistantCard onOpen={() => setAiOpen(true)} />
+
+        {/* ── ✨ AI RECOMMENDED TRIPS ─────────────────────────────────── */}
+        {(aiRecsLoading || aiRecs.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-10"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md shadow-violet-500/25">
+                  <Sparkles size={18} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-[#0F172A]">✨ New Trips Matching Your Interests</h3>
+                  <p className="text-xs text-slate-500 font-medium">Curated by AI based on your travel profile</p>
+                </div>
+              </div>
+            </div>
+
+            {aiRecsLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-64 rounded-[24px] bg-slate-100 animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {aiRecs.map((rec, idx) => (
+                  <motion.div
+                    key={rec.trip_id || idx}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.06 * idx }}
+                    whileHover={{ y: -6 }}
+                    className="group relative rounded-[24px] bg-white border border-slate-900/[0.06] shadow-[0_15px_50px_rgba(15,23,42,0.08)] hover:shadow-[0_20px_60px_rgba(139,92,246,0.18)] overflow-hidden flex flex-col transition-all duration-300 cursor-pointer"
+                    onClick={() => navigate(`/explore`)}
+                  >
+                    {/* Image */}
+                    <div className="relative h-44 overflow-hidden bg-gradient-to-br from-violet-100 to-purple-100">
+                      {rec.thumbnail ? (
+                        <img src={rec.thumbnail} alt={rec.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-5xl">
+                          {["🌴","🏔️","🏖️","🗼","🌸","🐘"][idx % 6]}
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+                      <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-violet-600/90 backdrop-blur-sm text-white text-[10px] font-black">
+                        AI Pick #{idx + 1}
+                      </div>
+                      {rec.price && (
+                        <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-white/90 text-slate-800 text-[10px] font-black">
+                          {rec.price}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-4 flex flex-col gap-2 flex-1">
+                      <div>
+                        <h4 className="text-sm font-black text-[#0F172A] leading-tight line-clamp-1">{rec.title}</h4>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <MapPin size={11} className="text-violet-500 shrink-0" />
+                          <span className="text-xs text-slate-500 font-medium">{rec.destination}</span>
+                          {rec.duration && (
+                            <>
+                              <span className="text-slate-300">·</span>
+                              <span className="text-xs text-slate-500 font-medium">{rec.duration}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2 font-medium flex-1">{rec.reason}</p>
+
+                      <div className="flex gap-2 mt-auto">
+                        <button
+                          onClick={e => { e.stopPropagation(); navigate(`/explore`); }}
+                          className="flex-1 h-8 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-xs font-bold shadow-sm hover:opacity-90 transition-opacity"
+                        >
+                          Book Now
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); navigate(`/explore`); }}
+                          className="h-8 px-3 rounded-xl border border-violet-200 text-violet-600 text-xs font-bold hover:bg-violet-50 transition-colors"
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* ── TRAVEL-THEMED 3D IMAGE CARDS (340×180px, Glass Overlay) ── */}
         <div className="mb-10">

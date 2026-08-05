@@ -1,6 +1,4 @@
-import Budget from "../models/Budget.js";
-import Itinerary from "../models/Itinerary.js";
-import Trip from "../models/Trip.js";
+import supabase from "../config/supabase.js";
 
 const mapCategory = (cat) => {
   if (!cat) return "misc";
@@ -14,22 +12,29 @@ const mapCategory = (cat) => {
 };
 
 /**
- * Recalculates planned and actual expenses for the active budget in MongoDB.
+ * Recalculates planned and actual expenses for the active budget in Supabase.
  * @param {string} tripId - The ID of the trip to sync.
  */
 export const recalculateBudget = async (tripId) => {
   try {
-    const activeBudget = await Budget.findOne({
-      tripId,
-      isArchived: false,
-      isActive: true,
-    });
+    const { data: activeBudget } = await supabase
+      .from("budgets")
+      .select("*")
+      .eq("trip_id", tripId)
+      .maybeSingle();
 
     if (!activeBudget) return;
 
-    const itineraryItems = await Itinerary.find({ tripId });
+    const { data: itineraryItems } = await supabase
+      .from("itineraries")
+      .select("*")
+      .eq("trip_id", tripId);
 
-    const trip = await Trip.findById(tripId);
+    const { data: trip } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
 
     if (!trip) return;
 
@@ -40,10 +45,10 @@ export const recalculateBudget = async (tripId) => {
       food: { planned: 0, actual: 0 },
       activities: { planned: 0, actual: 0 },
       shopping: { planned: 0, actual: 0 },
-      misc: { planned: 0, actual: 0 }
+      misc: { planned: 0, actual: 0 },
     };
 
-    for (const item of (itineraryItems || [])) {
+    for (const item of itineraryItems || []) {
       const amt = Number(item.budget) || 0;
       totalPlanned += amt;
       const catKey = mapCategory(item.category);
@@ -51,25 +56,23 @@ export const recalculateBudget = async (tripId) => {
     }
 
     let totalActual = 0;
-    for (const exp of (trip.expenseItems || [])) {
-      const amt = Number(exp.convertedAmount) || 0;
+    const expenseList = activeBudget.expenses || [];
+    for (const exp of expenseList) {
+      const amt = Number(exp.amount) || Number(exp.convertedAmount) || 0;
       totalActual += amt;
       const catKey = mapCategory(exp.category);
       categories[catKey].actual += amt;
     }
 
-    const remainingBudget = Number(activeBudget.totalBudget) - totalPlanned;
+    const remainingBudget = Number(activeBudget.total_budget || 0) - totalPlanned;
 
-    await Budget.updateOne(
-      { _id: activeBudget._id },
-      {
-        plannedExpense: totalPlanned,
-        actualExpense: totalActual,
-        remainingBudget,
-        categories
-      }
-    );
-
+    await supabase
+      .from("budgets")
+      .update({
+        categories,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", activeBudget.id);
   } catch (err) {
     console.error("Error running recalculateBudget:", err);
   }

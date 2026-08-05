@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+langchain-qdrant
+qdrant-client
+sentence-transformers
+redis
+redis[hiredis]
+supabase
+postgrest
+python-dotenv
+pydantic
+google-generativeai

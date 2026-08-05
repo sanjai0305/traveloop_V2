@@ -5,6 +5,8 @@ import { useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ResponsiveNavbar from "../components/common/ResponsiveNavbar";
 import ResponsiveFooter from "../components/common/ResponsiveFooter";
+import AIChat from "../components/AIChat";
+
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -63,6 +65,9 @@ const MainLayout = ({ children, hideFooter = false, noPadding = false }) => {
 
       {/* GLOBAL FOOTER (Excluded on Chat Workspace) */}
       {!isChatPage && <ResponsiveFooter />}
+
+      {/* GLOBAL AI TRAVEL ASSISTANT CHATBOT */}
+      <AIChat />
     </div>
   );
 };

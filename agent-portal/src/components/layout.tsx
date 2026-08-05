@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Compass,
+  Flame,
   CalendarCheck2,
   Users,
   BarChart3,
@@ -57,6 +58,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navItems = [
     { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { label: "Trips", path: "/trips", icon: Compass },
+    { label: "Travel Demand", path: "/demand", icon: Flame },
     { label: "Bookings", path: "/bookings", icon: CalendarCheck2 },
     { label: "Analytics", path: "/analytics", icon: BarChart3 },
     { label: "Wallet", path: "/wallet", icon: Wallet },

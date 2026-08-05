@@ -185,9 +185,15 @@ export const loginWithEmailPassword = async (email, password) => {
 export const loginWithGoogle = async (idToken) => {
   // 1. Authenticate with Backend using Google ID Token
   console.log(`[Google Auth] Starting Google Login... Sending idToken to Backend`);
-  console.log(idToken);
   const backendData = await apiRequest("/auth/google", "POST", { idToken });
-  console.log(`[Google Auth] Backend authenticated. User ID: ${backendData.user._id}`);
+
+  if (!backendData || !backendData.user || (!backendData.user.id && !backendData.user._id)) {
+    console.error("[Google Auth Error] Backend response is invalid or missing user details:", backendData);
+    throw new Error(backendData?.message || "Google Authentication failed. Invalid user data received from server.");
+  }
+
+  const userId = backendData.user._id || backendData.user.id;
+  console.log(`[Google Auth] Backend authenticated successfully. User ID: ${userId}`);
 
   // 2. Create or update Firestore profile
   try {
@@ -208,7 +214,7 @@ export const loginWithGoogle = async (idToken) => {
       });
     }
   } catch (error) {
-    console.error("Firestore sync failed:", error);
+    console.error("[Google Auth] Firestore profile creation failed:", error);
   }
 
   return backendData;

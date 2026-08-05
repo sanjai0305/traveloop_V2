@@ -1,1634 +1,376 @@
 import express from "express";
-import mongoose from "mongoose";
 import Razorpay from "razorpay";
+import supabase from "../config/supabase.js";
 import protect from "../middleware/authMiddleware.js";
-import Booking from "../models/Booking.js";
-import AgentTrip from "../models/AgentTrip.js";
-import Trip from "../models/Trip.js";
-import Itinerary from "../models/Itinerary.js";
-import Budget from "../models/Budget.js";
-import Checklist from "../models/Checklist.js";
 import BookingService from "../services/BookingService.js";
-import Passenger from "../models/Passenger.js";
-import SeatBooking from "../models/SeatBooking.js";
-
-const generateBookingId = () => {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let randStr = "";
-  for (let i = 0; i < 6; i++) {
-    randStr += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `TL-${dateStr}-${randStr}`;
-};
-
 
 const router = express.Router();
 
-
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-/**
- * Destination-based smart activity suggestion engine.
- */
-const DESTINATION_ACTIVITIES = {
-  yercaud: [
-    { day: 1, time: "07:00", title: "Sunrise walk at Yercaud Lake", category: "Activity", note: "Serene morning walk around the lake — bring a camera!" },
-    { day: 1, time: "08:30", title: "Breakfast at hotel", category: "Food", note: "Start the day with local South Indian breakfast" },
-    { day: 1, time: "10:00", title: "Botanical Garden visit", category: "Sightseeing", note: "Over 300 plant species — children will love the orchid section" },
-    { day: 1, time: "12:30", title: "Lunch at a local restaurant", category: "Food", note: "Try local Tamil cuisine and fresh hill coffee" },
-    { day: 1, time: "14:00", title: "Shevaroy Hills Temple", category: "Sightseeing", note: "Scenic viewpoint and ancient Shevaroy temple at the peak" },
-    { day: 1, time: "16:00", title: "Pagoda Point viewpoint", category: "Sightseeing", note: "360° panoramic view of Salem city and valleys" },
-    { day: 1, time: "18:00", title: "Campfire & group bonding", category: "Activity", note: "Evening campfire — organized by hotel / group activity" },
-    { day: 1, time: "20:00", title: "Group dinner", category: "Food", note: "BBQ or buffet dinner with the group" },
-    { day: 2, time: "07:30", title: "Sunrise photography session", category: "Activity", note: "Golden hour photography from the hilltop" },
-    { day: 2, time: "09:00", title: "Boating at Yercaud Lake", category: "Activity", note: "Paddle boats and row boats available — book at the lake" },
-    { day: 2, time: "11:00", title: "Anna Park & Children's Park", category: "Sightseeing", note: "Beautiful rose gardens and walking tracks" },
-    { day: 2, time: "13:00", title: "Farewell lunch", category: "Food", note: "Last meal before departure" },
-  ],
-  goa: [
-    { day: 1, time: "09:00", title: "Calangute Beach morning walk", category: "Activity", note: "Most popular beach in Goa — great for swimming" },
-    { day: 1, time: "11:00", title: "Water sports at Baga Beach", category: "Activity", note: "Parasailing, jet ski, banana boat rides" },
-    { day: 1, time: "13:30", title: "Seafood lunch at beach shack", category: "Food", note: "Try Goan fish curry, prawn masala, and sol kadhi" },
-    { day: 1, time: "16:00", title: "Anjuna Flea Market", category: "Activity", note: "Local handicrafts, clothes, jewelry" },
-    { day: 1, time: "18:30", title: "Sunset cruise", category: "Activity", note: "Mandovi River cruise — live music and sunset views" },
-    { day: 1, time: "21:00", title: "Nightlife at Tito's Lane", category: "Activity", note: "Pubs and cafes along the famous strip" },
-    { day: 2, time: "08:00", title: "Old Goa churches tour", category: "Sightseeing", note: "UNESCO World Heritage — Basilica of Bom Jesus, Se Cathedral" },
-    { day: 2, time: "11:00", title: "Dudhsagar Waterfall trip", category: "Sightseeing", note: "Spectacular 4-tiered waterfall — jeep safari from Mollem" },
-    { day: 2, time: "14:00", title: "Lunch at Panjim cafes", category: "Food", note: "Portuguese-influenced Goan cuisine in Fontainhas quarter" },
-    { day: 2, time: "17:00", title: "Arambol Beach sunset", category: "Activity", note: "Hippie vibe beach — drum circles at sunset" },
-  ]
-};
-
-const generateAISuggestedActivities = (dest, days) => {
-  const norm = (dest || "").toLowerCase().trim();
-  let base = DESTINATION_ACTIVITIES[norm];
-  if (!base) {
-    // Check partial matches
-    const key = Object.keys(DESTINATION_ACTIVITIES).find(k => norm.includes(k));
-    base = key ? DESTINATION_ACTIVITIES[key] : null;
-  }
-  if (!base) {
-    // generic fallback
-    base = [
-      { day: 1, time: "09:00", title: `Explore main spots in ${dest}`, category: "Sightseeing", note: "Enjoy the local views and landmarks" },
-      { day: 1, time: "13:00", title: "Lunch at highly-rated restaurant", category: "Food", note: "Try local authentic dishes" },
-      { day: 1, time: "16:00", title: "Evening walk & market shopping", category: "Activity", note: "Pick up local souvenirs and explore streets" },
-      { day: 2, time: "09:00", title: "Local cultural tour", category: "Sightseeing", note: "Visit museums or historical landmarks nearby" },
-    ];
-  }
-  return base.filter(a => a.day <= days);
-};
-
-const generatePackingItems = (agentTrip) => {
-  const dest = (agentTrip.title || "").toLowerCase();
-  const list = [
-    { item: "ID Card / Ticket printout", category: "Documents" },
-    { item: "Phone Charger & Powerbank", category: "Electronics" },
-    { item: "Toiletries Kit", category: "Toiletries" },
-    { item: "Comfortable clothes", category: "Clothes" },
-  ];
-  if (dest.includes("yercaud") || dest.includes("hill") || dest.includes("ooty")) {
-    list.push({ item: "Warm jacket / Sweater", category: "Clothes" });
-    list.push({ item: "Motion sickness pills", category: "Health" });
-  }
-  return list;
-};
-
-const parseItineraryDescription = (day, desc) => {
-  if (!desc) return [];
-  const lines = desc.split("\n");
-  const events = [];
-  lines.forEach(line => {
-    const timeMatch = line.match(/^(\d{2}:\d{2})\s*[:-]?\s*(.*)/);
-    if (timeMatch) {
-      events.push({
-        time: timeMatch[1],
-        title: timeMatch[2].trim(),
-      });
-    }
-  });
-  return events;
-};
-
-const cloneAgentTripToUserTrip = async (booking, agentTrip, userId, totalAmount) => {
-  const destination = (agentTrip.destinations || [])[0] || agentTrip.title || "Trip";
-
-  const newTrip = await Trip.create({
-    userId,
-    image: agentTrip.coverImage || "",
-    title: agentTrip.title,
-    destination,
-    startDate: agentTrip.startDate || null,
-    endDate: agentTrip.endDate || null,
-    budget: totalAmount,
-    isPublic: false,
-    status: "planning",
-  });
-
-  const userTrip = { ...newTrip.toObject(), _id: newTrip._id };
-
-  // Clone itinerary
-  await Itinerary.create({
-    tripId: userTrip._id,
-    day: 1,
-    title: `Departure to ${destination}`,
-    description: agentTrip.pickupLocation ? `Pickup from: ${agentTrip.pickupLocation}` : "",
-  });
-
-  // Seed Budget
-  await Budget.create({
-    tripId: userTrip._id,
-    totalBudget: totalAmount,
-    isArchived: false,
-    isActive: true,
-  });
-
-  // Seed Checklist
-  const packingItems = generatePackingItems(agentTrip);
-  if (packingItems.length > 0) {
-    const checkListInserts = packingItems.map(p => ({
-      tripId: userTrip._id,
-      userId,
-      itemName: p.item,
-      item: p.item,
-      category: p.category,
-      packed: false,
-      checked: false,
-    }));
-    await Checklist.insertMany(checkListInserts);
-  }
-
-  // Seed AI suggested activities
+// POST /api/bookings/create-order & POST /api/bookings/create
+const handleCreateBookingOrder = async (req, res) => {
   try {
-    const daysStr = (agentTrip.duration || "").match(/(\d+)/)?.[1];
-    const tripDays = daysStr ? parseInt(daysStr) : 1;
-    const aiActivities = generateAISuggestedActivities(destination, tripDays);
-    if (aiActivities.length > 0) {
-      const aiInserts = aiActivities.map(a => ({
-        tripId: userTrip._id,
-        day: a.day,
-        title: a.title,
-        description: a.note || "",
-        isAiSuggestion: true,
-        aiSource: a.aiSource || "traveloop-destination-engine-v1",
-      }));
-      await Itinerary.insertMany(aiInserts);
-    }
-  } catch (aiErr) {
-    console.warn("[AI Activities] Failed to seed AI suggestions:", aiErr.message);
-  }
+    console.log("=================== INCOMING BOOKING REQUEST ===================");
+    console.log("User:", req.user?.id || req.user?.email);
+    console.log("Payload:", JSON.stringify(req.body, null, 2));
+    console.log("================================================================");
 
-  return userTrip;
-};
+    const userId = req.user.id;
+    const { tripId, totalAmount = 1000, travellers = [], seatNumbers = [] } = req.body;
 
-// ─── ENDPOINTS ───────────────────────────────────────────────────────────────
+    // Fetch trip details from Supabase
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", tripId)
+      .maybeSingle();
 
-// POST /api/bookings
-router.post("/", protect, async (req, res) => {
-  const {
-    tripId,
-    maleCount = 0,
-    femaleCount = 0,
-    adults = 1,
-    children = 0,
-    travellers = [],
-    totalAmount = 0,
-    seatNumbers = [],
-    pickupLocation = "",
-    couponCode = "",
-  } = req.body;
+    const price = trip?.price_per_person || totalAmount;
+    const seatsCount = seatNumbers.length || travellers.length || 1;
+    const computedTotal = req.body.totalAmount || (price * seatsCount);
 
-  if (!tripId) {
-    return res.status(400).json({ success: false, message: "tripId is required" });
-  }
+    // Insert booking draft into Supabase
+    const { data: bookingDraft, error: draftErr } = await supabase
+      .from("bookings")
+      .insert([{
+        user_id: userId,
+        agent_trip_id: tripId,
+        total_amount: computedTotal,
+        final_amount: computedTotal,
+        booking_status: "DRAFT",
+        payment_status: "PENDING",
+        booking_code: `TLP-${Date.now()}`,
+      }])
+      .select()
+      .single();
 
-  if (!travellers || travellers.length === 0) {
-    return res.status(400).json({ success: false, message: "At least one traveller details required" });
-  }
-
-  try {
-    const userId = req.user._id || req.user.id;
-
-    // Check if booking already exists for this user and trip (and is not cancelled)
-    const existingBooking = await Booking.findOne({
-      userId,
-      tripId,
-      status: { $ne: "cancelled" }
-    });
-
-    if (existingBooking) {
-      return res.status(200).json({
-        success: true,
-        action: "UPDATE_EXISTING_BOOKING",
-        bookingId: existingBooking._id
-      });
+    if (draftErr) {
+      console.error("❌ [Booking Draft Error]:", draftErr);
+      throw draftErr;
     }
 
-    const { booking, userTrip } = await BookingService.createBooking({
-      tripId,
-      userId,
-      travellers,
-      seats: travellers.length,
-      seatNumbers,
-      totalAmount,
-      paymentStatus: "PENDING",
-      bookingStatus: "draft",
-      paymentVerified: false,
-      paymentDate: null,
-      maleCount,
-      femaleCount,
-      adults,
-      children,
-      pickupLocation,
-      couponCode,
-      contactNumber: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
-      contactEmail: req.user.email || "",
-      contactPhone: req.user.phone || req.user.phoneNumber || req.user.primaryMobile || "",
-      emailVerified: true,
-      phoneVerified: true,
-    });
+    let orderId = `order_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const amountPaise = Math.round(computedTotal * 100);
 
-    res.status(201).json({
-      success: true,
-      bookingId: booking.bookingId,
-      booking,
-      userTripId: userTrip ? userTrip._id : null,
-    });
-  } catch (error) {
-    console.error("[Create Booking] Error:", error);
-    const status = [
-      "Bookings closed for this trip",
-      "Not enough available seats left on this trip",
-      "Trip not found"
-    ].includes(error.message) ? 400 : 500;
-    res.status(status).json({ success: false, message: error.message || "Server Error processing trip booking" });
-  }
-});
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
 
-// GET /api/bookings/my-bookings
-router.get("/my-bookings", protect, async (req, res) => {
-  try {
-    const userId = req.user.id || req.user._id;
-    const bookingsList = await Booking.find({ userId }).populate("tripId");
-
-    const bookings = (bookingsList || []).map(b => {
-      const obj = b.toObject ? b.toObject() : b;
-      const tripDoc = b.tripId; // populated AgentTrip doc
-      return {
-        ...obj,
-        _id: b._id,
-        agentTrip: tripDoc && typeof tripDoc.toObject === "function"
-          ? {
-              ...tripDoc.toObject(),
-              _id: tripDoc._id,
-              boardingStatus: tripDoc.boardingStatus || "CLOSED",
-            }
-          : tripDoc
-          ? {
-              ...tripDoc,
-              boardingStatus: tripDoc.boardingStatus || "CLOSED",
-            }
-          : null,
-      };
-    });
-
-    res.status(200).json({
-      success: true,
-      bookings,
-    });
-  } catch (error) {
-    console.error("[My Bookings] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error retrieving bookings" });
-  }
-});
-
-// PUT /api/bookings/:bookingId/notes
-router.put("/:bookingId/notes", protect, async (req, res) => {
-  try {
-    const { notes } = req.body;
-    const { bookingId } = req.params;
-    const userId = req.user.id || req.user._id;
-
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
-    }
-
-    const bookingRow = await Booking.findOne({ _id: bookingId, userId });
-
-    if (!bookingRow) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    await Booking.findByIdAndUpdate(bookingId, { assignedSeat: notes || "" });
-
-    res.status(200).json({
-      success: true,
-      message: "Notes updated successfully",
-      personalNotes: notes || "",
-    });
-  } catch (error) {
-    console.error("[Update Notes] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error updating notes" });
-  }
-});
-
-// GET /api/bookings/:bookingId/user-trip
-router.get("/:bookingId/user-trip", protect, async (req, res) => {
-  try {
-    const { bookingId } = req.params;
-    const userId = req.user.id || req.user._id;
-
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
-    }
-
-    const bookingRow = await Booking.findOne({ _id: bookingId, userId });
-
-    if (!bookingRow) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    const trip = await AgentTrip.findById(bookingRow.tripId);
-
-    const booking = {
-      ...bookingRow.toObject(),
-      _id: bookingRow._id,
-      agentTrip: trip ? { ...trip.toObject(), _id: trip._id } : null,
-    };
-
-    res.status(200).json({
-      success: true,
-      booking,
-      trip: booking.agentTrip || null,
-      driver: null,
-      seat: null,
-      boardingPass: null,
-      agency: null,
-      userTrip: null,
-      boardingAvailable: booking.agentTrip && booking.agentTrip.boardingStatus === "OPEN",
-    });
-  } catch (error) {
-    console.error("[Booking User Trip] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error" });
-  }
-});
-
-// POST /api/bookings/:bookingId/cancel
-router.post("/:bookingId/cancel", protect, async (req, res) => {
-  try {
-    const { bookingId } = req.params;
-    const userId = req.user.id || req.user._id;
-
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({ success: false, message: "Invalid booking ID format" });
-    }
-
-    const booking = await Booking.findOne({ _id: bookingId, userId });
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (booking.paymentStatus === "Cancelled") {
-      return res.status(400).json({ success: false, message: "Booking is already cancelled" });
-    }
-
-    const updatedBooking = await Booking.findByIdAndUpdate(
-      bookingId,
-      { paymentStatus: "Cancelled" },
-      { returnDocument: "after" }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "Booking cancelled successfully",
-      booking: {
-        ...updatedBooking.toObject(),
-        _id: updatedBooking._id,
-      },
-    });
-  } catch (error) {
-    console.error("[Cancel Booking] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error cancelling booking" });
-  }
-});
-
-// GET /api/bookings/my
-router.get("/my", protect, async (req, res) => {
-  try {
-    const userId = req.user.id || req.user._id;
-    const bookingsList = await Booking.find({
-      userId,
-      paymentStatus: { $ne: "Cancelled" }
-    }).populate("tripId");
-
-    const bookings = (bookingsList || []).map(b => {
-      const obj = b.toObject ? b.toObject() : b;
-      const tripDoc = obj.tripId;
-      return {
-        ...obj,
-        _id: b._id,
-        agentTrip: {
-          _id: tripDoc?._id || b.tripId,
-          title: tripDoc?.title || "Yercaud Weekend Escapade",
-          boardingStatus: tripDoc?.boardingStatus || "CLOSED",
-        },
-      };
-    });
-
-    res.status(200).json({
-      success: true,
-      bookings,
-    });
-  } catch (error) {
-    console.error("[Get Confirmed Bookings] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error retrieving bookings" });
-  }
-});
-
-// GET /api/bookings/ticket/:bookingId
-// Returns booking + per-passenger QR payloads for ticket rendering
-router.get("/ticket/:bookingId", protect, async (req, res) => {
-  const { bookingId } = req.params;
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    }).populate("tripId");
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    const passengers = await Passenger.find({ bookingId: booking._id }).lean();
-    const trip = booking.tripId;
-
-    // Synthesize from booking.travellers if no Passenger docs exist (legacy bookings)
-    let finalPassengers = passengers;
-    if (finalPassengers.length === 0 && booking.travellers?.length > 0) {
-      finalPassengers = booking.travellers.map((t, idx) => {
-        const seatNum = (booking.seatNumbers || [])[idx] || `S${idx + 1}`;
-        const payload = {
-          bookingId: booking.bookingId,
-          tripId: String(booking.tripId?._id || booking.tripId),
-          passenger: t.name,
-          seat: seatNum,
-          gender: t.gender,
-          age: t.age,
-        };
-        return {
-          name: t.name,
-          age: t.age,
-          gender: t.gender,
-          phone: t.phone || "",
-          seatNumber: seatNum,
-          qrPayload: payload,
-          qrString: JSON.stringify(payload),
-        };
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      booking: {
-        bookingId: booking.bookingId,
-        _id: booking._id,
-        tripTitle: trip?.title || "Bus Trip",
-        startDate: trip?.startDate,
-        pickupLocation: booking.pickupLocation || trip?.pickupLocation || "",
-        totalAmount: booking.pricePaid || booking.amount || 0,
-        paymentStatus: booking.paymentStatus,
-        qrUnlocked: booking.qrUnlocked,
-      },
-      passengers: finalPassengers,
-      passengerCount: finalPassengers.length,
-    });
-  } catch (error) {
-    console.error("[Ticket Fetch] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error fetching ticket" });
-  }
-});
-
-// GET /api/bookings/:bookingId/pdf
-// Generates and downloads the ticket PDF.
-router.get("/:bookingId/pdf", protect, async (req, res) => {
-  const { bookingId } = req.params;
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    }).populate("tripId");
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin" && req.user.role !== "driver") {
-      return res.status(403).json({ success: false, message: "Unauthorized access to this ticket" });
-    }
-
-    const trip = booking.tripId;
-    const primaryTraveler = booking.travellers?.[0] || {};
-    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
-
-    const { generateTicketPdf } = await import("../services/pdfService.js");
-    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename=ticket-${booking.bookingId || booking._id}.pdf`);
-    res.send(pdfBuffer);
-  } catch (error) {
-    console.error("[Ticket PDF Download] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error generating PDF" });
-  }
-});
-
-// @route   POST /api/bookings/send-ticket
-// @desc    Generate and send premium e-ticket to passenger
-// @access  Private
-router.post("/send-ticket", protect, async (req, res) => {
-  const { bookingId } = req.body;
-  if (!bookingId) {
-    return res.status(400).json({ success: false, message: "bookingId is required" });
-  }
-
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId: bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    }).populate("tripId");
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin") {
-      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
-    }
-
-    const trip = booking.tripId;
-    const primaryTraveler = booking.travellers?.[0] || {};
-    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
-    const passengerEmail = primaryTraveler.email || booking.contactEmail || req.user.email;
-
-    if (!passengerEmail) {
-      return res.status(400).json({ success: false, message: "No email address found for the booking" });
-    }
-
-    const { generateTicketPdf } = await import("../services/pdfService.js");
-    const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
-
-    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
-    const sent = await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
-
-    if (sent) {
-      booking.emailSent = true;
-      booking.emailSentAt = new Date();
-      booking.pdfUrl = `/api/bookings/${booking.bookingId}/pdf`;
-      booking.ticketUrl = `/api/bookings/${booking.bookingId}/pdf`;
-      await booking.save();
-      return res.json({ success: true, message: "Ticket email sent successfully." });
-    } else {
-      booking.emailSent = false;
-      await booking.save();
-      return res.status(500).json({ success: false, message: "Failed to dispatch email. Ticket is still confirmed." });
-    }
-  } catch (error) {
-    console.error("[Send Ticket API] Error:", error);
-    res.status(500).json({ success: false, message: "Server error sending ticket." });
-  }
-});
-
-// @route   POST /api/bookings/resend-ticket
-// @desc    Resend ticket email confirmation
-// @access  Private
-router.post("/resend-ticket", protect, async (req, res) => {
-  const { bookingId } = req.body;
-  if (!bookingId) {
-    return res.status(400).json({ success: false, message: "bookingId is required" });
-  }
-
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId: bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    }).populate("tripId");
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin") {
-      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
-    }
-
-    const trip = booking.tripId;
-    const primaryTraveler = booking.travellers?.[0] || {};
-    const passengerName = primaryTraveler.name || booking.travelerName || "Valued Traveler";
-    const passengerEmail = primaryTraveler.email || booking.contactEmail || req.user.email;
-
-    if (!passengerEmail) {
-      return res.status(400).json({ success: false, message: "No email address found for the booking" });
-    }
-
-    const { generateTicketPdf } = await import("../services/pdfService.js");
-    const { sendBookingConfirmationEmail } = await import("../services/emailService.js");
-
-    const pdfBuffer = await generateTicketPdf(booking, trip, passengerName);
-    const sent = await sendBookingConfirmationEmail(passengerEmail, passengerName, booking, trip, pdfBuffer);
-
-    if (sent) {
-      booking.emailSent = true;
-      booking.emailSentAt = new Date();
-      booking.pdfUrl = `/api/bookings/${booking.bookingId}/pdf`;
-      booking.ticketUrl = `/api/bookings/${booking.bookingId}/pdf`;
-      await booking.save();
-      return res.json({ success: true, message: "Ticket email resent successfully." });
-    } else {
-      booking.emailSent = false;
-      await booking.save();
-      return res.status(500).json({ success: false, message: "Failed to dispatch email. Ticket is still confirmed." });
-    }
-  } catch (error) {
-    console.error("[Resend Ticket API] Error:", error);
-    res.status(500).json({ success: false, message: "Server error resending ticket." });
-  }
-});
-
-// @route   GET /api/bookings/:bookingId/qr
-// @desc    Generate and stream signed encrypted QR code image
-// @access  Private
-router.get("/:bookingId/qr", protect, async (req, res) => {
-  const { bookingId } = req.params;
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    });
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (String(booking.userId) !== String(req.user._id) && req.user.role !== "admin" && req.user.role !== "driver") {
-      return res.status(403).json({ success: false, message: "Unauthorized access to this booking" });
-    }
-
-    const jwt = (await import("jsonwebtoken")).default;
-    const QRCode = (await import("qrcode")).default;
-
-    const secretKey = process.env.JWT_SECRET || "traveloop_secret_key_2026";
-    const bookingToken = jwt.sign(
-      {
-        bookingId: booking.bookingId || String(booking._id),
-        tripId: String(booking.tripId),
-        userId: String(booking.userId),
-        timestamp: Date.now(),
-      },
-      secretKey,
-      { expiresIn: "7d" }
-    );
-
-    const qrPayload = JSON.stringify({
-      bookingId: booking.bookingId || String(booking._id),
-      token: bookingToken,
-      validatedAt: new Date().toISOString(),
-    });
-
-    const qrBuffer = await QRCode.toBuffer(qrPayload, { margin: 1 });
-
-    res.setHeader("Content-Type", "image/png");
-    res.send(qrBuffer);
-  } catch (error) {
-    console.error("[QR Code Generation] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error generating QR code" });
-  }
-});
-
-// @route   POST /api/bookings/verify-qr
-// @desc    Driver verifies scanned QR code token
-// @access  Private (Driver/Admin)
-router.post("/verify-qr", protect, async (req, res) => {
-  try {
-    const { qrData, token, bookingId } = req.body;
-    let bId = bookingId;
-    let bToken = token;
-
-    if (qrData) {
+    if (keyId && keySecret && keyId !== "rzp_test_dummykeyid") {
       try {
-        const parsed = typeof qrData === "string" ? JSON.parse(qrData) : qrData;
-        if (parsed.bookingId) bId = parsed.bookingId;
-        if (parsed.token) bToken = parsed.token;
-      } catch (e) {
-        bId = qrData;
-      }
-    }
-
-    if (!bId && !bToken) {
-      return res.status(400).json({ success: false, message: "QR token or Booking ID is required" });
-    }
-
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId: bId },
-        { _id: mongoose.Types.ObjectId.isValid(bId) ? bId : null },
-      ].filter(Boolean),
-    }).populate("tripId").populate("userId", "firstName lastName name phone email");
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found or invalid QR code" });
-    }
-
-    const trip = booking.tripId || {};
-    const passengerName = booking.travelerName || (booking.travellers && booking.travellers[0]?.name) || `${booking.userId?.firstName || ""} ${booking.userId?.lastName || ""}`.trim() || "Passanger";
-    const packageName = trip.title || booking.packageTitle || "Travel Package";
-    const pickupPoint = booking.pickupLocation || trip.pickupLocation || "Main Station";
-    const seatNumber = booking.assignedSeat || (booking.seatNumbers || []).join(", ") || "Assigned";
-    const travelerCount = booking.seats || booking.travellers?.length || 1;
-
-    res.status(200).json({
-      success: true,
-      valid: true,
-      booking: {
-        _id: booking._id,
-        bookingId: booking.bookingId,
-        passengerName,
-        packageName,
-        pickupPoint,
-        seatNumber,
-        travelerCount,
-        paymentStatus: booking.paymentStatus || "Paid",
-        status: booking.status || "Ready for Travel",
-        isCheckedIn: booking.status === "Checked In",
-      }
-    });
-  } catch (error) {
-    console.error("[Verify QR Error]:", error);
-    res.status(500).json({ success: false, message: "Server error verifying QR code" });
-  }
-});
-
-// @route   POST /api/bookings/check-in
-// @desc    Driver checks in a passenger after scanning QR code
-// @access  Private (Driver/Admin)
-router.post("/check-in", protect, async (req, res) => {
-  try {
-    const { bookingId } = req.body;
-    if (!bookingId) {
-      return res.status(400).json({ success: false, message: "Booking ID is required" });
-    }
-
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    });
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    booking.status = "Checked In";
-    booking.boardingStatus = "BOARDED";
-    booking.boardedAt = new Date();
-    await booking.save();
-
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("passenger_checked_in", {
-        bookingId: booking.bookingId,
-        bookingDbId: booking._id,
-        status: "Checked In",
-        boardedAt: booking.boardedAt,
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Passenger checked in successfully!",
-      booking,
-    });
-  } catch (error) {
-    console.error("[Check In Error]:", error);
-    res.status(500).json({ success: false, message: "Server error updating check-in status" });
-  }
-});
-
-/**
- * GET /api/bookings/:bookingId
- * Returns booking details.
- */
-router.get("/:bookingId", protect, async (req, res) => {
-  try {
-    const { bookingId } = req.params;
-    const userId = req.user.id || req.user._id;
-
-    const bookingRow = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
-      ].filter(Boolean)
-    });
-
-    if (!bookingRow) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    const trip = await AgentTrip.findById(bookingRow.tripId);
-    const passengers = await Passenger.find({
-      $or: [
-        { bookingId: bookingRow._id },
-        { bookingId: bookingRow.bookingId }
-      ]
-    }).lean();
-
-    const booking = {
-      ...bookingRow.toObject(),
-      _id: bookingRow._id,
-      agentTrip: trip ? { ...trip.toObject(), _id: trip._id } : null,
-      passengers,
-    };
-
-    const chatRoomId = trip ? `trip_pkg_${trip._id}` : null;
-    const invoiceUrl = `/api/bookings/${bookingRow.bookingId || bookingRow._id}/pdf`;
-
-    res.status(200).json({
-      success: true,
-      booking,
-      trip: booking.agentTrip || null,
-      driver: trip?.driver || null,
-      passengers,
-      chatRoomId,
-      invoiceUrl,
-      pdfUrl: invoiceUrl,
-      boardingAvailable: booking.agentTrip && booking.agentTrip.boardingStatus === "OPEN",
-    });
-  } catch (error) {
-    console.error("[Booking Fetch] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error fetching booking details" });
-  }
-});
-
-/**
- * POST /api/bookings/confirm
- * Confirms all passengers and seats for a booking in one request.
- * Accepts: { bookingId, travellers, tripId }
- */
-router.post("/confirm", protect, async (req, res) => {
-  const { bookingId, travellers, tripId } = req.body;
-  const userId = req.user._id || req.user.id;
-
-  if (!bookingId || !tripId || !travellers) {
-    return res.status(400).json({ success: false, message: "bookingId, tripId, and travellers are required" });
-  }
-
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null },
-      ].filter(Boolean),
-    });
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    // Update booking status
-    booking.paymentStatus = "Paid";
-    booking.status = "Paid";
-    booking.bookingStatus = "confirmed";
-    booking.paymentVerified = true;
-    booking.paymentDate = new Date();
-    await booking.save();
-
-    const createdPassengers = [];
-
-    for (let i = 0; i < travellers.length; i++) {
-      const pData = travellers[i];
-      const seatNumber = pData.seatNumber;
-
-      if (!seatNumber) continue;
-
-      // 1. Create/update Passenger document
-      const passenger = await Passenger.findOneAndUpdate(
-        { bookingId: booking._id, seatNumber },
-        {
-          bookingId: booking._id,
-          bookingRef: booking.bookingId,
-          tripId,
-          userId,
-          name: pData.name || "",
-          age: Number(pData.age) || 0,
-          gender: pData.gender || "Other",
-          phone: pData.phone || "",
-          emergencyContact: pData.emergencyContact || "",
-          seatNumber,
-          seatPreference: pData.seatPreference || "No Preference",
-          specialRequest: pData.specialRequest || "",
-          status: "active",
-          paymentStatus: "completed",
-          qrPayload: {
-            bookingId: booking.bookingId || String(booking._id),
-            tripId: String(tripId),
-            passenger: pData.name,
-            seat: seatNumber,
-            gender: pData.gender,
-            age: pData.age,
-            timestamp: new Date().toISOString(),
+        const instance = new Razorpay({ key_id: keyId, key_secret: keySecret });
+        const rzpOrder = await instance.orders.create({
+          amount: amountPaise,
+          currency: "INR",
+          receipt: `rcpt_${bookingDraft.id.slice(0, 8)}_${Date.now()}`,
+          notes: {
+            bookingId: bookingDraft.id,
+            userId: userId,
+            tripId: tripId || "",
           },
-        },
-        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
-      );
-
-      createdPassengers.push(passenger);
-
-      // 2. Mark SeatBooking as booked
-      await SeatBooking.updateOne(
-        { tripId, seatNumber },
-        {
-          status: "booked",
-          bookingId: booking._id,
-          passengerId: passenger._id,
-          passengerName: pData.name || "",
-          gender: pData.gender || "Other",
-          age: Number(pData.age) || 0,
-          paymentStatus: "completed",
-          reservedUntil: null,
-        }
-      );
-
-
-
-      // 4. Emit live seat update
-      const io = req.app.get("io");
-      if (io) {
-        io.to(`trip_${tripId}`).emit("seat_update", {
-          tripId,
-          seatNumber,
-          status: "booked",
-          gender: pData.gender || "Other",
-          passengerName: pData.name || "",
-          age: pData.age || 0,
         });
+        orderId = rzpOrder.id;
+        console.log("✅ [Razorpay Live/Test Order Created via SDK]:", rzpOrder);
+      } catch (rzpErr) {
+        console.warn("⚠️ [Razorpay Order SDK Warning - Falling back to mock order]:", rzpErr.message);
       }
     }
 
-    res.status(200).json({
+    const responsePayload = {
       success: true,
-      booking,
-      passengers: createdPassengers,
-      message: "Booking and seat reservations confirmed successfully",
-    });
+      bookingDraftId: bookingDraft.id,
+      bookingId: bookingDraft.booking_code || bookingDraft.id,
+      booking: bookingDraft,
+      orderId,
+      amount: computedTotal,
+      amountPaise,
+      currency: "INR",
+      razorpayKey: keyId || "rzp_test_dummykeyid",
+    };
+
+    console.log("=================== CREATED BOOKING ORDER RESPONSE ===================");
+    console.log(JSON.stringify(responsePayload, null, 2));
+    console.log("======================================================================");
+
+    res.status(201).json(responsePayload);
   } catch (error) {
-    console.error("[Booking Confirm] Error:", error);
-    res.status(500).json({ success: false, message: "Server Error confirming booking" });
+    console.error("❌ [Create Order Error]:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to create booking order" });
   }
-});
-
-// Cancellation OTP map storage
-const cancelOtps = new Map();
-
-// @route   POST /api/bookings/:bookingId/send-cancel-otp
-// @desc    Generate and send cancellation OTPs to mobile and email
-// @access  Private (Traveler)
-router.post("/:bookingId/send-cancel-otp", protect, async (req, res) => {
-  const { bookingId } = req.params;
-  const userId = req.user.id || req.user._id;
-
-  try {
-    const booking = await Booking.findOne({ _id: bookingId, userId });
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    const email = booking.travellers?.[0]?.email || req.user.email;
-    const phone = booking.travellers?.[0]?.phone || booking.contactNumber || req.user.phone || "";
-
-    if (!email) {
-      return res.status(400).json({ success: false, message: "No email address found for this booking" });
-    }
-
-    const emailOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const mobileOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
-
-    cancelOtps.set(bookingId.toString(), {
-      emailOtp,
-      mobileOtp,
-      expiresAt
-    });
-
-    console.log(`[Cancellation OTP] Session created for Booking: ${bookingId}`);
-
-    try {
-      const { sendTravelerOtpEmail } = await import("../services/emailService.js");
-      await sendTravelerOtpEmail(email, emailOtp);
-    } catch (emailErr) {
-      console.error("Failed to send cancellation OTP email:", emailErr);
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Cancellation OTPs sent successfully.",
-    });
-  } catch (error) {
-    console.error("[Send Cancel OTP Error]:", error);
-    res.status(500).json({ success: false, message: "Server error sending cancellation OTP" });
-  }
-});
-
-// @route   POST /api/bookings/:bookingId/verify-cancel-otp
-// @desc    Verify cancellation OTPs and process refund
-// @access  Private (Traveler)
-router.post("/:bookingId/verify-cancel-otp", protect, async (req, res) => {
-  const { bookingId } = req.params;
-  const { emailOtp, mobileOtp } = req.body;
-  const userId = req.user.id || req.user._id;
-
-  if (!emailOtp || !mobileOtp) {
-    return res.status(400).json({ success: false, message: "Both email and mobile OTPs are required." });
-  }
-
-  try {
-    const booking = await Booking.findOne({ _id: bookingId, userId }).populate("tripId");
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    if (booking.paymentStatus === "Cancelled") {
-      return res.status(400).json({ success: false, message: "Booking is already cancelled" });
-    }
-
-    const key = bookingId.toString();
-    const record = cancelOtps.get(key);
-
-    if (!record) {
-      return res.status(400).json({ success: false, message: "Cancellation OTP not requested or expired." });
-    }
-
-    if (Date.now() > record.expiresAt) {
-      cancelOtps.delete(key);
-      return res.status(400).json({ success: false, message: "Cancellation OTPs expired. Please try again." });
-    }
-
-    if (record.emailOtp !== emailOtp || record.mobileOtp !== mobileOtp) {
-      return res.status(400).json({ success: false, message: "Invalid OTPs. Please try again." });
-    }
-
-    cancelOtps.delete(key);
-    
-    // 1. Update Booking status
-    booking.paymentStatus = "Cancelled";
-    booking.bookingStatus = "cancelled";
-    booking.status = "Cancelled";
-    booking.refundStatus = "Refund Initiated";
-    await booking.save();
-
-    // 2. Release seat booking from seat collections
-    const SeatBooking = mongoose.model("SeatBooking");
-    await SeatBooking.deleteMany({ bookingId: booking._id });
-
-    // 3. Increment trip available seats
-    const AgentTrip = mongoose.model("AgentTrip");
-    const trip = await AgentTrip.findById(booking.tripId);
-    if (trip) {
-      trip.bookedSeats = Math.max(0, (trip.bookedSeats || 0) - booking.seats);
-      trip.availableSeats = (trip.availableSeats || 0) + booking.seats;
-      const totalS = trip.totalSeats || 40;
-      trip.occupancy = totalS > 0 ? Math.round((trip.bookedSeats / totalS) * 100) : 0;
-      trip.occupancyRate = trip.occupancy;
-      await trip.save();
-    }
-
-    // 4. Emit live seat updates for all released seats
-    const io = req.app.get("io");
-    if (io && booking.seatNumbers?.length > 0) {
-      booking.seatNumbers.forEach(seatNum => {
-        io.to(`trip_${booking.tripId?._id || booking.tripId}`).emit("seat_update", {
-          tripId: booking.tripId?._id || booking.tripId,
-          seatNumber: seatNum,
-          status: "available",
-          gender: null,
-          passengerName: null,
-          age: null
-        });
-      });
-    }
-
-    // 5. Send cancellation email
-    const email = booking.travellers?.[0]?.email || req.user.email;
-    if (email) {
-      try {
-        console.log(`[Cancellation Email Sent] Booking ${booking.bookingId} cancelled for ${email}`);
-      } catch (emailErr) {
-        console.error("Failed to send cancellation confirmation email:", emailErr);
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Booking cancelled and refund initiated successfully.",
-      booking
-    });
-  } catch (error) {
-    console.error("[Verify Cancel OTP Error]:", error);
-    res.status(500).json({ success: false, message: "Server error during cancellation" });
-  }
-});
-
-// Initialize Razorpay Instance helper
-const getRazorpayInstance = () => {
-  const key_id = process.env.RAZORPAY_KEY_ID;
-  const key_secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET;
-
-  if (!key_id || !key_secret) {
-    console.warn("[Razorpay] WARNING: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET / RAZORPAY_SECRET missing in env. Using dummy defaults.");
-  }
-  return new Razorpay({
-    key_id: key_id || "rzp_test_dummykeyid",
-    key_secret: key_secret || "dummysecretvalue",
-  });
 };
 
-// @route   POST /api/bookings/create-order
-// @desc    Create booking draft, lock seats, and generate Razorpay order.
-// @access  Private (Traveler)
-router.post("/create-order", protect, async (req, res) => {
-  const {
-    tripId,
-    travellers = [],
-    seatNumbers = [],
-    totalAmount = 0,
-    pickupLocation = "",
-    couponCode = "",
-    maleCount = 0,
-    femaleCount = 0,
-    adults = 1,
-    children = 0,
-  } = req.body;
+router.post("/create-order", protect, handleCreateBookingOrder);
+router.post("/create", protect, handleCreateBookingOrder);
 
-  const userId = req.user._id || req.user.id;
-
-  if (!userId) {
-    return res.status(401).json({ success: false, message: "User session expired. Please log in again." });
-  }
-  if (!tripId) {
-    return res.status(400).json({ success: false, message: "tripId is required" });
-  }
-  if (!seatNumbers || !Array.isArray(seatNumbers) || seatNumbers.length === 0) {
-    return res.status(400).json({ success: false, message: "At least one seat must be selected." });
-  }
-  if (!travellers || !Array.isArray(travellers) || travellers.length !== seatNumbers.length) {
-    return res.status(400).json({ success: false, message: "Passenger details must match selected seats." });
-  }
-  if (totalAmount <= 0) {
-    return res.status(400).json({ success: false, message: "Booking amount must be greater than zero." });
-  }
-
+// GET /api/bookings/my-bookings & /api/bookings/my
+const handleGetMyBookings = async (req, res) => {
   try {
-    const trip = await AgentTrip.findById(tripId);
-    if (!trip) {
-      return res.status(404).json({ success: false, message: "Trip not found." });
-    }
+    const userId = req.user.id;
+    const { data: rows, error } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
 
-    if (trip.bookingDeadline) {
-      const deadline = new Date(trip.bookingDeadline);
-      if (!isNaN(deadline.getTime()) && new Date() > deadline) {
-        return res.status(400).json({ success: false, message: "Bookings closed for this trip." });
-      }
-    }
+    if (error) throw error;
 
-    if ((trip.availableSeats || 0) < seatNumbers.length) {
-      return res.status(400).json({ success: false, message: "Not enough available seats left on this trip." });
-    }
-
-    // Check for permanently booked seats
-    const alreadyBooked = await SeatBooking.find({
-      tripId,
-      seatNumber: { $in: seatNumbers },
-      status: "booked"
-    });
-    if (alreadyBooked.length > 0) {
-      const bookedList = alreadyBooked.map(s => s.seatNumber).join(", ");
-      return res.status(400).json({
-        success: false,
-        message: `Seat(s) ${bookedList} are already permanently booked.`
-      });
-    }
-
-    // Try to lock seats (15-minute window — enough to complete Razorpay checkout)
-    const SEAT_LOCK_TTL = 900;
-    const now = new Date();
-    const lockExpiresAt = new Date(Date.now() + SEAT_LOCK_TTL * 1000);
-    const locksAcquired = [];
-
-    for (const seatNumber of seatNumbers) {
-      const seatDoc = await SeatBooking.findOne({ tripId, seatNumber });
-      if (seatDoc && seatDoc.status === "reserved" && seatDoc.reservedUntil && seatDoc.reservedUntil > now) {
-        if (String(seatDoc.reservedByUserId) !== String(userId)) {
-          // Rollback previous locks
-          for (const sNum of locksAcquired) {
-            await SeatBooking.updateOne({ tripId, seatNumber: sNum }, { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" });
-          }
-          return res.status(409).json({
-            success: false,
-            message: `Seat ${seatNumber} is temporarily reserved by another traveler.`
-          });
-        }
-      }
-
-      await SeatBooking.updateOne(
-        { tripId, seatNumber },
-        {
-          status: "reserved",
-          reservedUntil: lockExpiresAt,
-          lockExpiresAt,
-          reservedByUserId: userId,
-          paymentStatus: "pending"
-        }
-      );
-      locksAcquired.push(seatNumber);
-
-      const io = req.app.get("io");
-      if (io) {
-        io.to(`trip_${tripId}`).emit("seat_update", {
-          tripId,
-          seatNumber,
-          status: "reserved",
-          reservedUntil: lockExpiresAt
-        });
-      }
-    }
-
-    // Save Booking Draft
-    const bookingId = generateBookingId();
-    const User = mongoose.model("User");
-    const userObj = await User.findById(userId);
-
-    // Validate Coupon Code if provided
-    let discountAmount = 0;
-    let finalAmount = totalAmount;
-
-    if (couponCode && String(couponCode).trim()) {
-      const normalizedCode = String(couponCode).trim().toUpperCase();
-
-      // 1. Check if it's a User Referral Code
-      const inviter = await User.findOne({ referralCode: normalizedCode });
-      if (inviter) {
-        if (String(inviter._id) === String(userId)) {
-          return res.status(400).json({
-            success: false,
-            message: "You cannot use your own referral code"
-          });
-        }
-        
-        // Referral codes give a flat 5% discount
-        const discountPercent = 5;
-        discountAmount = Math.round(totalAmount * (discountPercent / 100));
-        finalAmount = totalAmount - discountAmount;
-      } else {
-        // 2. Search Coupon Collection
-        const Coupon = mongoose.model("Coupon");
-        const coupon = await Coupon.findOne({ couponCode: normalizedCode });
-        if (!coupon) {
-          return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
-        }
-
-        if (coupon.status === "INACTIVE") {
-          return res.status(400).json({ success: false, message: "Invalid Coupon Code" });
-        }
-
-        if (coupon.expiryDate && new Date() > new Date(coupon.expiryDate)) {
-          return res.status(400).json({ success: false, message: "Coupon Expired" });
-        }
-
-        if (totalAmount < coupon.minimumAmount) {
-          return res.status(400).json({
-            success: false,
-            message: `Minimum Booking Amount Not Met`
-          });
-        }
-
-        if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
-          return res.status(400).json({ success: false, message: "Coupon Limit Reached" });
-        }
-
-        // User Eligibility Check (max 1 usage per user of a coupon)
-        const userUsage = await Booking.countDocuments({
-          userId,
-          couponCode: normalizedCode,
-          paymentStatus: "Paid"
-        });
-        if (userUsage > 0) {
-          return res.status(400).json({ success: false, message: "Coupon Already Used" });
-        }
-
-        // Calculate discount
-        if (coupon.discountType === "PERCENTAGE") {
-          discountAmount = Math.round(totalAmount * (coupon.discountValue / 100));
-          if (coupon.maxDiscount !== null && discountAmount > coupon.maxDiscount) {
-            discountAmount = coupon.maxDiscount;
-          }
-        } else {
-          discountAmount = coupon.discountValue;
-        }
-
-        if (discountAmount > totalAmount) {
-          discountAmount = totalAmount;
-        }
-
-        finalAmount = totalAmount - discountAmount;
-      }
-    }
-
-    const normalizeGender = (g) => {
-      if (!g) return "Other";
-      const lower = g.toLowerCase();
-      if (lower === "male") return "Male";
-      if (lower === "female") return "Female";
-      return "Other";
-    };
-
-    const travelersNormalized = travellers.map(t => ({
-      name: t.name,
-      age: Number(t.age || 0),
-      gender: normalizeGender(t.gender),
-      phone: t.phone || t.travelerPhone || "",
-      email: t.email || t.accountEmail || "",
-      accountEmail: t.accountEmail || userObj?.email || "",
-      emailVerified: true,
-      phoneVerified: true,
+    const bookings = (rows || []).map((b) => ({
+      ...b,
+      _id: b.id,
+      bookingId: b.booking_code || b.id,
+      totalAmount: b.total_amount,
+      finalAmount: b.final_amount,
+      bookingStatus: b.booking_status,
+      paymentStatus: b.payment_status,
+      qrCode: b.qr_code_url,
     }));
 
-    const booking = await Booking.create({
-      bookingId,
-      userId,
-      tripId,
-      agentId: trip.agentId || trip.agent,
-      seats: seatNumbers.length,
-      seatNumbers,
-      pricePaid: finalAmount,
-      amount: finalAmount,
-      amountPaid: 0,
-      status: "DRAFT",
-      bookingStatus: "draft",
-      paymentStatus: "PENDING",
-      paymentVerified: false,
-      assignedSeat: seatNumbers[0] || "",
-      travelerName: travelersNormalized[0]?.name || "",
-      gender: normalizeGender(travelersNormalized[0]?.gender || ""),
-      contactNumber: req.user.phone || req.user.phoneNumber || userObj?.phone || "",
-      age: travelersNormalized[0]?.age || 0,
-      travellers: travelersNormalized,
-      passengers: travelersNormalized.map((t, idx) => ({
-        name: t.name,
-        age: Number(t.age || 0),
-        gender: t.gender,
-        seat: seatNumbers[idx] || t.seatNumber || "",
-        seatNumber: seatNumbers[idx] || t.seatNumber || "",
-      })),
-      maleCount,
-      femaleCount,
-      adults,
-      children,
-      pickupLocation,
-      contactEmail: req.user.email || userObj?.email || "",
-      accountEmail: userObj?.email || "",
-      bookingForOthers: travelersNormalized[0]?.bookingForOthers || false,
-      couponCode: couponCode ? couponCode.trim().toUpperCase() : "",
-      discountAmount,
-      originalAmount: totalAmount,
-      finalAmount,
-      paymentAmount: finalAmount,
-    });
-
-
-    // Create Razorpay Order
-    const amountPaise = Math.round(finalAmount * 100); // integer paise, no decimals
-    const options = {
-      amount: amountPaise,
-      currency: "INR",
-      receipt: `RCPT-${bookingId}`,
-    };
-
-    console.log("[Create Order] Incoming Create Order request:");
-    console.log("[Create Order] tripId:", tripId, "| userId:", userId);
-    console.log("[Create Order] finalAmount (rupees):", finalAmount, "| amountPaise:", amountPaise);
-    console.log("[Create Order] seatNumbers:", seatNumbers, "| travellers count:", travellers.length);
-    console.log("[Create Order] RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID);
-    console.log("[Create Order] Razorpay options:", JSON.stringify(options));
-
-    let order;
-    try {
-      const rzp = getRazorpayInstance();
-      order = await rzp.orders.create(options);
-      console.log("[Create Order] Razorpay Order created successfully:", JSON.stringify({
-        id: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        status: order.status,
-        receipt: order.receipt,
-      }));
-    } catch (rzpErr) {
-      // Do NOT silently fall back to a mock order — a mock order_id will always
-      // cause "Something went wrong" inside the Razorpay checkout popup because
-      // the order_id doesn't exist on Razorpay's servers.
-      console.error("[Create Order] Razorpay API call FAILED:", rzpErr.message || rzpErr);
-      if (rzpErr.error) {
-        console.error("[Create Order] Razorpay error body:", JSON.stringify(rzpErr.error));
-      }
-      // Cancel the booking draft since payment can't proceed
-      if (booking && booking._id) {
-        booking.status = "CANCELLED";
-        booking.bookingStatus = "cancelled";
-        await booking.save().catch(() => {});
-        // Release seat locks
-        for (const seatNum of seatNumbers) {
-          await SeatBooking.updateOne(
-            { tripId, seatNumber: seatNum },
-            { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
-          ).catch(() => {});
-        }
-      }
-      return res.status(502).json({
-        success: false,
-        message: rzpErr?.error?.description || rzpErr.message || "Razorpay order creation failed. Check your API credentials.",
-        razorpayError: rzpErr?.error || null,
-      });
-    }
-
-    booking.orderId = order.id;
-    booking.status = "PENDING_PAYMENT";
-    booking.bookingStatus = "pending";
-    await booking.save();
-
-    res.status(201).json({
-      success: true,
-      orderId: order.id,           // Razorpay order_id (e.g. "order_XXXXXXXXXXXXXXX")
-      amount: finalAmount,         // rupees (for display only)
-      amountPaise: order.amount,   // paise (use directly in Razorpay checkout options)
-      currency: order.currency,    // from Razorpay response
-      bookingDraftId: booking._id,
-      key: process.env.RAZORPAY_KEY_ID,
-      razorpayKey: process.env.RAZORPAY_KEY_ID
-    });
-
+    res.json({ success: true, count: bookings.length, bookings });
   } catch (error) {
-    console.error("[Create Order API] Unexpected error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-      stack: error.stack
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
-});
+};
 
-// @route   POST /api/bookings/cancel
-// @desc    Cancel draft booking and release temporary seat locks.
-// @access  Private (Traveler)
-router.post("/cancel", protect, async (req, res) => {
-  const { bookingId } = req.body;
-  const userId = req.user._id || req.user.id;
+router.get("/my-bookings", protect, handleGetMyBookings);
+router.get("/my", protect, handleGetMyBookings);
+router.get("/user", protect, handleGetMyBookings);
+router.get("/", protect, handleGetMyBookings);
 
-  if (!bookingId) {
-    return res.status(400).json({ success: false, message: "bookingId is required." });
-  }
-
-  try {
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId: bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
-      ].filter(Boolean),
-      userId
-    });
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking draft not found." });
-    }
-
-    for (const seatNumber of booking.seatNumbers) {
-      await SeatBooking.updateOne(
-        { tripId: booking.tripId, seatNumber },
-        { status: "available", reservedUntil: null, reservedByUserId: null, paymentStatus: "none" }
-      );
-
-      const io = req.app.get("io");
-      if (io) {
-        io.to(`trip_${booking.tripId}`).emit("seat_update", {
-          tripId: booking.tripId,
-          seatNumber,
-          status: "available"
-        });
-      }
-    }
-
-    booking.status = "CANCELLED";
-    booking.bookingStatus = "cancelled";
-    booking.paymentStatus = "FAILED";
-    await booking.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Booking draft cancelled and seat locks released."
-    });
-  } catch (error) {
-    console.error("[Cancel Draft API] Error:", error);
-    res.status(500).json({ success: false, message: "Server error cancelling booking draft." });
-  }
-});
-
-// @route   POST /api/bookings/finalize
-// @desc    Verify and finalize a booking draft.
-// @access  Private (Traveler)
-router.post("/finalize", protect, async (req, res) => {
-  const { bookingId, paymentId, orderId, signature } = req.body;
-
-  if (!bookingId) {
-    return res.status(400).json({ success: false, message: "bookingId is required." });
-  }
-
-  try {
-    const result = await BookingService.finalizeBooking({
-      bookingId,
-      paymentId,
-      orderId,
-      signature
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Booking finalized successfully.",
-      booking: result.booking,
-      payment: result.payment
-    });
-  } catch (error) {
-    console.error("[Finalize Booking API] Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server error finalizing booking." });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/bookings/boarding-status/:bookingId
-// Lightweight endpoint used by MyTrips (polling + socket fallback) to get the
-// current boarding & QR-unlock state without fetching the entire booking doc.
-// ─────────────────────────────────────────────────────────────────────────────
-router.get("/boarding-status/:bookingId", protect, async (req, res) => {
+// GET /api/bookings/ticket/:bookingId  — Booking Success page
+// GET /api/bookings/details/:bookingId — alias
+const handleGetBookingTicket = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    if (!bookingId || !mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    console.log(`[Booking Ticket] Fetching ticket for ID: ${bookingId}`);
+
+    // Fetch booking (by UUID or booking_code)
+    const { data: b, error: bErr } = await supabase
+      .from("bookings")
+      .select("*")
+      .or(`id.eq.${bookingId},booking_code.eq.${bookingId}`)
+      .maybeSingle();
+
+    if (bErr) {
+      console.error("[Booking Ticket] Supabase error:", bErr);
+      return res.status(500).json({ success: false, message: bErr.message });
     }
 
-    const booking = await Booking.findById(bookingId).select(
-      "boardingStatus qrUnlocked boardingWindowOpen tripId userId boardedAt"
-    );
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
+    if (!b) {
+      console.warn(`[Booking Ticket] No booking found for ID: ${bookingId}`);
+      return res.status(404).json({ success: false, message: `Booking not found for ID: ${bookingId}` });
     }
 
-    // Ensure the requesting user owns this booking
-    if (booking.userId.toString() !== (req.user._id || req.user.id).toString()) {
-      return res.status(403).json({ success: false, message: "Forbidden" });
+    console.log(`[Booking Ticket] Found booking:`, { id: b.id, code: b.booking_code, status: b.booking_status, agentTripId: b.agent_trip_id });
+
+    // Fetch related trip info
+    let tripTitle = "Your Trip";
+    let startDate = null;
+    let pickupLocation = "";
+    if (b.agent_trip_id) {
+      const { data: trip } = await supabase
+        .from("agent_trips")
+        .select("title, start_date, pickup_location")
+        .eq("id", b.agent_trip_id)
+        .maybeSingle();
+      if (trip) {
+        tripTitle = trip.title || tripTitle;
+        startDate = trip.start_date || null;
+        pickupLocation = trip.pickup_location || "";
+      }
     }
 
-    // Also fetch the trip's boarding status so the frontend knows if driver
-    // has opened the window at the trip level.
-    const trip = await AgentTrip.findById(booking.tripId).select(
-      "boardingStatus boardingOpenedAt boardingClosesAt"
-    );
+    // Fetch passengers linked to this booking
+    const { data: passengerRows } = await supabase
+      .from("passengers")
+      .select("*")
+      .eq("booking_id", b.id);
 
-    res.json({
-      success: true,
-      boardingStatus: booking.boardingStatus || "LOCKED",
-      qrUnlocked: booking.qrUnlocked || false,
-      boardingWindowOpen: booking.boardingWindowOpen || false,
-      boardedAt: booking.boardedAt || null,
-      trip: trip
-        ? {
-            boardingStatus: trip.boardingStatus || "CLOSED",
-            boardingOpenedAt: trip.boardingOpenedAt,
-            boardingClosesAt: trip.boardingClosesAt,
-          }
-        : null,
-    });
-  } catch (err) {
-    console.error("[Boarding Status]", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    const passengers = (passengerRows || []).map((p) => ({
+      ...p,
+      seatNumber: p.seat_number || p.seatNumber || "N/A",
+      name: p.name || p.passenger_name || "",
+    }));
+
+    const booking = {
+      ...b,
+      _id: b.id,
+      bookingId: b.booking_code || b.id,
+      totalAmount: b.total_amount,
+      finalAmount: b.final_amount,
+      bookingStatus: b.booking_status,
+      paymentStatus: b.payment_status,
+      qrCode: b.qr_code_url,
+      tripTitle,
+      startDate,
+      pickupLocation,
+    };
+
+    res.json({ success: true, booking, passengers });
+  } catch (error) {
+    console.error("[Booking Ticket] Unexpected error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+router.get("/ticket/:bookingId", protect, handleGetBookingTicket);
+router.get("/details/:bookingId", protect, handleGetBookingTicket);
+
+// ── Shared helper: look up a booking by UUID or booking_code safely ────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const findBookingById = async (rawId) => {
+  // Detect whether it looks like a UUID
+  const isUuid = UUID_RE.test(rawId);
+
+  if (isUuid) {
+    // Try UUID first, then fallback to booking_code
+    const { data: byUuid } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("id", rawId)
+      .maybeSingle();
+    if (byUuid) return byUuid;
+  }
+
+  // Always try booking_code (safe for TLP-... strings)
+  const { data: byCode } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("booking_code", rawId)
+    .maybeSingle();
+  return byCode || null;
+};
+
+// ── Enrich a raw booking row with trip + passengers ────────────────────────
+const enrichBooking = async (b) => {
+  let agentTrip = null;
+  let tripTitle = "Your Trip";
+  let startDate = null;
+  let pickupLocation = "";
+
+  if (b.agent_trip_id) {
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", b.agent_trip_id)
+      .maybeSingle();
+
+    if (trip) {
+      agentTrip = {
+        ...trip,
+        _id: trip.id,
+        title: trip.title,
+        destination: trip.destination,
+        startDate: trip.start_date,
+        endDate: trip.end_date,
+        pricePerPerson: trip.price_per_person,
+        availableSeats: trip.available_seats,
+        totalSlots: trip.total_slots,
+        busType: trip.bus_type,
+        busAmenities: trip.bus_amenities,
+        hotelName: trip.hotel_name,
+        hotelRating: trip.hotel_rating,
+        itinerary: trip.itinerary || [],
+        images: trip.images || [],
+        thumbnail: trip.thumbnail,
+        inclusions: trip.inclusions || [],
+        exclusions: trip.exclusions || [],
+        pickupLocation: trip.pickup_location || "",
+        status: trip.status,
+        duration: trip.duration_days ? `${trip.duration_days}D/${trip.duration_nights || trip.duration_days - 1}N` : "",
+      };
+      tripTitle = trip.title || tripTitle;
+      startDate = trip.start_date;
+      pickupLocation = trip.pickup_location || "";
+    }
+  }
+
+  const { data: passengerRows } = await supabase
+    .from("passengers")
+    .select("*")
+    .eq("booking_id", b.id);
+
+  const passengers = (passengerRows || []).map((p) => ({
+    ...p,
+    _id: p.id,
+    seatNumber: p.seat_number || p.seatNumber || "N/A",
+    name: p.name || p.passenger_name || "",
+  }));
+
+  return {
+    ...b,
+    _id: b.id,
+    bookingId: b.booking_code || b.id,
+    totalAmount: b.total_amount,
+    finalAmount: b.final_amount,
+    bookingStatus: b.booking_status,
+    paymentStatus: b.payment_status,
+    status: b.booking_status,
+    qrCode: b.qr_code_url,
+    agentTrip,
+    tripTitle,
+    startDate,
+    pickupLocation,
+    passengers,
+    seatNumbers: passengers.map((p) => p.seatNumber),
+  };
+};
+
+// GET /api/bookings/:id  — by UUID or booking_code
+router.get("/:id", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`[Booking GET /:id] Looking up: ${id}`);
+
+    const b = await findBookingById(id);
+    if (!b) {
+      console.warn(`[Booking GET /:id] Not found for: ${id}`);
+      return res.status(404).json({ success: false, message: `Booking not found: ${id}` });
+    }
+
+    const booking = await enrichBooking(b);
+    console.log(`[Booking GET /:id] Found: ${b.id} | code: ${b.booking_code} | status: ${b.booking_status}`);
+    res.json({ success: true, booking });
+  } catch (error) {
+    console.error(`[Booking GET /:id] Error:`, error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/bookings/:id/user-trip  — fallback used by BookedPackageDetail
+router.get("/:id/user-trip", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`[Booking GET /:id/user-trip] Looking up: ${id}`);
+
+    const b = await findBookingById(id);
+    if (!b) {
+      console.warn(`[Booking GET /:id/user-trip] Not found for: ${id}`);
+      return res.status(404).json({ success: false, message: `Booking not found: ${id}` });
+    }
+
+    const booking = await enrichBooking(b);
+    console.log(`[Booking GET /:id/user-trip] Found: ${b.id}`);
+    res.json({ success: true, booking, userTrip: null, agency: null });
+  } catch (error) {
+    console.error(`[Booking GET /:id/user-trip] Error:`, error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/bookings/:id/cancel
+router.post("/:id/cancel", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const b = await findBookingById(id);
+    if (!b) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    await supabase
+      .from("bookings")
+      .update({ booking_status: "CANCELLED" })
+      .eq("id", b.id);
+
+    res.json({ success: true, message: "Booking cancelled successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

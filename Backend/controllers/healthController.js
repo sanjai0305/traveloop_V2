@@ -1,25 +1,26 @@
-import mongoose from "mongoose";
+import supabase from "../config/supabase.js";
 
 export const getSystemHealth = async (req, res) => {
   console.log("[Health Check] Checking infrastructure status...");
-  
-  const mongoStatus = mongoose.connection.readyState === 1 ? "healthy" : "unhealthy";
-  const isOverallHealthy = mongoStatus === "healthy";
 
-  // Calculate process uptime
+  let supabaseStatus = "unhealthy";
+  try {
+    const { error } = await supabase.from("bus_types").select("id").limit(1);
+    supabaseStatus = error ? "unhealthy" : "healthy";
+  } catch {
+    supabaseStatus = "unhealthy";
+  }
+
   const uptimeSeconds = process.uptime();
-  const hours = Math.floor(uptimeSeconds / 3600);
+  const hours   = Math.floor(uptimeSeconds / 3600);
   const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const uptimeString = `${hours}h ${minutes}m`;
+  const uptimeString  = `${hours}h ${minutes}m`;
+  const memoryString  = `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`;
 
-  // Calculate memory usage (RSS)
-  const memoryUsageRss = process.memoryUsage().rss;
-  const memoryString = `${Math.round(memoryUsageRss / 1024 / 1024)}MB`;
-
-  res.status(isOverallHealthy ? 200 : 503).json({
-    mongodb: mongoStatus,
-    uptime: uptimeString,
-    memory: memoryString,
+  res.status(supabaseStatus === "healthy" ? 200 : 503).json({
+    supabase: supabaseStatus,
+    database: supabaseStatus,
+    uptime:   uptimeString,
+    memory:   memoryString,
   });
 };
-

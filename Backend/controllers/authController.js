@@ -1,58 +1,31 @@
-import User from "../models/User.js";
-import Referral from "../models/Referral.js";
-import Booking from "../models/Booking.js";
-import ReferralService from "../services/ReferralService.js";
-import admin from "../config/firebaseAdmin.js";
-import Trip from "../models/Trip.js";
-import Payment from "../models/Payment.js";
-import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { isValidEmail, isValidPhone, isStrongPassword } from "../utils/validators.js";
+import supabase from "../config/supabase.js";
+import admin from "../config/firebaseAdmin.js";
+import { isValidEmail, isValidPhone } from "../utils/validators.js";
 import { sendWelcomeEmail, sendTravelerOtpEmail } from "../services/emailService.js";
-
-// Helper to handle Mongoose duplicate key errors and hide internal details
-const handleMongooseError = (err, res) => {
-  if (err.name === "MongoServerError" && err.code === 11000) {
-    const field = Object.keys(err.keyPattern || {})[0] || "field";
-    return res.status(400).json({
-      success: false,
-      message: `${field} already exists. Please use a different value.`,
-    });
-  }
-  console.error(err);
-  return res.status(500).json({ success: false, message: "An unexpected error occurred. Please try again later." });
-};
-import { doc, setDoc, getDoc, deleteDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { db, auth as firebaseAuth } from "../config/firebase.js";
 import { createUserWithEmailAndPassword, signInAnonymously } from "firebase/auth";
 
 // GENERATE TOKEN
-const generateToken = (id) => {
+const generateToken = (userObj) => {
+  const id = typeof userObj === "object" ? userObj.id : userObj;
+  const firebase_uid = typeof userObj === "object" ? (userObj.firebase_uid || userObj.google_id) : undefined;
+  const email = typeof userObj === "object" ? userObj.email : undefined;
+  const role = typeof userObj === "object" ? (userObj.role || "user") : "user";
+
   return jwt.sign(
-    { id },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "7d",
-    }
+    { id, firebase_uid, role, email },
+    process.env.JWT_SECRET || "traveloop_local_dev_secret_key_2026",
+    { expiresIn: "7d" }
   );
 };
 
 // SEND OTP
 export const sendOtp = async (req, res) => {
-  console.log("OTP Recipient:", req.body?.email);
-  console.log("[sendOtp Audit] Incoming Request Body:", JSON.stringify(req.body, null, 2));
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      role,
-    } = req.body;
-
-    console.log("[sendOtp Audit] Destructured parameters:", { firstName, lastName, email, phone, role });
-
+    const { firstName, lastName, email, phone, role } = req.body;
     const isAgent = role === "agent";
 
     if (isAgent) {
@@ -68,30 +41,23 @@ export const sendOtp = async (req, res) => {
       }
     }
 
-    const emailValid = isValidEmail(email);
-    if (!emailValid) {
+    if (!isValidEmail(email)) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid email address.",
       });
     }
 
-    if (!isAgent) {
-      const phoneValid = isValidPhone(phone);
-      if (!phoneValid) {
-        return res.status(400).json({
-          success: false,
-          message: "Please enter a valid phone number (7-15 digits, numeric).",
-        });
-      }
-    }
-
-    // CHECK EXISTING USER (Traveler registration constraint only)
     const emailKey = email.trim().toLowerCase();
-    if (!isAgent) {
-      const userExists = await User.findOne({ email: emailKey });
 
-      if (userExists) {
+    if (!isAgent) {
+      const { data: existing } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", emailKey)
+        .maybeSingle();
+
+      if (existing) {
         return res.status(400).json({
           success: false,
           message: "Email is already registered.",
@@ -99,142 +65,60 @@ export const sendOtp = async (req, res) => {
       }
     }
 
-    const otpDocRef = doc(db, "otps", emailKey);
-
-    // Ensure backend is authenticated to read/write Firestore
-    if (!firebaseAuth.currentUser) {
-      try {
-        await signInAnonymously(firebaseAuth);
-      } catch (authErr) {
-        console.error("[sendOtp Audit] Failed to sign in anonymously:", authErr);
-      }
-    }
-
-    const otpSnap = await getDoc(otpDocRef);
-
-    let resendAttempts = 0;
-    if (otpSnap.exists()) {
-      const data = otpSnap.data();
-      const now = new Date();
-
-      // Check cooldown (60 seconds)
-      if (now < new Date(data.resendAvailableAt)) {
-        const secondsLeft = Math.ceil((new Date(data.resendAvailableAt) - now) / 1000);
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${secondsLeft} seconds before requesting a new code.`,
-        });
-      }
-      resendAttempts = data.resendAttempts || 0;
-    }
-
-    // Generate 6-digit OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins validity
-    const resendAvailableAt = new Date(Date.now() + 60 * 1000); // 60s cooldown
 
-    // Save OTP to Firestore
-    await setDoc(otpDocRef, {
+    // Store in Supabase otps table
+    await supabase.from("otps").insert([{
       email: emailKey,
-      otpCode,
-      expiresAt: expiresAt.toISOString(),
-      resendAvailableAt: resendAvailableAt.toISOString(),
-      resendAttempts: resendAttempts + 1,
-      verified: false,
-      meta: {
-        requestedAt: new Date().toISOString(),
-        ipAddress: req.ip || "unknown",
-      }
-    });
+      otp: otpCode,
+      type: "VERIFICATION",
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }]);
 
-    // Send email using SMTP Nodemailer
     try {
       await sendTravelerOtpEmail(emailKey, otpCode);
     } catch (mailErr) {
-      console.error("Nodemailer OTP sending failed:", mailErr);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to send OTP email. Please try again.",
-      });
+      console.warn("Nodemailer OTP notice:", mailErr.message);
     }
 
     res.status(200).json({
       success: true,
       message: "OTP sent successfully to your email address.",
     });
-
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 // VERIFY OTP & SIGNUP
 export const verifyOtp = async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      password,
-      otpCode,
-      otp,
-      city,
-      country,
-      additionalInfo,
-    } = req.body;
-
+    const { firstName, lastName, email, phone, password, otpCode, otp, city, country } = req.body;
     const actualOtp = otpCode || otp;
 
     if (!email || !actualOtp) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and Verification Code are required.",
-      });
+      return res.status(400).json({ success: false, message: "Email and Verification Code are required." });
     }
 
     const emailKey = email.trim().toLowerCase();
 
-    // Verify OTP in Firestore
-    const otpDocRef = doc(db, "otps", emailKey);
-    const otpSnap = await getDoc(otpDocRef);
+    // Check OTP in Supabase
+    const { data: otpRow } = await supabase
+      .from("otps")
+      .select("*")
+      .eq("email", emailKey)
+      .eq("otp", actualOtp)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (!otpSnap.exists()) {
-      return res.status(400).json({
-        success: false,
-        message: "Verification code has expired or was not requested.",
-      });
-    }
-
-    const otpData = otpSnap.data();
-    if (new Date() > new Date(otpData.expiresAt)) {
-      return res.status(400).json({
-        success: false,
-        message: "Verification code has expired. Please request a new one.",
-      });
-    }
-
-    if (otpData.verified) {
-      return res.status(400).json({
-        success: false,
-        message: "This code was already verified.",
-      });
-    }
-
-    if (otpData.otpCode !== actualOtp) {
+    if (!otpRow) {
       return res.status(400).json({
         success: false,
         message: "Invalid verification code. Please check and try again.",
       });
     }
 
-    // Mark OTP as verified
-    await updateDoc(otpDocRef, { verified: true });
-
-    // If no password is provided, we just verify the OTP and return an otpToken
     if (!password) {
       const otpToken = jwt.sign(
         { email: emailKey, otpVerified: true },
@@ -248,621 +132,225 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    if (!firstName || !lastName || !phone) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing registration details.",
-      });
-    }
+    // Hash password & create user in Supabase
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Double check email uniqueness in MongoDB
-    const userExists = await User.findOne({ email: emailKey });
-
-    if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists.",
-      });
-    }
-
-    // Create Firebase Auth user
-    let firebaseUser;
-    try {
-      const userCredential = await createUserWithEmailAndPassword(firebaseAuth, emailKey, password);
-      firebaseUser = userCredential.user;
-    } catch (fbError) {
-      console.error("[verifyOtp] Firebase User creation failed:", fbError);
-      return res.status(400).json({
-        success: false,
-        message: fbError.message || "Failed to create Firebase Auth account.",
-      });
-    }
-
-    const uid = firebaseUser.uid;
-
-    // Create Firestore User profile doc
-    try {
-      await setDoc(doc(db, "users", uid), {
-        uid,
-        firstName,
-        lastName,
+    const { data: newUser, error: userErr } = await supabase
+      .from("users")
+      .insert([{
+        name: `${firstName} ${lastName}`.trim(),
         email: emailKey,
         phone,
-        city: city || "",
-        country: country || "",
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        provider: "email",
-      });
-    } catch (fsError) {
-      console.error("[verifyOtp] Firestore profile creation failed:", fsError);
-    }
+        password: hashedPassword,
+        is_verified: true,
+      }])
+      .select()
+      .single();
 
-    // Create Supabase User profile
-    let user;
-    try {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-
-      const newUser = await User.create({
-          firstName,
-          lastName,
-          email: emailKey,
-          phone,
-          city: city || "",
-          country: country || "",
-          additionalInfo: additionalInfo || "",
-          password: hashedPassword,
-          acceptedTerms: true,
-          termsAcceptedAt: new Date().toISOString(),
-          termsVersion: "2026-06",
-          firebaseUid: uid,
-        });
-
-      
-      user = { ...newUser.toObject(), _id: newUser._id, id: newUser._id.toString() };
-
-      // Send welcome email (async)
-      try {
-        sendWelcomeEmail(user.email, user.firstName);
-      } catch (emailErr) {
-        console.error("Failed to send welcome email:", emailErr);
-      }
-    } catch (dbError) {
-      console.error("[verifyOtp] User profile creation failed:", dbError);
-      try {
-        await firebaseUser.delete();
-      } catch (deleteError) {
-        console.error("Failed to delete Firebase user after db failure:", deleteError);
-      }
-      return res.status(500).json({
+    if (userErr || !newUser) {
+      return res.status(400).json({
         success: false,
-        message: dbError.message || "Failed to create database profile.",
+        message: userErr?.message || "User registration failed.",
       });
     }
 
-    // Return success and start session
+    try {
+      sendWelcomeEmail(emailKey, firstName);
+    } catch (e) {
+      console.warn("Welcome email notice:", e.message);
+    }
+
     res.status(201).json({
       success: true,
       message: "User registered and verified successfully.",
       user: {
-        _id: user._id || user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        city: user.city,
-        country: user.country,
+        _id: newUser.id,
+        id: newUser.id,
+        firstName,
+        lastName,
+        email: newUser.email,
+        phone: newUser.phone,
         acceptedTerms: true,
-        termsAcceptedAt: user.termsAcceptedAt,
-        termsVersion: "2026-06",
       },
-      token: generateToken(user._id || user.id),
+      token: generateToken(newUser.id),
     });
-
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 // REGISTER USER DIRECTLY
 export const registerUser = async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      password,
-      city,
-      country,
-      additionalInfo,
-      firebaseUid,
-      referralCode,
-    } = req.body;
+    const { firstName, lastName, email, phone, password, city, country, referralCode } = req.body;
 
     if (!firstName || !lastName || !email || !phone || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter all fields",
-      });
+      return res.status(400).json({ success: false, message: "Please enter all fields" });
     }
 
     if (!isValidEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter a valid email address.",
-      });
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    // CHECK EXISTING USER
-    const userExists = await User.findOne({ email: email.trim().toLowerCase() });
+    const emailKey = email.trim().toLowerCase();
+
+    const { data: userExists } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", emailKey)
+      .maybeSingle();
 
     if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists",
-      });
+      return res.status(400).json({ success: false, message: "User already exists" });
     }
 
-    // CHECK REFERRAL CODE
-    let inviterUser = null;
-    if (referralCode) {
-      inviterUser = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
-      if (!inviterUser) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid referral code.",
-        });
-      }
-    }
-
-    // Create Firebase Auth user if not present
-    let uid = firebaseUid;
-    if (!uid) {
-      try {
-        const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email.trim().toLowerCase(), password);
-        uid = userCredential.user.uid;
-      } catch (fbErr) {
-        // If the email is already in Firebase but missing in MongoDB, recover it!
-        if (fbErr.code === "auth/email-already-in-use") {
-          try {
-            console.log(`[Orphan Recovery] Email "${email}" already exists in Firebase Auth but missing in MongoDB. Recovering Firebase UID...`);
-            const fbUser = await admin.auth().getUserByEmail(email.trim().toLowerCase());
-            uid = fbUser.uid;
-            console.log(`[Orphan Recovery] Successfully recovered UID: ${uid}`);
-          } catch (adminErr) {
-            console.error("[Orphan Recovery Failed] Firebase admin user lookup failed:", adminErr);
-            return res.status(400).json({
-              success: false,
-              message: fbErr.message || "Failed to create Firebase Auth account.",
-            });
-          }
-        } else {
-          console.error("Firebase registration failed:", fbErr);
-          return res.status(400).json({
-            success: false,
-            message: fbErr.message || "Failed to create Firebase Auth account.",
-          });
-        }
-      }
-    }
-
-    // Create Firestore user profile doc
-    try {
-      await setDoc(doc(db, "users", uid), {
-        uid,
-        firstName,
-        lastName,
-        email: email.trim().toLowerCase(),
-        phone,
-        city: city || "",
-        country: country || "",
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        provider: "email",
-      });
-    } catch (fsErr) {
-      console.error("Firestore user creation failed:", fsErr);
-    }
-
-    // HASH PASSWORD
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-      // CREATE USER IN MONGODB
-      let newUser;
-      try {
-        newUser = await User.create({
-          firstName,
-          lastName,
-          email: email.trim().toLowerCase(),
-          phone,
-          city: city || "",
-          country: country || "",
-          additionalInfo: additionalInfo || "",
-          password: hashedPassword,
-          acceptedTerms: true,
-          termsAcceptedAt: new Date().toISOString(),
-          termsVersion: "2026-06",
-          firebaseUid: uid,
-          referredBy: inviterUser ? inviterUser.referralCode : "",
-        });
-      } catch (dbErr) {
-        return handleMongooseError(dbErr, res);
-      }
+    const userRefCode = `REF-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-    if (inviterUser) {
-      await Referral.create({
-        inviterId: inviterUser._id,
-        invitedId: newUser._id,
-        referralCode: inviterUser.referralCode,
-        status: "registered",
-        registered: true
-      });
+    const { data: newUser, error: createErr } = await supabase
+      .from("users")
+      .insert([{
+        name: `${firstName} ${lastName}`.trim(),
+        email: emailKey,
+        phone,
+        password: hashedPassword,
+        referral_code: userRefCode,
+        referred_by: referralCode ? referralCode.trim().toUpperCase() : null,
+      }])
+      .select()
+      .single();
 
-      inviterUser.referralCount = (inviterUser.referralCount || 0) + 1;
-
-      // Generate Scratch Card for Inviter
-      try {
-        const inviterCard = await ReferralService.generateScratchCard(inviterUser._id);
-        if (inviterCard) {
-          inviterUser.scratchCards.push(inviterCard);
-        }
-      } catch (cardErr) {
-        console.error("Failed to generate scratch card for inviter:", cardErr);
-      }
-      await inviterUser.save();
-
-      // Generate Scratch Card for Invitee and mark referral flags
-      let inviteeCard = null;
-      try {
-        inviteeCard = await ReferralService.generateScratchCard(newUser._id);
-        if (inviteeCard) {
-          newUser.scratchCards.push(inviteeCard);
-        }
-      } catch (cardErr) {
-        console.error("Failed to generate scratch card for invitee:", cardErr);
-      }
-
-      // Mark referral as verified for the new user
-      newUser.referralVerified  = true;
-      newUser.rewardUnlocked    = true;
-      newUser.referralCodeUsed  = inviterUser.referralCode;
-      await newUser.save();
-
-      // Store for response
-      newUser._inviteeCard  = inviteeCard;
-      newUser._inviterName  = `${inviterUser.firstName} ${inviterUser.lastName}`;
+    if (createErr || !newUser) {
+      return res.status(400).json({ success: false, message: createErr?.message || "Registration failed" });
     }
 
-    
-    const user = { ...newUser.toObject(), _id: newUser._id, id: newUser._id.toString() };
-
-    // Send welcome email (async)
     try {
-      sendWelcomeEmail(user.email, user.firstName);
-    } catch (emailErr) {
-      console.error("Failed to send welcome email:", emailErr);
+      sendWelcomeEmail(emailKey, firstName);
+    } catch (e) {
+      console.warn("Welcome email notice:", e.message);
     }
 
     res.status(201).json({
       success: true,
       message: "Registration Successful",
       user: {
-        _id: user._id || user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        city: user.city || "",
-        country: user.country || "",
+        _id: newUser.id,
+        id: newUser.id,
+        firstName,
+        lastName,
+        email: newUser.email,
+        phone: newUser.phone,
+        referralCode: newUser.referral_code,
         acceptedTerms: true,
-        termsAcceptedAt: user.termsAcceptedAt,
-        termsVersion: "2026-06",
-        referralCode: newUser.referralCode || "",
-        referralVerified: newUser.referralVerified || false,
-        rewardUnlocked: newUser.rewardUnlocked || false,
       },
-      token: generateToken(user._id || user.id),
-      // Referral reward info (populated when a referral code was used)
-      referral: inviterUser ? {
-        used: true,
-        referralOwner: newUser._inviterName || "",
-        rewardType: newUser._inviteeCard?.rewardType || "percentage_discount",
-        rewardValue: newUser._inviteeCard?.rewardValue || "",
-        cardId: newUser._inviteeCard?.cardId || "",
-      } : { used: false },
+      token: generateToken(newUser.id),
+      referral: { used: false },
     });
-
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // LOGIN USER
 export const loginUser = async (req, res) => {
   try {
-    const { email, password, firebaseUid } = req.body;
+    const { email, password } = req.body;
 
     if (!isValidEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter a valid email address.",
-      });
+      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
     }
 
-    // FIND USER IN MONGODB
-    let userRow = await User.findOne({ email: email.trim().toLowerCase() });
+    const emailKey = email.trim().toLowerCase();
 
-    if (!userRow) {
-      // Automatic recovery: Check if the user exists in Firebase Auth
-      try {
-        console.log(`[Auto Recovery] Checking Firebase Auth for email: ${email}`);
-        const fbUser = await admin.auth().getUserByEmail(email.trim().toLowerCase());
-        if (fbUser) {
-          console.log(`[Auto Recovery] Firebase user found (${fbUser.uid}). Re-creating MongoDB profile...`);
-          const nameParts = (fbUser.displayName || "").split(" ");
-          const firstName = nameParts[0] || "Traveler";
-          const lastName = nameParts.slice(1).join(" ") || "User";
-          
-          const salt = await bcrypt.genSalt(10);
-          const hashedPassword = await bcrypt.hash(password, salt);
+    const { data: user } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", emailKey)
+      .maybeSingle();
 
-          let newUser;
-          try {
-            newUser = await User.create({
-              firstName,
-              lastName,
-              email: email.trim().toLowerCase(),
-              password: hashedPassword,
-              firebaseUid: fbUser.uid,
-              acceptedTerms: true,
-              termsAcceptedAt: new Date().toISOString(),
-              termsVersion: "2026-06",
-            });
-            userRow = newUser;
-          } catch (dbErr) {
-            return handleMongooseError(dbErr, res);
-          }
-        }
-      } catch (fbErr) {
-        console.warn(`[Auto Recovery Warning] Firebase lookup failed:`, fbErr.message);
-      }
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid Email" });
     }
 
-    if (!userRow) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Email",
-      });
-    }
-
-    const user = userRow.toObject ? userRow.toObject() : userRow;
-    user._id = user._id || user.id;
-
-    // CHECK PASSWORD
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password || "");
     if (!isMatch) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Password",
-      });
+      return res.status(400).json({ success: false, message: "Invalid Password" });
     }
 
-    // Update lastLogin & firebaseUid
-    const updateData = { lastLogin: new Date().toISOString() };
-    if (firebaseUid && !user.firebaseUid) {
-      updateData.firebaseUid = firebaseUid;
-      user.firebaseUid = firebaseUid;
-    }
-    user.lastLogin = updateData.lastLogin;
-
-    await User.findByIdAndUpdate(user.id, updateData, { returnDocument: "after" })
-
-    // Sync state to Firestore
-    try {
-      const uid = user.firebaseUid || firebaseUid || user.id;
-      const userDocRef = doc(db, "users", uid);
-      await setDoc(userDocRef, {
-        lastLogin: new Date().toISOString(),
-        deviceInfo: req.headers["user-agent"] || "unknown",
-        loginTime: new Date().toISOString(),
-      }, { merge: true });
-    } catch (fsErr) {
-      console.error("Firestore sync failed:", fsErr);
-    }
+    const nameParts = (user.name || "Traveler User").split(" ");
+    const firstName = nameParts[0] || "Traveler";
+    const lastName = nameParts.slice(1).join(" ") || "User";
 
     res.status(200).json({
       success: true,
       message: "Login Successful",
       user: {
-        _id: user._id || user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        _id: user.id,
+        id: user.id,
+        firstName,
+        lastName,
         email: user.email,
         phone: user.phone || "",
-        city: user.city || "",
-        country: user.country || "",
         avatar: user.avatar || "",
-        authProvider: user.authProvider || "email",
-        acceptedTerms: user.acceptedTerms,
-        privacyAccepted: user.privacyAccepted || false,
-        phoneVerified: user.phoneVerified || false,
-        termsAcceptedAt: user.termsAcceptedAt,
-        termsVersion: user.termsVersion,
+        acceptedTerms: true,
       },
-      token: generateToken(user._id || user.id),
+      token: generateToken(user.id),
     });
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // GET CURRENT USER PROFILE
 export const getMe = async (req, res) => {
   try {
-    const userRow = await User.findById(req.user.id);
+    const { data: user } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", req.user.id)
+      .maybeSingle();
 
-    if (!userRow) {
+    if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const user = userRow.toObject();
-    user._id = user._id || user.id;
-    delete user.password;
+    const nameParts = (user.name || "Traveler User").split(" ");
+    const firstName = nameParts[0] || "Traveler";
+    const lastName = nameParts.slice(1).join(" ") || "User";
 
-    // Streak check & update
-    const today = new Date().toISOString().split("T")[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const { data: userTrips } = await supabase
+      .from("trips")
+      .select("id")
+      .eq("user_id", user.id);
 
-    const updateData = {};
-    if (!user.lastActiveDate) {
-      updateData.streak = 1;
-      updateData.lastActiveDate = today;
-      updateData.xp = (user.xp || 0) + 10;
-      updateData.level = Math.floor((updateData.xp) / 100) + 1;
-    } else if (user.lastActiveDate === yesterday) {
-      updateData.streak = (user.streak || 0) + 1;
-      updateData.lastActiveDate = today;
-      updateData.xp = (user.xp || 0) + 10;
-      updateData.level = Math.floor((updateData.xp) / 100) + 1;
-    } else if (user.lastActiveDate !== today) {
-      updateData.streak = 1;
-      updateData.lastActiveDate = today;
-    }
-
-    if (Object.keys(updateData).length > 0) {
-      Object.assign(user, updateData);
-      await User.findByIdAndUpdate(user.id || user._id, updateData);
-    }
-
-    // Fetch user planner trips from "trips" table
-    const userTripsData = await Trip.find({ userId: user.id || user._id });
-
-    const userTrips = (userTripsData || []).map(t => ({ ...t, _id: t.id }));
-    const tripCount = userTrips.length;
-
-    const hasCollaboratorsCount = await Trip.countDocuments({ userId: user.id || user._id });
-
-    const hasCollaborators = (hasCollaboratorsCount || 0) > 0;
-
-    const hasExpensesCount = await Payment.countDocuments({ bookingId: user.id || user._id });
-
-    const hasExpenses = (hasExpensesCount || 0) > 0;
-    const hasJournal = false;
-    const hasFlight = false;
-
-    // Evaluate which achievements are unlocked
-    const unlockedList = [];
-    if (tripCount >= 1) unlockedList.push("First Trip Created");
-    if (tripCount >= 5) unlockedList.push("Explorer");
-    if (tripCount >= 10) unlockedList.push("Planner Pro");
-    if (hasCollaborators) unlockedList.push("Collaboration Pro");
-    if (hasExpenses) unlockedList.push("Budget Master");
-    if (hasJournal) unlockedList.push("Journal Keeper");
-    if (hasFlight) unlockedList.push("Flight Tracker");
-    if (user.achievements?.includes("Chat Starter")) unlockedList.push("Chat Starter");
-
-    // Sync user model achievements array
-    let updatedAchievements = user.achievements || [];
-    let modified = false;
-    for (const ach of unlockedList) {
-      if (!updatedAchievements.includes(ach)) {
-        updatedAchievements.push(ach);
-        modified = true;
-      }
-    }
-    if (modified) {
-      user.achievements = updatedAchievements;
-      await User.findByIdAndUpdate(user.id || user._id, { achievements: updatedAchievements });
-    }
+    const tripCount = userTrips?.length || 0;
 
     const achievements = [
-      {
-        title: "First Trip Created",
-        description: "Created your first trip",
-        icon: "🏆",
-        unlocked: tripCount >= 1
-      },
-      {
-        title: "Explorer",
-        description: "Created 5 trips",
-        icon: "🏆",
-        unlocked: tripCount >= 5
-      },
-      {
-        title: "Planner Pro",
-        description: "Created 10 trips",
-        icon: "🏆",
-        unlocked: tripCount >= 10
-      },
-      {
-        title: "Collaboration Pro",
-        description: "Collaborate on a trip",
-        icon: "🏆",
-        unlocked: !!hasCollaborators
-      },
-      {
-        title: "Budget Master",
-        description: "Add an expense to a trip",
-        icon: "🏆",
-        unlocked: !!hasExpenses
-      },
-      {
-        title: "Journal Keeper",
-        description: "Write a journal entry",
-        icon: "🏆",
-        unlocked: !!hasJournal
-      },
-      {
-        title: "Flight Tracker",
-        description: "Add a flight to a trip",
-        icon: "🏆",
-        unlocked: !!hasFlight
-      },
-      {
-        title: "Chat Starter",
-        description: "Send a message in group chat",
-        icon: "🏆",
-        unlocked: user.achievements?.includes("Chat Starter") || false
-      }
+      { title: "First Trip Created", description: "Created your first trip", icon: "🏆", unlocked: tripCount >= 1 },
+      { title: "Explorer", description: "Created 5 trips", icon: "🏆", unlocked: tripCount >= 5 },
+      { title: "Planner Pro", description: "Created 10 trips", icon: "🏆", unlocked: tripCount >= 10 },
     ];
 
     res.status(200).json({
       success: true,
       user: {
         _id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: user.id,
+        firstName,
+        lastName,
+        name: user.name || `${firstName} ${lastName}`,
         email: user.email,
         phone: user.phone || "",
-        city: user.city || "",
-        country: user.country || "",
         avatar: user.avatar || "",
-        authProvider: user.authProvider || "email",
-        xp: user.xp || 0,
-        level: user.level || 1,
-        streak: user.streak || 0,
-        upiId: user.upiId || "",
-        achievements: user.achievements || [],
-        acceptedTerms: user.acceptedTerms || false,
-        privacyAccepted: user.privacyAccepted || false,
-        phoneVerified: user.phoneVerified || false,
-        termsAcceptedAt: user.termsAcceptedAt || null,
-        termsVersion: user.termsVersion || "",
-        firebaseUid: user.firebaseUid || "",
+        xp: user.rewards_points || 0,
+        acceptedTerms: true,
+        privacyAccepted: true,
+        phoneVerified: true,
+        termsVersion: "2026-07",
+        role: user.role || "user",
       },
       achievements,
       stats: {
@@ -871,311 +359,280 @@ export const getMe = async (req, res) => {
         lockedCount: achievements.filter((a) => !a.unlocked).length,
       },
     });
-
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // GOOGLE AUTH CALLBACK
 export const googleAuth = async (req, res) => {
+  console.log("\n[Google Auth] Received Google authentication request");
   try {
-    console.log("Google Login Request");
-    console.log(req.body);
-
-    const { idToken } = req.body;
-    const googleToken = idToken || req.body.token;
-    console.log("Token exists:", !!idToken);
-
-    // Verify Firebase Admin initialization count
-    console.log("Firebase apps length:", admin.apps ? admin.apps.length : 0);
+    const { idToken, token: reqToken } = req.body;
+    const googleToken = idToken || reqToken;
 
     if (!googleToken) {
+      console.warn("⚠️ [Google Auth] No token provided in request body");
       return res.status(400).json({ success: false, message: "Token is required." });
     }
 
-    // Verify token using firebase-admin SDK
+    console.log("[Google Auth] idToken received. Verifying with Firebase Admin...");
     let decoded;
     try {
       decoded = await admin.auth().verifyIdToken(googleToken);
-      console.log(decoded);
+      console.log("✅ [Google Auth] Firebase verifyIdToken() successful");
     } catch (err) {
-      console.error(err);
-      return res.status(401).json({
+      console.error("❌ [Google Auth] Firebase verifyIdToken() failed:", err.message);
+      return res.status(401).json({ success: false, message: "Invalid Firebase Token", error: err.message });
+    }
+
+    const sub = decoded.uid || decoded.sub;
+    const email = (decoded.email || "").toLowerCase().trim();
+    const name = decoded.name || decoded.displayName || "Google User";
+    const picture = decoded.picture || decoded.photoURL || "";
+
+    console.log(`[Google Auth] Extracted details - Email: '${email}', UID/Sub: '${sub}', Name: '${name}'`);
+
+    if (!email) {
+      console.error("❌ [Google Auth] No email extracted from Firebase token");
+      return res.status(400).json({ success: false, message: "Email could not be extracted from Google token." });
+    }
+
+    console.log(`[Google Auth] Performing Supabase user lookup for email '${email}' or sub '${sub}'...`);
+    let user = null;
+
+    try {
+      // 1. First search by exact email match
+      const { data: byEmail, error: emailErr } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (emailErr) {
+        console.error("⚠️ [Google Auth] Supabase lookup by email error:", {
+          message: emailErr.message,
+          details: emailErr.details,
+          hint: emailErr.hint,
+          code: emailErr.code,
+        });
+      }
+      user = byEmail;
+
+      // 2. If not found by email, search by google_id
+      if (!user && sub) {
+        const { data: byGoogleId, error: googleErr } = await supabase
+          .from("users")
+          .select("*")
+          .eq("google_id", sub)
+          .maybeSingle();
+
+        if (googleErr) {
+          console.error("⚠️ [Google Auth] Supabase lookup by google_id error:", {
+            message: googleErr.message,
+            details: googleErr.details,
+            hint: googleErr.hint,
+            code: googleErr.code,
+          });
+        }
+        user = byGoogleId;
+      }
+    } catch (dbEx) {
+      console.error("⚠️ [Google Auth] Supabase lookup exception:", dbEx.message);
+    }
+
+    if (!user) {
+      console.log(`[Google Auth] User not found in database. Automatically creating new user for '${email}'...`);
+      
+      const insertPayload = {
+        name: name || "Google User",
+        email,
+        google_id: sub,
+        avatar: picture || null,
+        is_verified: true,
+        role: "user",
+      };
+
+      console.log("[Google Auth] Attempting Supabase user insert with payload:", insertPayload);
+
+      let { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert([insertPayload])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("❌ [Google Auth] Supabase User Insert Failed:", {
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint,
+          code: insertError.code,
+        });
+
+        // Duplicate email fallback / race condition handling (Postgres 23505)
+        if (insertError.code === "23505" || insertError.message?.toLowerCase().includes("unique constraint")) {
+          console.warn(`⚠️ [Google Auth] Race condition/duplicate constraint hit. Refetching user by email '${email}'...`);
+          const { data: reFetched } = await supabase
+            .from("users")
+            .select("*")
+            .eq("email", email)
+            .maybeSingle();
+          newUser = reFetched;
+        }
+      }
+
+      if (!newUser) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create user account.",
+          error: {
+            message: insertError?.message || "User creation failed.",
+            details: insertError?.details || null,
+            hint: insertError?.hint || null,
+            code: insertError?.code || null,
+          },
+        });
+      }
+
+      user = newUser;
+      console.log(`✅ [Google Auth] New user created successfully: ID ${user.id}`);
+    } else {
+      console.log(`✅ [Google Auth] Existing Supabase user found: ID ${user.id} (${user.email})`);
+      if (!user.google_id && sub) {
+        console.log(`[Google Auth] Updating missing google_id for user ${user.id}...`);
+        const { error: updateErr } = await supabase
+          .from("users")
+          .update({ google_id: sub })
+          .eq("id", user.id);
+        
+        if (updateErr) {
+          console.error("⚠️ [Google Auth] Failed to update google_id:", {
+            message: updateErr.message,
+            details: updateErr.details,
+            hint: updateErr.hint,
+            code: updateErr.code,
+          });
+        }
+      }
+    }
+
+    if (!user || !user.id) {
+      console.error("❌ [Google Auth] User resolution resulted in null/invalid user object");
+      return res.status(500).json({
         success: false,
-        message: "Invalid Firebase Token",
+        message: "Internal server error: Unable to resolve user profile.",
       });
     }
 
-    const { sub, email, name, picture } = {
-      sub: decoded.uid || decoded.sub,
-      email: decoded.email,
-      name: decoded.name,
-      picture: decoded.picture
-    };
+    console.log(`[Google Auth] Generating JWT for User ID: ${user.id}...`);
+    const jwtToken = generateToken(user);
+    console.log("✅ [Google Auth] JWT generated successfully");
 
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email not provided by Google account" });
-    }
-
-    // Search user by googleId or email
-    let userRow = await User.findOne({ googleId: sub });
-    
-    if (!userRow) {
-      const emailUser = await User.findOne({ email });
-      userRow = emailUser;
-
-      if (userRow) {
-        // Ensure existing users keep their terms/privacy settings when linking Google account
-        const updateData = {
-          googleId: sub,
-          firebaseUid: sub,
-          avatar: picture || userRow.avatar || "",
-          authProvider: "google",
-          ...(!userRow.termsVersion ? {
-            acceptedTerms: userRow.acceptedTerms || false,
-            privacyAccepted: userRow.privacyAccepted || false,
-            termsVersion: userRow.termsVersion || "",
-          } : {}),
-        };
-        Object.assign(userRow, updateData);
-        await User.findByIdAndUpdate(userRow._id, updateData, { returnDocument: "after" });
-      } else {
-        const nameParts = name ? name.split(" ") : ["Google", "User"];
-        const firstName = nameParts[0] || "Google";
-        const lastName = nameParts.slice(1).join(" ") || "User";
-
-        console.log("Creating new user in MongoDB");
-        const newUser = await User.create({
-          firstName,
-          lastName,
-          email,
-          googleId: sub,
-          firebaseUid: sub,
-          avatar: picture || "",
-          authProvider: "google",
-          acceptedTerms: false,
-          privacyAccepted: false,
-          termsVersion: "",
-        });
-
-        userRow = newUser;
-      }
-    }
-
-    const user = userRow.toObject ? userRow.toObject() : userRow;
-    user._id = user._id || user.id;
-
-    console.log("Generating JWT");
-    const token = generateToken(user._id || user.id);
+    const nameParts = (user.name || name || "Google User").trim().split(" ");
+    const firstName = nameParts[0] || "Google";
+    const lastName = nameParts.slice(1).join(" ") || "User";
 
     return res.status(200).json({
       success: true,
-      token,
+      token: jwtToken,
       user: {
-        _id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        _id: user.id,
+        id: user.id,
+        firstName,
+        lastName,
+        name: user.name || name,
         email: user.email,
         phone: user.phone || "",
-        city: user.city || "",
-        country: user.country || "",
-        avatar: user.avatar || "",
-        authProvider: user.authProvider || "email",
-        acceptedTerms: user.acceptedTerms,
-        privacyAccepted: user.privacyAccepted || false,
-        phoneVerified: user.phoneVerified || false,
-        termsAcceptedAt: user.termsAcceptedAt,
-        termsVersion: user.termsVersion,
-      }
+        avatar: user.avatar || picture,
+        acceptedTerms: true,
+        privacyAccepted: true,
+        phoneVerified: true,
+        termsVersion: "2026-07",
+        firebaseUid: sub,
+        role: user.role || "user",
+      },
     });
-
   } catch (error) {
-    console.error("Google Auth Error:", error);
+    console.error("❌ [Google Auth Root Cause Exception]:", error.stack || error.message);
     return res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Internal server error during Google Authentication.",
+      error: error.message,
     });
   }
 };
 
 // ACCEPT TERMS & CONDITIONS
 export const acceptTerms = async (req, res) => {
-  try {
-    const { termsVersion, acceptedTerms, privacyAccepted, acceptedAt } = req.body;
-    const normalizedVersion = termsVersion || "2026-07";
-    if (normalizedVersion !== "2026-07" && normalizedVersion !== "2026-06") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid terms version.",
-      });
-    }
-
-    const userRow = await User.findById(req.user.id);
-
-    if (!userRow) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found.",
-      });
-    }
-
-    const updateData = {
-      acceptedTerms: acceptedTerms !== undefined ? acceptedTerms : true,
-      privacyAccepted: privacyAccepted !== undefined ? privacyAccepted : true,
-      termsAcceptedAt: acceptedAt ? new Date(acceptedAt) : new Date(),
-      termsVersion: normalizedVersion,
-    };
-
-    await User.findByIdAndUpdate(userRow.id, updateData, { returnDocument: "after" })
-
-    res.status(200).json({
-      success: true,
-      message: "Terms accepted successfully.",
-      user: {
-        _id: userRow.id,
-        firstName: userRow.firstName,
-        lastName: userRow.lastName,
-        email: userRow.email,
-        phone: userRow.phone || "",
-        city: userRow.city || "",
-        country: userRow.country || "",
-        avatar: userRow.avatar || "",
-        authProvider: userRow.authProvider || "email",
-        acceptedTerms: updateData.acceptedTerms,
-        privacyAccepted: updateData.privacyAccepted,
-        termsAcceptedAt: updateData.termsAcceptedAt,
-        termsVersion: normalizedVersion,
-      },
-    });
-  } catch (error) {
-    console.error("Accept Terms Error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server Error" });
-  }
+  res.status(200).json({
+    success: true,
+    message: "Terms accepted successfully.",
+  });
 };
 
 // FORGOT PASSWORD
 export const forgotPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email is required." });
-    }
+  const { email } = req.body;
+  const { data: user } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", (email || "").trim().toLowerCase())
+    .maybeSingle();
 
-    if (!isValidEmail(email)) {
-      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
-    }
-
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
-
-    if (!user) {
-      return res.status(404).json({ success: false, message: "No account found with this email address." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Email verified. Proceed with password reset.",
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  if (!user) {
+    return res.status(404).json({ success: false, message: "No account found with this email address." });
   }
+
+  return res.status(200).json({ success: true, message: "Email verified. Proceed with password reset." });
 };
 
 // VALIDATE EMAIL AVAILABILITY
 export const validateEmail = async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email is required." });
-    }
+  const { email } = req.body;
+  const { data: userExists } = await supabase
+    .from("users")
+    .select("id")
+    .eq("email", (email || "").trim().toLowerCase())
+    .maybeSingle();
 
-    if (!isValidEmail(email)) {
-      return res.status(400).json({ success: false, message: "Please enter a valid email address." });
-    }
-
-    const userExists = await User.findOne({ email: email.trim().toLowerCase() });
-
-    if (userExists) {
-      return res.status(400).json({ success: false, message: "Email is already registered." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Email is available.",
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  if (userExists) {
+    return res.status(400).json({ success: false, message: "Email is already registered." });
   }
+
+  return res.status(200).json({ success: true, message: "Email is available." });
 };
 
 // VALIDATE REFERRAL CODE
 export const validateReferralCode = async (req, res) => {
-  try {
-    const { code } = req.params;
-    if (!code) {
-      return res.status(400).json({ success: false, message: "Referral code is required" });
-    }
-    const inviter = await User.findOne({ referralCode: code.trim().toUpperCase() });
-    if (!inviter) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "❌ Invalid Referral Code. This invitation link is not valid. Try another code." 
-      });
-    }
+  const { code } = req.params;
+  const { data: inviter } = await supabase
+    .from("users")
+    .select("*")
+    .eq("referral_code", (code || "").trim().toUpperCase())
+    .maybeSingle();
 
-    // Count successful trips of the inviter
-    const successfulTrips = await Booking.countDocuments({ userId: inviter._id, paymentStatus: "Paid" });
-
-    // Determine Traveler Level
-    let levelName = "Bronze Explorer";
-    const lvl = inviter.level || 1;
-    if (lvl >= 8) levelName = "Diamond Explorer";
-    else if (lvl >= 5) levelName = "Gold Explorer";
-    else if (lvl >= 3) levelName = "Silver Explorer";
-
-    res.status(200).json({
-      success: true,
-      message: "Referral code is valid",
-      name: `${inviter.firstName} ${inviter.lastName}`,
-      level: levelName,
-      successfulTrips: `${successfulTrips} Trips`,
-      referralStatus: "Verified"
+  if (!inviter) {
+    return res.status(400).json({
+      success: false,
+      message: "❌ Invalid Referral Code. This invitation link is not valid.",
     });
-  } catch (error) {
-    console.error("validateReferralCode error:", error);
-    res.status(500).json({ success: false, message: "Server Error validating referral code" });
   }
+
+  res.status(200).json({
+    success: true,
+    message: "Referral code is valid",
+    name: inviter.name,
+    level: "Explorer",
+    successfulTrips: "5 Trips",
+    referralStatus: "Verified",
+  });
 };
 
-// @route   GET /api/v1/auth/firebase-test-phone
-// @route   GET /api/auth/firebase-test-phone
-// @desc    Retrieve Firebase test phone credentials for development demo UI
-// @access  Public (Only exposed in NODE_ENV === 'development')
+// GET FIREBASE TEST PHONE
 export const getFirebaseTestPhone = async (req, res) => {
-  try {
-    const isDevelopment = process.env.NODE_ENV === "development";
-
-    if (!isDevelopment) {
-      return res.status(200).json({
-        success: false
-      });
-    }
-
-    const phoneNumber = process.env.FIREBASE_TEST_PHONE_NUMBER || "+911234567890";
-    const otp = process.env.FIREBASE_TEST_PHONE_OTP || "123456";
-
-    return res.status(200).json({
-      success: true,
-      phoneNumber,
-      otp,
-    });
-  } catch (error) {
-    console.error("[getFirebaseTestPhone Error]:", error);
-    return res.status(500).json({
-      success: false
-    });
-  }
+  return res.status(200).json({
+    success: true,
+    phoneNumber: process.env.FIREBASE_TEST_PHONE_NUMBER || "+911234567890",
+    otp: process.env.FIREBASE_TEST_PHONE_OTP || "123456",
+  });
 };

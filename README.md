@@ -1,627 +1,245 @@
-# 🚀 Traveloop V2 - AI Powered Travel Ecosystem
+# 🌍 Traveloop V2 — AI-Powered Multi-Portal Travel Ecosystem
 
-Traveloop V2 is a full-stack travel ecosystem consisting of a Traveler Application, Public Website, Admin Portal, Agent Portal, Driver Portal, and a centralized Backend API.
+[![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white)](./docker-compose.yml)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-v20_LTS-brightgreen?logo=nodedotjs)](./Backend)
+[![FastAPI](https://img.shields.io/badge/FastAPI-v0.100+-009688?logo=fastapi)](./ai-service)
+[![React](https://img.shields.io/badge/React-v19-61DAFB?logo=react)](./user-website)
+
+**Traveloop V2** is an enterprise-grade, end-to-end travel booking, agent operations, driver dispatch, and administrative management platform. Built with a modern microservices & multi-portal architecture, Traveloop leverages real-time WebSocket communication, Supabase PostgreSQL, Redis caching, Qdrant vector search, and Gemini AI to streamline travel discovery, booking, payments, seat reservations, and field operations.
 
 ---
 
-## 📂 Project Structure
+## 🏛️ System Architecture
 
-```text
+```mermaid
+graph TD
+    subgraph Clients["Frontend Applications"]
+        TW["Traveler Platform\n(user-website :3000)"]
+        AP["Agent Portal\n(agent-portal :3002)"]
+        DP["Driver Portal\n(driver-portal :3003)"]
+        AD["Admin Portal\n(admin-portal :3001)"]
+    end
+
+    subgraph Gateway["Reverse Proxy / Routing"]
+        NGINX["Nginx Proxy\n(:80)"]
+    end
+
+    subgraph Services["Core Microservices"]
+        BE["Express Backend API\n(Node.js :5000)"]
+        AI["AI Service\n(FastAPI / Python :8000)"]
+    end
+
+    subgraph Data["Database & Caching Layer"]
+        PG[(Supabase PostgreSQL)]
+        RD[(Redis Cache & Pub/Sub :6379)]
+        QD[(Qdrant Vector DB :6333)]
+        FB[(Firebase Auth & Chat)]
+    end
+
+    Clients --> NGINX
+    NGINX --> BE
+    NGINX --> AI
+    BE --> PG
+    BE --> RD
+    BE --> FB
+    AI --> QD
+    AI --> RD
+    AI --> PG
+```
+
+---
+
+## 🧰 Technology Stack
+
+### **Backend Microservices**
+- **Node.js & Express**: Core REST APIs, WebSocket engine (Socket.io), authentication, payment orchestration.
+- **Python & FastAPI**: AI assistant engine, semantic search, vector embeddings, itinerary personalization.
+
+### **Databases & Storage**
+- **Supabase (PostgreSQL)**: Primary relational store for users, bookings, trips, payments, and seats.
+- **Redis**: Real-time seat lock cache, session states, and AI conversation memory.
+- **Qdrant**: Vector database for AI travel recommendations and semantic search.
+- **Firebase**: Phone OTP verification, Firebase Auth, and real-time chat sync.
+
+### **Frontend Applications**
+- **React 19 + Vite**: High-performance Single Page Applications (SPAs).
+- **Tailwind CSS**: Modern custom design system with dark/light themes.
+- **Framer Motion**: Smooth micro-animations and page transitions.
+
+### **Integrations & Payments**
+- **Razorpay**: Native UPI & card payment processing.
+- **Google Maps API**: Distance matrix, place autocomplete, and live tracking.
+- **Google Gemini 1.5/2.0**: Natural language trip recommendations and itinerary generation.
+
+---
+
+## 📁 Repository Structure
+
+```
 traveloop_V2/
-│
-├── Backend/                 # Node.js + Express API
-├── user-application/        # Main Traveler Application
-├── user-website/            # Public Website
-├── admin-portal/            # Admin Dashboard
-├── agent-portal/            # Travel Agent Portal
-├── driver-portal/           # Driver Portal
-│
-├── project-resources/
-│   ├── legal-site/
-│   └── shared-ui/
-│
-├── LICENSE
-└── README.md
+├── Backend/                 # Express REST API & Socket.io server
+├── ai-service/              # FastAPI Python service for AI & Vector search
+├── user-website/            # Traveler Web Platform (Bookings, Explore, Account)
+├── admin-portal/            # Platform Super-Admin Operations & Approvals
+├── agent-portal/            # Tour Operator Dashboard (Trip Creation & Analytics)
+├── driver-portal/           # Driver Field Operations & QR Ticket Scanner
+├── nginx/                   # Reverse Proxy Configuration
+├── project-resources/       # Shared assets, legal sites, and brand guides
+├── docker-compose.yml       # Production Docker Multi-Container Configuration
+├── .env.example             # Global environment template
+└── README.md                # Documentation
 ```
 
 ---
 
-# 📋 Prerequisites
+## 👥 Multi-Portal Ecosystem
 
-Install the following before running Traveloop V2:
-
-- Node.js 22+
-- npm
-- Git
-- MongoDB Atlas or MongoDB Local
-
-Check installation:
-
-```powershell
-node --version
-npm --version
-git --version
-```
+| Portal | Port | Target Audience | Primary Functionality |
+| :--- | :--- | :--- | :--- |
+| **User Website** | `:3000` | Travelers | Explore packages, select seats, book trips, Razorpay payments, download PDF passes, AI chat. |
+| **Agent Portal** | `:3002` | Tour Agents | Create & publish trips, set seat layouts, manage pricing, view booking logs, slot analytics. |
+| **Admin Portal** | `:3001` | System Admins | Approve/reject agent packages, oversee revenue, manage agent verification, platform metrics. |
+| **Driver Portal** | `:3003` | Bus Drivers | Scan passenger QR boarding passes, mark attendance, transmit live location updates. |
+| **AI Service** | `:8000` | Backend/AI | Semantic trip search, RAG-assisted travel recommendations, vector indexing. |
+| **Express Backend** | `:5000` | Core API | User management, booking transactions, seat lock coordination, PDF generation. |
 
 ---
 
-# ⚡ First-Time Setup
+## 🚀 Quick Start with Docker (Recommended)
 
-After cloning the repository:
+### **Prerequisites**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (v24.0+)
+- [Docker Compose](https://docs.docker.com/compose/) (v2.20+)
 
-```powershell
-git clone https://github.com/sanjai0305/traveloop_V2.git
-
+### **1. Clone & Configure Environment**
+```bash
+git clone https://github.com/your-org/traveloop_v2.git
 cd traveloop_V2
+
+# Copy template env files
+cp .env.example .env
+cp Backend/.env.example Backend/.env
+cp ai-service/.env.example ai-service/.env
+cp user-website/.env.example user-website/.env
 ```
 
-Install dependencies for each application.
+### **2. Launch Services**
+```bash
+docker compose up --build -d
+```
 
-## Backend
+### **3. Verify Running Services**
+```bash
+docker compose ps
+```
+Access points:
+- **Traveler App**: http://localhost:3000
+- **Admin Portal**: http://localhost:3001
+- **Agent Portal**: http://localhost:3002
+- **Driver Portal**: http://localhost:3003
+- **Backend Health**: http://localhost:5000/api/health
+- **AI Service Health**: http://localhost:8000/health
 
-```powershell
+---
+
+## 💻 Local Development Setup (Without Docker)
+
+### **1. Start Core Backend**
+```bash
 cd Backend
 npm install
-cd ..
-```
-
-## Traveler Application
-
-```powershell
-cd user-application
-npm install --legacy-peer-deps
-cd ..
-```
-
-## Public Website
-
-```powershell
-cd user-website
-npm install
-cd ..
-```
-
-## Admin Portal
-
-```powershell
-cd admin-portal
-npm install
-cd ..
-```
-
-## Agent Portal
-
-```powershell
-cd agent-portal
-npm install
-cd ..
-```
-
-## Driver Portal
-
-```powershell
-cd driver-portal
-npm install
-cd ..
-```
-
-> `npm install` is normally required only after cloning the repository or when dependencies/package files change.
-
----
-
-# ▶️ Run Traveloop V2
-
-Traveloop consists of multiple independent services.
-
-For local development, open separate terminals from the repository root.
-
----
-
-## Terminal 1 — Backend API
-
-```powershell
-cd Backend
-node server.js
-```
-
-Backend:
-
-```text
-http://localhost:5000
-```
-
-The backend should normally be started first.
-
----
-
-## Terminal 2 — Traveler Application
-
-```powershell
-cd user-application
 npm run dev
+# Running on http://localhost:5000
 ```
 
-Traveler Application:
+### **2. Start AI Microservice**
+```bash
+cd ai-service
+python -m venv .venv
+# On Windows:
+.venv\Scripts\activate
+# On Linux/macOS:
+source .venv/bin/activate
 
-```text
-http://localhost:5173
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
 ```
 
----
+### **3. Start Frontend Portals**
+```bash
+# Traveler Website
+cd user-website && npm install && npm run dev
 
-## Terminal 3 — Public Website
+# Agent Portal
+cd agent-portal && npm install && npm run dev
 
-```powershell
-cd user-website
-npm run dev
-```
+# Admin Portal
+cd admin-portal && npm install && npm run dev
 
-Public Website:
-
-```text
-http://localhost:5174
-```
-
----
-
-## Terminal 4 — Admin Portal
-
-```powershell
-cd admin-portal
-npm run dev
-```
-
-Admin Portal:
-
-```text
-http://localhost:5175
+# Driver Portal
+cd driver-portal && npm install && npm run dev
 ```
 
 ---
 
-## Terminal 5 — Agent Portal
+## ⚙️ Environment Variables Overview
 
-```powershell
-cd agent-portal
-npm run dev
-```
-
-Agent Portal:
-
-```text
-http://localhost:5176
-```
-
----
-
-## Terminal 6 — Driver Portal
-
-```powershell
-cd driver-portal
-npm run dev
-```
-
-Driver Portal:
-
-```text
-http://localhost:5177
-```
+| Service | Variable Name | Required | Description |
+| :--- | :--- | :--- | :--- |
+| **Backend** | `SUPABASE_URL` | Yes | Supabase PostgreSQL Endpoint |
+| **Backend** | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase Administrative Service Key |
+| **Backend** | `RAZORPAY_KEY_ID` | Yes | Razorpay API Key ID |
+| **Backend** | `RAZORPAY_KEY_SECRET` | Yes | Razorpay API Secret |
+| **Backend** | `REDIS_URL` | Yes | Redis Connection String |
+| **AI Service** | `GEMINI_API_KEY` | Yes | Google Gemini API Key |
+| **AI Service** | `QDRANT_URL` | Yes | Qdrant Vector Database Endpoint |
+| **User Website**| `VITE_API_URL` | Yes | Backend REST API Base URL |
 
 ---
 
-# 🌐 Local Development URLs
+## 🔌 API Summary & Endpoints
 
-| Application | URL |
-|---|---|
-| Backend API | `http://localhost:5000` |
-| Traveler Application | `http://localhost:5173` |
-| Public Website | `http://localhost:5174` |
-| Admin Portal | `http://localhost:5175` |
-| Agent Portal | `http://localhost:5176` |
-| Driver Portal | `http://localhost:5177` |
+### **Authentication & Profile**
+- `POST /api/auth/register` — Register traveler user
+- `POST /api/auth/login` — Login user & obtain JWT token
+- `GET /api/profile` — Fetch user profile & loyalty points
 
----
+### **Trips & Search**
+- `GET /api/trips/published` — Browse live published trips (Traveler view)
+- `GET /api/trips/:id` — Detailed trip view (Itinerary, inclusions, seat layout)
+- `POST /api/agent/trips/create` — Agent creates new trip draft
+- `POST /api/agent/trips/:id/publish` — Publish trip for admin approval
 
-# ⚡ Daily Development
+### **Bookings & Payments**
+- `POST /api/seats/reserve` — Lock seats temporarily in Redis
+- `POST /api/bookings/create-order` — Initialize Razorpay payment & draft booking
+- `POST /api/payment/verify` — Verify Razorpay signature & confirm booking
+- `GET /api/bookings/ticket/:bookingId` — Fetch confirmed pass details & QR code
+- `GET /api/bookings/:bookingId/pdf` — Download PDF pass
 
-After dependencies have already been installed, you DO NOT need to run `npm install` every time.
-
-Simply start the required services.
-
-### Backend
-
-```powershell
-cd Backend
-node server.js
-```
-
-### Traveler Application
-
-```powershell
-cd user-application
-npm run dev
-```
-
-### Public Website
-
-```powershell
-cd user-website
-npm run dev
-```
-
-### Admin Portal
-
-```powershell
-cd admin-portal
-npm run dev
-```
-
-### Agent Portal
-
-```powershell
-cd agent-portal
-npm run dev
-```
-
-### Driver Portal
-
-```powershell
-cd driver-portal
-npm run dev
-```
+### **Driver & Verification**
+- `POST /api/driver/scan-qr` — Scan & validate passenger QR pass at bus entry
 
 ---
 
-# 🎯 Run Only What You Need
+## 🔒 Security & Best Practices
 
-You do not always need to run all six services.
-
-For example, to work only on the Traveler Application:
-
-### Terminal 1
-
-```powershell
-cd Backend
-node server.js
-```
-
-### Terminal 2
-
-```powershell
-cd user-application
-npm run dev
-```
-
-Then open:
-
-```text
-http://localhost:5173
-```
+1. **JWT & Role-Based Access Control**: Strict middleware verification for Travelers, Agents, Drivers, and Admins.
+2. **Double-Query Fallback & Identifier Safety**: Safe UUID vs string identifier resolution preventing Postgres type coercion crashes.
+3. **Optimistic & Pessimistic Seat Locking**: Redis memory locks prevent double-booking of identical seats during checkout.
+4. **Environment Isolation**: No hardcoded API keys or service secrets in repository code.
 
 ---
 
-If working on the Public Website:
+## 📄 License
 
-```powershell
-cd Backend
-node server.js
-```
-
-and in another terminal:
-
-```powershell
-cd user-website
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5174
-```
+Distributed under the MIT License. See [`LICENSE`](./LICENSE) for full details.
 
 ---
 
-# 🔄 Pull Latest Changes
-
-Before starting development on another machine or after repository updates:
-
-```powershell
-git pull origin main
-```
-
-If any `package.json` or `package-lock.json` files changed, reinstall dependencies for the affected application.
-
-Example:
-
-```powershell
-cd user-application
-npm install --legacy-peer-deps
-npm run dev
-```
-
----
-
-# 🔧 Environment Variables
-
-Each application may contain its own `.env` configuration.
-
-Never commit production secrets or private credentials.
-
-## Backend Example
-
-```env
-PORT=5000
-
-MONGO_URI=
-JWT_SECRET=
-
-FIREBASE_PROJECT_ID=
-FIREBASE_PRIVATE_KEY=
-FIREBASE_CLIENT_EMAIL=
-```
-
-## Frontend Example
-
-```env
-VITE_API_URL=http://localhost:5000
-
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-```
-
-Environment variable requirements may differ between individual frontend applications.
-
----
-
-# 🏗️ Production Build
-
-Before deployment, verify that each frontend builds successfully.
-
-## Traveler Application
-
-```powershell
-cd user-application
-npm run build
-```
-
-## Public Website
-
-```powershell
-cd user-website
-npm run build
-```
-
-## Admin Portal
-
-```powershell
-cd admin-portal
-npm run build
-```
-
-## Agent Portal
-
-```powershell
-cd agent-portal
-npm run build
-```
-
-## Driver Portal
-
-```powershell
-cd driver-portal
-npm run build
-```
-
-Successful Vite builds are generated inside each application's:
-
-```text
-dist/
-```
-
-directory.
-
----
-
-# 🧪 Troubleshooting
-
-## `Could not read package.json`
-
-Example:
-
-```text
-npm error code ENOENT
-npm error Could not read package.json
-```
-
-You are most likely running npm from the wrong directory.
-
-Check:
-
-```powershell
-Get-Location
-```
-
-Then enter the required application directory.
-
-Example:
-
-```powershell
-cd user-application
-npm run dev
-```
-
----
-
-## `Missing script: dev`
-
-Verify that you are inside the correct project:
-
-```powershell
-Test-Path .\package.json
-```
-
-Expected:
-
-```text
-True
-```
-
-Then inspect available scripts:
-
-```powershell
-npm run
-```
-
----
-
-## Module / Dependency Error
-
-For most applications:
-
-```powershell
-npm install
-```
-
-For the Traveler Application:
-
-```powershell
-npm install --legacy-peer-deps
-```
-
-Then:
-
-```powershell
-npm run dev
-```
-
----
-
-## Port Already in Use
-
-Check which process is using a port.
-
-Example for port `5173`:
-
-```powershell
-netstat -ano | findstr :5173
-```
-
-Terminate the required process only if appropriate:
-
-```powershell
-taskkill /PID <PID> /F
-```
-
----
-
-# 📦 Tech Stack
-
-### Frontend
-
-- React
-- Vite
-- Tailwind CSS
-- Firebase
-- Google Maps
-- Socket.io Client
-
-### Backend
-
-- Node.js
-- Express.js
-- MongoDB
-- Firebase Admin
-- Socket.io
-
-### Platform
-
-- Traveler Application
-- Public Website
-- Admin Portal
-- Agent Portal
-- Driver Portal
-
----
-
-# ✨ Core Features
-
-- 🤖 AI Trip Planning
-- 🗺️ Itinerary Builder
-- 🧳 Traveler Booking
-- 🏨 Travel Services
-- 📍 Google Maps Integration
-- 💬 Real-Time Trip Communication
-- 👥 Trip Collaboration
-- 👨‍💼 Admin Management
-- 🏢 Travel Agent Portal
-- 🚖 Driver Portal
-- 🔐 Firebase Authentication
-- 📱 Mobile Responsive Traveler Application
-- 🌐 Public Travel Website
-
----
-
-# 📁 Project Resources
-
-Supporting resources are located inside:
-
-```text
-project-resources/
-```
-
-Including:
-
-```text
-project-resources/
-├── legal-site/
-└── shared-ui/
-```
-
-These directories are supporting project resources and should not be confused with the primary runtime applications.
-
----
-
-# 🚨 Important
-
-Do not run:
-
-```powershell
-npm install
-npm run dev
-```
-
-directly from:
-
-```text
-traveloop_V2/
-```
-
-unless a root-level npm workspace is intentionally configured.
-
-Always enter the required application directory first.
-
-Example:
-
-```powershell
-cd user-application
-npm run dev
-```
-
----
-
-# 👨‍💻 Author
-
-**Sanjai R**
-
-GitHub: `sanjai0305`
-
----
-
-# 📄 License
-
-This project is licensed under the MIT License.
+## 🗺️ Roadmap & Future Enhancements
+
+- [ ] Automated Multi-currency support.
+- [ ] Offline PWA ticket caching for drivers in low-connectivity areas.
+- [ ] Real-time GPS bus tracking integration on traveler maps.

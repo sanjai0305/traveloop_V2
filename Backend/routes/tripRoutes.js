@@ -1,43 +1,13 @@
 import express from "express";
-
 import {
   createTrip,
   getTrips,
   getTripById,
   updateTrip,
   deleteTrip,
-  generateShareToken,
-  getSharedTrip,
-  cloneTrip,
-  getActivitiesRecommendations,
-  getDestinationsAutocomplete,
-  getDestinationDetails,
-  getNearbyDestinations,
-  inviteCollaborator,
-  getCollaborators,
-  getPendingInvitations,
-  resendInvitation,
-  removeCollaborator,
-  updateCollaboratorRole,
-  cancelInvitation,
-  leaveTrip,
-  acceptInvite,
-  declineInvite,
-  getActivityLogs,
-  addExpense,
-  deleteExpense,
-  addSettlement,
-  getExchangeRates,
-  exportTripPDF,
-  getTripActivities,
-  createTripActivity,
-  updateTripActivity,
-  deleteTripActivity,
 } from "../controllers/tripController.js";
 import protect from "../middleware/authMiddleware.js";
-import AgentTrip from "../models/AgentTrip.js";
-import Booking from "../models/Booking.js";
-import Agent from "../models/Agent.js";
+import supabase from "../config/supabase.js";
 
 const router = express.Router();
 
@@ -45,322 +15,243 @@ const router = express.Router();
 
 router.get("/published", async (req, res) => {
   try {
-    const data = await AgentTrip.find({
-      isDeleted: { $ne: true },
-      $or: [
-        { isPublished: true },
-        { published: true }
-      ],
-      $or: [
-        { approvalStatus: "APPROVED" },
-        { approvalStatus: "approved" },
-        { status: "APPROVED" }
-      ],
-      status: { $ne: "PENDING_APPROVAL" }
-    }).populate("agentId", "companyName email").sort({ createdAt: -1 });
+    const { data: rows, error } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .or("approval_status.eq.APPROVED,status.eq.published,status.eq.APPROVED")
+      .eq("is_published", true)
+      .order("created_at", { ascending: false });
 
-    const trips = (data || []).map(t => {
-      const mapped = {
-        ...t.toObject(),
-        _id: t._id,
+    if (error) throw error;
+
+    // Filter strictly to ensure approval_status is APPROVED and is_published is true
+    const verifiedTrips = (rows || []).filter(
+      (t) =>
+        (t.approval_status === "APPROVED" || t.approval_status === "approved" || t.status === "published") &&
+        t.is_published === true
+    );
+
+    const trips = verifiedTrips.map((t) => {
+      const cover = (t.images && t.images.length > 0) ? t.images[0] : (t.thumbnail || null);
+      const destName = t.destination || "TBD";
+      return {
+        ...t,
+        _id: t.id,
+        id: t.id,
         isPublished: true,
         published: true,
-        status: "APPROVED",
-        approvalStatus: "approved"
+        status: "published",
+        approvalStatus: "APPROVED",
+        pricePerPerson: t.price_per_person ?? t.price ?? 0,
+        originalPrice: t.original_price ?? t.price_per_person,
+        offerPrice: t.price_per_person,
+        availableSeats: t.available_seats ?? t.available_slots ?? t.total_slots ?? 20,
+        totalSeats: t.total_slots ?? 20,
+        availableSlots: t.available_slots ?? 20,
+        totalSlots: t.total_slots ?? 20,
+        startDate: t.start_date || t.created_at,
+        endDate: t.end_date,
+        coverImage: cover,
+        thumbnail: cover,
+        hero_image: cover,
+        destinations: t.destination ? [t.destination] : [],
+        destinationCity: destName,
+        originCity: t.pickup_location || "Origin",
+        tripType: t.category || "Group Package",
+        category: t.category || "Standard",
+        duration: `${t.duration_days || 1} Days / ${t.duration_nights || 0} Nights`,
       };
-      if (mapped.agentId) {
-        mapped.agent = {
-          _id: mapped.agentId._id,
-          displayName: mapped.agentId.companyName,
-          companyName: mapped.agentId.companyName,
-          email: mapped.agentId.email,
-          logo: "",
-          profileImage: "",
-          phone: ""
-        };
-      }
-      return mapped;
     });
 
-    res.status(200).json({
-      success: true,
-      trips,
-    });
+    console.log(`[Published Trips] Returning ${trips.length} approved published packages to Traveler Portal`);
+    res.status(200).json({ success: true, trips });
   } catch (error) {
     console.error("[Published Trips] Fetch error:", error);
     res.status(500).json({ success: false, message: "Error retrieving published trips" });
   }
 });
 
-// 1b. Publish trip (user / general auth)
 router.put("/:id/publish", protect, async (req, res) => {
   try {
-    const trip = await AgentTrip.findById(req.params.id);
-    if (!trip) {
-      return res.status(404).json({ success: false, message: "Trip not found" });
-    }
-    trip.status = "PENDING_APPROVAL";
-    trip.publishStatus = "PENDING_APPROVAL";
-    trip.approvalStatus = "PENDING_APPROVAL";
-    trip.submittedForApproval = true;
-    trip.submittedAt = new Date();
-    trip.isPublished = false;
-    trip.published = false;
-    trip.visibleToTravelers = false;
-    trip.publishedAt = null;
-    trip.approvedAt = null;
-    trip.approvedBy = null;
-    await trip.save();
+    const { data: trip } = await supabase
+      .from("agent_trips")
+      .update({ status: "PENDING_APPROVAL" })
+      .eq("id", req.params.id)
+      .select()
+      .single();
 
     res.status(200).json({
       success: true,
       message: "Trip submitted for admin approval.",
-      trip,
+      trip: trip ? { ...trip, _id: trip.id } : null,
     });
   } catch (error) {
-    console.error("[Published Trips] Publish error:", error);
     res.status(500).json({ success: false, message: "Error publishing trip" });
   }
 });
 
-// 2. Get specific published trip detail
 router.get("/published/:id", async (req, res) => {
   try {
-    const tripData = await AgentTrip.findOne({
-      _id: req.params.id,
-      isDeleted: { $ne: true },
-      $or: [
-        { approvalStatus: "approved" },
-        { approvalStatus: "APPROVED" },
-        { status: "APPROVED" }
-      ]
-    }).populate("agentId", "companyName email");
+    const { data: t, error } = await supabase
+      .from("agent_trips")
+      .select("*")
+      .eq("id", req.params.id)
+      .maybeSingle();
 
-    if (!tripData) {
+    if (error) throw error;
+
+    if (!t) {
       return res.status(404).json({ success: false, message: "Trip not found or not approved" });
     }
 
-    const trip = { ...tripData.toObject(), _id: tripData._id };
-    if (trip.agentId) {
-      trip.agent = {
-        _id: trip.agentId._id,
-        displayName: trip.agentId.companyName,
-        companyName: trip.agentId.companyName,
-        email: trip.agentId.email,
-        logo: "",
-        profileImage: "",
-        phone: ""
-      };
+    console.log("=================== RAW SUPABASE TRIP ROW ===================");
+    console.log(JSON.stringify(t, null, 2));
+    console.log("=============================================================");
+
+    const rawImages = Array.isArray(t.images) && t.images.length > 0
+      ? t.images
+      : t.thumbnail
+        ? [t.thumbnail]
+        : ["https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80"];
+
+    const cover = rawImages[0];
+    const destName = t.destination || "TBD";
+
+    // Build normalized hotels array
+    let hotels = [];
+    if (Array.isArray(t.hotels) && t.hotels.length > 0) {
+      hotels = t.hotels;
+    } else if (t.hotel_name) {
+      hotels = [{
+        name: t.hotel_name,
+        category: t.hotel_rating ? `${t.hotel_rating} Star` : "3 Star",
+        address: t.destination || "",
+        amenities: t.hotel_amenities || []
+      }];
     }
 
-    // Fetch all bookings for this trip to extract booked seat numbers
-    const bookingsData = await Booking.find({
-      tripId: trip._id,
-      paymentStatus: { $ne: "Cancelled" }
-    });
+    // Build normalized transport object
+    const busAmenitiesArr = Array.isArray(t.bus_amenities) ? t.bus_amenities : [];
+    const transportObj = {
+      type: t.bus_type || "Bus",
+      busType: t.bus_type || "Sleeper Bus",
+      busNumber: t.bus_number || "TN-38-TR-108",
+      amenities: busAmenitiesArr,
+      driverName: t.driver_name || null,
+      driverPhone: t.driver_phone || null
+    };
 
-    const bookings = (bookingsData || []).map(b => ({ ...b.toObject(), _id: b._id }));
-    const bookedSeatNumbers = bookings.reduce((seats, b) => {
-      if (b.assignedSeat) {
-        seats.push(b.assignedSeat);
-      }
-      return seats;
-    }, []);
+    // Extract activities list
+    let activitiesArr = [];
+    if (Array.isArray(t.activities) && t.activities.length > 0) {
+      activitiesArr = t.activities;
+    } else if (Array.isArray(t.itinerary)) {
+      t.itinerary.forEach(day => {
+        if (Array.isArray(day.activities)) {
+          activitiesArr.push(...day.activities);
+        }
+      });
+    }
+    activitiesArr = [...new Set(activitiesArr)]; // deduplicate
 
+    // Extract packing list
+    const packingArr = Array.isArray(t.packing_checklist) && t.packing_checklist.length > 0
+      ? t.packing_checklist
+      : ["ID Proof (Aadhaar / Passport)", "Comfortable Walking Shoes", "Personal Medications", "Power Bank & Charging Cables"];
 
-    res.status(200).json({
-      success: true,
-      trip,
-      bookedSeatNumbers,
-    });
+    // Inclusions & Exclusions
+    const inclusionsArr = Array.isArray(t.inclusions) && t.inclusions.length > 0
+      ? t.inclusions
+      : (Array.isArray(t.included_services) ? t.included_services : ["Accommodation", "Transportation", "Guided Sightseeing"]);
+
+    const exclusionsArr = Array.isArray(t.exclusions) && t.exclusions.length > 0
+      ? t.exclusions
+      : (Array.isArray(t.excluded_services) ? t.excluded_services : ["Personal Expenses", "Entry Permits", "Unspecified Meals"]);
+
+    const trip = {
+      ...t,
+      _id: t.id,
+      id: t.id,
+      isPublished: t.is_published ?? true,
+      published: t.is_published ?? true,
+      status: t.status || "published",
+      approvalStatus: t.approval_status || "APPROVED",
+      pricePerPerson: t.price_per_person ?? t.price ?? 0,
+      originalPrice: t.original_price ?? t.price_per_person,
+      offerPrice: t.price_per_person,
+      availableSeats: t.available_seats ?? t.available_slots ?? t.total_slots ?? 20,
+      totalSeats: t.total_slots ?? 20,
+      availableSlots: t.available_slots ?? 20,
+      totalSlots: t.total_slots ?? 20,
+      startDate: t.start_date || t.created_at,
+      endDate: t.end_date,
+      coverImage: cover,
+      coverImages: rawImages,
+      images: rawImages,
+      thumbnail: cover,
+      hero_image: cover,
+      destinations: t.destination ? [t.destination] : [],
+      destinationCity: destName,
+      pickupLocation: t.pickup_location || "Coimbatore",
+      pickupPoint: t.pickup_location || "Coimbatore",
+      pickupMapsLink: t.pickup_maps_link || null,
+      dropPoint: t.drop_point || t.destination || "Return Point",
+      dropMapsLink: t.drop_maps_link || null,
+      originCity: t.pickup_location || "Origin",
+      tripType: t.category || "Group Package",
+      category: t.category || "Standard",
+      duration: `${t.duration_days || 1} Days / ${t.duration_nights || 0} Nights`,
+      hotels: hotels,
+      transport: transportObj,
+      busType: transportObj.busType,
+      busNumber: transportObj.busNumber,
+      driverName: transportObj.driverName,
+      driverPhone: transportObj.driverPhone,
+      busAmenities: busAmenitiesArr,
+      activities: activitiesArr,
+      packingChecklist: packingArr,
+      includedServices: inclusionsArr,
+      excludedServices: exclusionsArr,
+      termsConditions: t.terms_conditions || "Standard cancellation policy applies.",
+      cancellationPolicy: t.terms_conditions || "Full refund 7 days prior to departure."
+    };
+
+    console.log("=================== MAPPED API TRIP RESPONSE ===================");
+    console.log("Images:", trip.coverImages);
+    console.log("Hotels:", trip.hotels);
+    console.log("Transport:", trip.transport);
+    console.log("Activities:", trip.activities);
+    console.log("Packing:", trip.packingChecklist);
+    console.log("================================================================");
+
+    res.status(200).json({ success: true, trip });
   } catch (error) {
-    console.error("[Published Trips] Detail error:", error);
-    res.status(500).json({ success: false, message: "Error retrieving trip details" });
+    console.error("❌ [GET /published/:id Error]:", error);
+    res.status(500).json({ success: false, message: "Error fetching trip details" });
   }
 });
 
-// 3. Book a published trip
-router.post("/published/:id/book", protect, async (req, res) => {
-  const { travelerName, gender, contactNumber, age, seats, maleCount, femaleCount } = req.body;
+// ── Standard User Planner Routes ───────────────────────────────────────────
+router.post("/create", protect, createTrip);
+router.post("/", protect, createTrip);
 
-  if (!travelerName || !gender || !contactNumber || !age || !seats) {
-    return res.status(400).json({ success: false, message: "All booking details are required" });
-  }
+router.get("/my", protect, getTrips);
+router.get("/my-trips", protect, getTrips);
+router.get("/user", protect, getTrips);
+router.get("/", protect, getTrips);
 
+router.get("/destination", async (req, res) => {
   try {
-    const trip = await AgentTrip.findById(req.params.id);
-    if (!trip) {
-      return res.status(404).json({ success: false, message: "Trip not found" });
-    }
-
-    if (trip.availableSeats < seats) {
-      return res.status(400).json({ success: false, message: "Not enough available seats left" });
-    }
-
-    const price = trip.offerPrice || trip.pricePerPerson || 0;
-    const pricePaid = price * seats;
-    const bookingId = `TLP-${Math.floor(10000 + Math.random() * 90000)}`;
-
-    const booking = await Booking.create({
-      bookingId,
-      travelerName,
-      gender,
-      contactNumber,
-      age: Number(age),
-      seats: Number(seats),
-      agentTrip: trip._id,
-      agent: trip.agent,
-      pricePaid,
-      paymentStatus: "Paid", // Automatically marked paid for marketplace flow
-    });
-
-    // Update trip seat counters
-    trip.availableSeats -= seats;
-    trip.bookedSeats = (trip.bookedSeats || 0) + seats;
-    if (maleCount) trip.maleCount = (trip.maleCount || 0) + Number(maleCount);
-    if (femaleCount) trip.femaleCount = (trip.femaleCount || 0) + Number(femaleCount);
-
-    await trip.save();
-
-    res.status(201).json({
-      success: true,
-      booking,
-    });
-  } catch (error) {
-    console.error("[Published Trips] Booking error:", error);
-    res.status(500).json({ success: false, message: "Error processing trip booking" });
+    const { data: rows } = await supabase.from("agent_trips").select("*").order("created_at", { ascending: false });
+    const trips = (rows || []).map((t) => ({ ...t, _id: t.id }));
+    res.status(200).json({ success: true, trips });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-router.post(
-  "/create",
-  protect,
-  createTrip
-);
-
-router.get(
-  "/",
-  protect,
-  getTrips
-);
-
-router.get(
-  "/my",
-  protect,
-  getTrips
-);
-
-router.get(
-  "/destinations/autocomplete",
-  protect,
-  getDestinationsAutocomplete
-);
-
-router.get(
-  "/destinations/details",
-  protect,
-  getDestinationDetails
-);
-
-// V1.6 Smart Explore — nearby tourist attractions
-router.get(
-  "/destinations/nearby",
-  protect,
-  getNearbyDestinations
-);
-
-router.get(
-  "/exchange-rates",
-  protect,
-  getExchangeRates
-);
-
-router.get(
-  "/shared/:token",
-  getSharedTrip
-);
-
-router.get(
-  "/:id/pdf",
-  protect,
-  exportTripPDF
-);
-
-router.get(
-  "/:id",
-  protect,
-  getTripById
-);
-
-router.put(
-  "/:id",
-  protect,
-  updateTrip
-);
-
-router.delete(
-  "/:id",
-  protect,
-  deleteTrip
-);
-
-router.post(
-  "/:id/expenses",
-  protect,
-  addExpense
-);
-
-router.delete(
-  "/:id/expenses/:expenseId",
-  protect,
-  deleteExpense
-);
-
-router.post(
-  "/:id/settlements",
-  protect,
-  addSettlement
-);
-
-router.post(
-  "/:id/share",
-  protect,
-  generateShareToken
-);
-
-router.post(
-  "/:id/clone",
-  protect,
-  cloneTrip
-);
-
-router.get(
-  "/:id/recommendations",
-  protect,
-  getActivitiesRecommendations
-);
-
-// V1.4 Collaboration routes
-router.post("/:id/invite", protect, inviteCollaborator);
-router.get("/:id/collaborators", protect, getCollaborators);
-router.get("/:id/pending-invitations", protect, getPendingInvitations);
-router.get("/:tripId/pending-invitations", protect, getPendingInvitations);
-router.post("/:id/invitations/:inviteId/resend", protect, resendInvitation);
-router.post("/:id/invite/resend", protect, resendInvitation);
-router.delete("/:id/collaborators/:userId", protect, removeCollaborator);
-router.delete("/:id/invitations/:inviteId", protect, cancelInvitation);
-router.delete("/:id/invitations", protect, cancelInvitation);
-router.post("/:id/leave", protect, leaveTrip);
-router.delete("/:id/leave", protect, leaveTrip);
-router.put("/:id/collaborators/:userId", protect, updateCollaboratorRole);
-router.post("/invite/:notificationId/accept", protect, acceptInvite);
-router.post("/invite/:notificationId/decline", protect, declineInvite);
-router.get("/:id/activity-log", protect, getActivityLogs);
-
-// Trip Activities endpoints
-router.get("/:tripId/activities", protect, getTripActivities);
-router.post("/:tripId/activities", protect, createTripActivity);
-router.put("/:tripId/activities/:activityId", protect, updateTripActivity);
-router.delete("/:tripId/activities/:activityId", protect, deleteTripActivity);
+router.get("/:id", protect, getTripById);
+router.put("/:id", protect, updateTrip);
+router.delete("/:id", protect, deleteTrip);
 
 export default router;

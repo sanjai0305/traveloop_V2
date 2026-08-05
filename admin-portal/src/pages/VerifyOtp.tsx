@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
@@ -109,21 +109,25 @@ export const VerifyOtp: React.FC = () => {
     setLoading(true);
 
     try {
-      console.log(`[ADMIN OTP VERIFY] Validating OTP for ${email}...`);
+      const preToken = state?.preToken || localStorage.getItem("admin_pre_token") || localStorage.getItem("admin_token") || "";
+      console.log(`[ADMIN OTP VERIFY] Validating OTP for ${email}... PreToken present: ${!!preToken}`);
+
       const res = await api.post("/admin/verify-2fa", {
         email: email.trim().toLowerCase(),
         otp: otpCode,
+        preToken,
       });
 
       console.log("API Response:", res.data);
 
       if (res.data.success) {
-        console.log(`[ADMIN OTP VERIFY] OTP validated successfully`);
+        console.log(`[ADMIN OTP VERIFY] OTP validated successfully. Final JWT received.`);
         const { token, admin } = res.data;
         setAuth(token, admin);
         localStorage.removeItem("admin_pending_email");
         localStorage.removeItem("admin_pending_pass");
         localStorage.removeItem("admin_dev_otp");
+        localStorage.removeItem("admin_pre_token");
         if (timerRef.current) clearInterval(timerRef.current);
         setSuccess(true);
         setTimeout(() => navigate("/dashboard", { replace: true }), 2200);

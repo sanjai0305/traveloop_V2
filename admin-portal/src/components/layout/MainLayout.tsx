@@ -31,6 +31,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  useEffect(() => {
+    console.log(`[MainLayout Routing] Current Pathname: '${location.pathname}' | Authenticated Admin: '${admin?.email || "Unknown"}' (Role: '${admin?.role || "N/A"}')`);
+  }, [location.pathname, admin]);
+
   // Fetch unread notification counts
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -138,9 +142,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     },
   ];
 
-  const allowedNavItems = navItems.filter(
-    (item) => !admin || item.roles.includes(admin.role)
-  );
+  const currentRole = (admin?.role || "").toLowerCase().trim();
+  const allowedNavItems = navItems.filter((item) => {
+    if (!admin) return true;
+    const isSuper = currentRole === "super_admin" || currentRole === "super admin" || currentRole === "admin";
+    if (isSuper) return true;
+    return item.roles.some((r) => r.toLowerCase().trim() === currentRole);
+  });
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col md:flex-row text-slate-800">

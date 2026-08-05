@@ -1,10 +1,12 @@
 import jwt from "jsonwebtoken";
-import User from "../models/User.js";
+import supabase from "../config/supabase.js";
 
 const protect = async (req, res, next) => {
   let token;
 
-  console.log(`\n[Auth Middleware] Checking authorization for ${req.method} ${req.originalUrl}`);
+  console.log(
+    `\n[Auth Middleware] Checking authorization for ${req.method} ${req.originalUrl}`
+  );
 
   if (
     req.headers.authorization &&
@@ -23,28 +25,75 @@ const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      const user = await User.findById(decoded.id).select(
-        "firstName lastName email phone city country avatar xp level streak acceptedTerms firebaseUid"
-      );
+      const userId = decoded.id || decoded.userId;
+      const firebaseUid = decoded.firebase_uid;
 
-      if (!user) {
-        console.warn(`[Auth Middleware] User lookup failed for ID: ${decoded.id}`);
-        return res.status(401).json({
-          success: false,
-          message: "User account not found",
-          code: "USER_NOT_FOUND",
-        });
+      // Query users table
+      let { data: user, error: userErr } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!user && firebaseUid) {
+        const { data: userByFb } = await supabase
+          .from("users")
+          .select("*")
+          .eq("firebase_uid", firebaseUid)
+          .maybeSingle();
+        user = userByFb;
       }
 
-      const userObj = user.toObject();
-      // Maintain compatibility: set req.user to match expected properties
-      req.user = {
-        _id: user._id,
-        id: user._id.toString(),
-        ...userObj
-      };
+      if (user && !userErr) {
+        console.log(`✅ Supabase User Loaded: ${user.id}`);
+        req.user = {
+          _id: user.id,
+          id: user.id,
+          ...user,
+        };
+        return next();
+      }
 
-      next();
+      // Check if token belongs to an Agent
+      let { data: agent, error: agentErr } = await supabase
+        .from("agents")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!agent && firebaseUid) {
+        const { data: agentByFb } = await supabase
+          .from("agents")
+          .select("*")
+          .eq("firebase_uid", firebaseUid)
+          .maybeSingle();
+        agent = agentByFb;
+      }
+
+      if (agent && !agentErr) {
+        console.log(`✅ Supabase User Loaded (Agent): ${agent.id}`);
+        req.agent = {
+          _id: agent.id,
+          id: agent.id,
+          ...agent,
+        };
+        req.user = {
+          _id: agent.id,
+          id: agent.id,
+          name: agent.agency_name || agent.owner_name || agent.email,
+          displayName: agent.agency_name || agent.owner_name || agent.email,
+          email: agent.email,
+          role: "agent",
+        };
+        return next();
+      }
+
+      console.warn(`[Auth Middleware] Account lookup failed for ID: ${userId}`);
+      return res.status(401).json({
+        success: false,
+        message: "Account not found",
+        code: "USER_NOT_FOUND",
+      });
     } catch (error) {
       console.error("[Auth Middleware Error]:", error);
       return res.status(401).json({

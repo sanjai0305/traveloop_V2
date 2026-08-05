@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Auth } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { Trips } from "./pages/Trips";
+import { TravelDemandPage } from "./pages/TravelDemandPage";
 import { Bookings } from "./pages/Bookings";
 import { Analytics } from "./pages/Analytics";
 import { Profile } from "./pages/Profile";
@@ -71,6 +72,16 @@ export const App: React.FC = () => {
               <ProtectedRoute>
                 <MainLayout>
                   <Trips />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/demand"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <TravelDemandPage />
                 </MainLayout>
               </ProtectedRoute>
             }

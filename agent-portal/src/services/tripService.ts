@@ -17,22 +17,22 @@ export const getMyTrips = async (): Promise<{ trips: AgentTrip[] }> => {
 };
 
 export const getTripById = async (id: string): Promise<{ trip: AgentTrip }> => {
-  const response = await api.get(`/agent/trip/${id}`);
+  const response = await api.get(`/agent/trips/${id}`);
   return response.data;
 };
 
 export const updateTrip = async (id: string, tripData: Partial<AgentTrip>): Promise<{ trip: AgentTrip }> => {
-  const response = await api.put(`/agent/trip/${id}`, tripData);
+  const response = await api.put(`/agent/trips/${id}`, tripData);
   return response.data;
 };
 
 export const deleteTrip = async (id: string, agentOtp?: string): Promise<{ success: boolean; message: string; code?: string }> => {
-  const response = await api.delete(`/agent/trip/${id}`, { data: { agentOtp } });
+  const response = await api.delete(`/agent/trips/${id}`, { data: { agentOtp } });
   return response.data;
 };
 
 export const publishTrip = async (id: string): Promise<{ success: boolean; message: string; trip: AgentTrip }> => {
-  const response = await api.post(`/agent/trip/${id}/publish`, { id, tripId: id });
+  const response = await api.post(`/agent/trips/${id}/publish`, { id, tripId: id });
   return response.data;
 };
 

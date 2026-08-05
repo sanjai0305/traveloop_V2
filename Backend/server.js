@@ -12,7 +12,7 @@ import { fileURLToPath } from "url";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
 import { connectDB } from "./config/db.js";
-import mongoose from "mongoose";
+import supabase from "./config/supabase.js";
 import sanitizeInput from "./middleware/sanitize.js";
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -63,7 +63,12 @@ import legalRoutes from "./routes/legalRoutes.js";
 
 import healthRoutes from "./routes/healthRoutes.js";
 import errorLogger from "./middleware/errorMiddleware.js";
+import { bootstrapAdmin } from "./utils/bootstrapAdmin.js";
 
+// Run Admin Bootstrap on startup
+bootstrapAdmin().catch((err) =>
+  console.error("❌ Admin Bootstrap startup failed:", err)
+);
 
 let dbConnected = true;
 
@@ -83,11 +88,11 @@ const allowedOrigins = [
   "http://localhost:5182",
   "http://localhost:5183",
   "capacitor://localhost",
-  "http://localhost"
+  "http://localhost",
 ];
 
 if (process.env.ALLOWED_ORIGINS) {
-  process.env.ALLOWED_ORIGINS.split(",").forEach(origin => {
+  process.env.ALLOWED_ORIGINS.split(",").forEach((origin) => {
     const trimmed = origin.trim();
     if (trimmed && !allowedOrigins.includes(trimmed)) {
       allowedOrigins.push(trimmed);
@@ -96,9 +101,7 @@ if (process.env.ALLOWED_ORIGINS) {
 }
 
 console.log("Allowed Origins:");
-allowedOrigins.forEach(origin =>
-  console.log("✓", origin)
-);
+allowedOrigins.forEach((origin) => console.log("✓", origin));
 
 const app = express();
 const server = http.createServer(app);
@@ -115,8 +118,8 @@ const io = new Server(server, {
       if (isAllowed) return callback(null, true);
       return callback(null, true); // Fallback allow for dev
     },
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 
 // Inject io into notification controller for real-time push delivery
@@ -124,7 +127,7 @@ setNotificationIo(io);
 
 io.on("connection", (socket) => {
   console.log(`[Socket.io] Client connected: ${socket.id}`);
-  
+
   socket.on("join_room", (room) => {
     socket.join(room);
     console.log(`[Socket.io] Client ${socket.id} joined room: ${room}`);
@@ -135,7 +138,9 @@ io.on("connection", (socket) => {
     if (userId) {
       socket.join(userId.toString());
       socket.join(`user_${userId.toString()}`);
-      console.log(`[Socket.io] Client ${socket.id} joined user rooms: ${userId} & user_${userId}`);
+      console.log(
+        `[Socket.io] Client ${socket.id} joined user rooms: ${userId} & user_${userId}`
+      );
     }
   });
 
@@ -147,22 +152,32 @@ io.on("connection", (socket) => {
       socket.join(tripId);
       socket.currentTripId = tripId;
       socket.userData = user;
-      console.log(`[Socket.io] User ${user?.name || user?.email || socket.id} joined trip rooms: trip_${tripId} & trip:${tripId}`);
-      socket.to(`trip_${tripId}`).emit("user_joined_trip", { user, socketId: socket.id });
+      console.log(
+        `[Socket.io] User ${user?.name || user?.email || socket.id} joined trip rooms: trip_${tripId} & trip:${tripId}`
+      );
+      socket
+        .to(`trip_${tripId}`)
+        .emit("user_joined_trip", { user, socketId: socket.id });
     }
   });
 
   socket.on("leave_trip", ({ tripId, user }) => {
     if (tripId) {
       socket.leave(`trip_${tripId}`);
-      socket.to(`trip_${tripId}`).emit("user_left_trip", { user, socketId: socket.id });
+      socket
+        .to(`trip_${tripId}`)
+        .emit("user_left_trip", { user, socketId: socket.id });
     }
   });
 
   socket.on("trip_update", ({ tripId, type, data, user }) => {
     if (tripId) {
-      console.log(`[Socket.io] Live trip_update (${type}) broadcast to room trip_${tripId}`);
-      socket.to(`trip_${tripId}`).emit("trip_update", { type, data, user, timestamp: new Date() });
+      console.log(
+        `[Socket.io] Live trip_update (${type}) broadcast to room trip_${tripId}`
+      );
+      socket
+        .to(`trip_${tripId}`)
+        .emit("trip_update", { type, data, user, timestamp: new Date() });
     }
   });
 
@@ -184,7 +199,9 @@ io.on("connection", (socket) => {
   socket.on("chat:join", ({ tripId, user }) => {
     if (tripId) {
       socket.join(`trip_${tripId}`);
-      console.log(`[Socket.io] User ${user?.name || socket.id} joined chat room: trip_${tripId}`);
+      console.log(
+        `[Socket.io] User ${user?.name || socket.id} joined chat room: trip_${tripId}`
+      );
     }
   });
 
@@ -214,13 +231,17 @@ io.on("connection", (socket) => {
 
   socket.on("chat:reaction", ({ tripId, messageId, reactions }) => {
     if (tripId) {
-      socket.to(`trip_${tripId}`).emit("chat:reaction", { messageId, reactions });
+      socket
+        .to(`trip_${tripId}`)
+        .emit("chat:reaction", { messageId, reactions });
     }
   });
 
   socket.on("chat:readReceipt", ({ tripId, messageId, userId }) => {
     if (tripId) {
-      socket.to(`trip_${tripId}`).emit("chat:readReceipt", { messageId, userId, readAt: new Date() });
+      socket
+        .to(`trip_${tripId}`)
+        .emit("chat:readReceipt", { messageId, userId, readAt: new Date() });
     }
   });
 
@@ -228,7 +249,9 @@ io.on("connection", (socket) => {
   socket.on("join_trip_seats", (tripId) => {
     if (tripId) {
       socket.join(`trip_${tripId}`);
-      console.log(`[Socket.io] Client ${socket.id} joined seat room: trip_${tripId}`);
+      console.log(
+        `[Socket.io] Client ${socket.id} joined seat room: trip_${tripId}`
+      );
     }
   });
 
@@ -245,7 +268,9 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     if (socket.currentTripId) {
-      socket.to(`trip_${socket.currentTripId}`).emit("user_left_trip", { user: socket.userData, socketId: socket.id });
+      socket
+        .to(`trip_${socket.currentTripId}`)
+        .emit("user_left_trip", { user: socket.userData, socketId: socket.id });
     }
     console.log(`[Socket.io] Client disconnected: ${socket.id}`);
   });
@@ -283,7 +308,6 @@ const adminLimiter = rateLimit({
   legacyHeaders: false,
   validate: false,
   skip: (req) => {
-    // Bypass rate limiting entirely for authenticated admin requests
     const authHeader = req.headers.authorization;
     return authHeader && authHeader.startsWith("Bearer ");
   },
@@ -311,7 +335,6 @@ const authLimiter = rateLimit({
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no Origin header (curl, Postman, same-origin server calls)
     if (!origin) return callback(null, true);
 
     const isAllowed =
@@ -328,16 +351,14 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Authorization", "Content-Type"]
+  allowedHeaders: ["Authorization", "Content-Type"],
 };
 
 app.use(cors(corsOptions));
-
-// Pre-flight: use the same configured options (not a bare cors() which ignores allowedOrigins)
 app.options(/.*/, cors(corsOptions));
 
 /* -----------------------------
-   SECURITY
+   SECURITY & BODY PARSERS
 ------------------------------ */
 
 app.use(
@@ -346,19 +367,17 @@ app.use(
   })
 );
 
-/* -----------------------------
-   BODY PARSERS
------------------------------- */
-
 app.use("/api/scanner", express.json({ limit: "10mb" }));
 app.use("/api/profile", express.json({ limit: "5mb" }));
 
-app.use(express.json({
-  limit: "100kb",
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
-  }
-}));
+app.use(
+  express.json({
+    limit: "100kb",
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 app.use(sanitizeInput);
 app.use(globalLimiter);
@@ -372,11 +391,10 @@ app.use("/api/health", healthRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "TravelLoop Backend Running 🚀",
-    db: "connected"
+    message: "TravelLoop Backend Running (Supabase PostgreSQL) 🚀",
+    db: "connected",
   });
 });
-
 
 /* -----------------------------
    ROUTES
@@ -426,13 +444,12 @@ app.use("/api/rewards", rewardRoutes);
 app.get("/api/qr/:bookingId", async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const Booking = mongoose.model("Booking");
-    const booking = await Booking.findOne({
-      $or: [
-        { bookingId },
-        { _id: mongoose.Types.ObjectId.isValid(bookingId) ? bookingId : null }
-      ].filter(Boolean)
-    });
+
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select("*")
+      .or(`id.eq.${bookingId},booking_code.eq.${bookingId}`)
+      .maybeSingle();
 
     if (!booking) {
       return res.status(404).json({ success: false, message: "Booking not found" });
@@ -440,9 +457,9 @@ app.get("/api/qr/:bookingId", async (req, res) => {
 
     res.status(200).json({
       success: true,
-      qrUnlocked: booking.qrUnlocked || false,
-      qrCode: booking.qrCode || "",
-      token: booking.token || ""
+      qrUnlocked: true,
+      qrCode: booking.qr_code_url || "",
+      token: booking.booking_code || "",
     });
   } catch (error) {
     console.error("[Booking QR Status API] Error:", error);
@@ -450,21 +467,33 @@ app.get("/api/qr/:bookingId", async (req, res) => {
   }
 });
 
+/* -----------------------------
+   HEALTH CHECK
+------------------------------ */
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    success: true,
+    service: "Traveloop Backend API",
+    version: "2.0.0",
+    status: "healthy",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development",
+  });
+});
 
 /* -----------------------------
-   404
+   404 & ERROR HANDLER
 ------------------------------ */
 
 app.use((req, res) => {
+
   res.status(404).json({
     success: false,
     message: "Route Not Found",
   });
 });
-
-/* -----------------------------
-   ERROR HANDLER
------------------------------- */
 
 app.use(errorLogger);
 
@@ -478,20 +507,12 @@ if (!process.env.JWT_SECRET) {
   throw new Error("FATAL: JWT_SECRET environment variable is missing!");
 }
 
-if (!process.env.RAZORPAY_KEY_ID) {
-  console.warn("⚠️ Warning: Missing Razorpay Key ID (RAZORPAY_KEY_ID)");
-}
-
-if (!process.env.RAZORPAY_KEY_SECRET && !process.env.RAZORPAY_SECRET) {
-  console.warn("⚠️ Warning: Missing Razorpay Key Secret (RAZORPAY_KEY_SECRET / RAZORPAY_SECRET)");
-}
-
 let port = parseInt(process.env.PORT || "5000", 10);
 
 if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    console.log(`✅ MongoDB Connected`);
+    console.log(`✅ Supabase PostgreSQL Connected`);
     console.log(`✅ Socket.io enabled`);
     console.log(`✅ Routes loaded successfully`);
   });
@@ -501,9 +522,45 @@ if (process.env.NODE_ENV === "production") {
   const startServer = (p) => {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
-      console.log(`✅ MongoDB Connected`);
+      console.log(`✅ Supabase PostgreSQL Connected`);
       console.log(`✅ Socket.io enabled`);
-      console.log(`✅ Routes loaded successfully`);
+      console.log(`\n── Registered Trip & Booking API Endpoints ──`);
+      console.log(`  - POST   /api/trips/create`);
+      console.log(`  - POST   /api/trips/`);
+      console.log(`  - GET    /api/trips/my`);
+      console.log(`  - GET    /api/trips/my-trips`);
+      console.log(`  - GET    /api/trips/published`);
+      console.log(`  - GET    /api/trips/published/:id`);
+      console.log(`  - GET    /api/trips/destination`);
+      console.log(`  - GET    /api/trips/:id`);
+      console.log(`  - PUT    /api/trips/:id`);
+      console.log(`  - DELETE /api/trips/:id`);
+      console.log(`  - POST   /api/bookings/create`);
+      console.log(`  - GET    /api/bookings/my`);
+      console.log(`  - GET    /api/bookings/my-bookings`);
+      console.log(`\n── Registered Agent API Endpoints ──`);
+      console.log(`  - POST   /api/agent/login`);
+      console.log(`  - POST   /api/agent/google`);
+      console.log(`  - GET    /api/agent/profile`);
+      console.log(`  - GET    /api/agent/me`);
+      console.log(`  - PUT    /api/agent/profile`);
+      console.log(`  - PATCH  /api/agent/profile`);
+      console.log(`  - PATCH  /api/agent/profile/onboarding`);
+      console.log(`  - POST   /api/agent/profile/onboarding`);
+      console.log(`  - PUT    /api/agent/profile/onboarding`);
+      console.log(`  - POST   /api/agent/profile/create`);
+      console.log(`  - POST   /api/agent/onboarding/step`);
+      console.log(`  - GET    /api/agent/onboarding/status`);
+      console.log(`  - POST   /api/agent/verify-mobile-otp`);
+      console.log(`\n── Registered Driver API Endpoints ──`);
+      console.log(`  - POST   /api/driver/send-email-otp`);
+      console.log(`  - POST   /api/driver/verify-email-otp`);
+      console.log(`  - POST   /api/driver/login`);
+      console.log(`  - GET    /api/driver/me`);
+      console.log(`  - GET    /api/driver/my-trip`);
+      console.log(`  - GET    /api/driver/passengers/:tripId`);
+      console.log(`  - POST   /api/driver/scan-qr`);
+      console.log(`==================================================\n`);
     });
   };
 
@@ -531,18 +588,10 @@ const gracefulShutdown = async (signal) => {
   console.log(`\n[Server] Received ${signal}. Starting graceful shutdown...`);
   server.close(async () => {
     console.log("[Server] HTTP server closed.");
-    try {
-      await mongoose.connection.close();
-      console.log("[Mongo] Connection closed.");
-      console.log("[Server] Graceful shutdown completed successfully.");
-      process.exit(0);
-    } catch (err) {
-      console.error("[Server] Error during database shutdown:", err.message);
-      process.exit(1);
-    }
+    console.log("[Server] Graceful shutdown completed successfully.");
+    process.exit(0);
   });
 
-  // Force exit after 10s timeout
   setTimeout(() => {
     console.error("[Server] Force exiting after timeout.");
     process.exit(1);

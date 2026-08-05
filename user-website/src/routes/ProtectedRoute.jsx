@@ -7,11 +7,23 @@ import PageSkeletonLoader from "../components/common/PageSkeletonLoader";
 const ProtectedRoute = ({ children, isTermsPage = false }) => {
   const { user, isAuthenticated, loading, userRefreshed } = useAuth();
 
-  console.log("[ProtectedRoute Render]:", {
+  const isConsentPath = window.location.pathname === "/legal-consent" || isTermsPage;
+  
+  // Property checks with robust fallbacks
+  const isTermsAccepted = user?.acceptedTerms !== false;
+  const isPrivacyAccepted = user?.privacyAccepted !== false;
+  const isPhoneVerified = user?.phoneVerified !== false;
+
+  console.log("[ProtectedRoute Decision Audit]:", {
     loading,
     userRefreshed,
     isAuthenticated,
-    termsVersion: user?.termsVersion,
+    userEmail: user?.email,
+    userId: user?.id || user?._id,
+    isConsentPath,
+    isTermsAccepted,
+    isPrivacyAccepted,
+    isPhoneVerified,
     isTermsPage
   });
 
@@ -20,28 +32,18 @@ const ProtectedRoute = ({ children, isTermsPage = false }) => {
   }
 
   if (!isAuthenticated) {
-    return (
-      <Navigate
-        to="/"
-        replace
-      />
-    );
+    console.log("[ProtectedRoute] Not authenticated -> Redirecting to /");
+    return <Navigate to="/" replace />;
   }
 
-  // Redirect to Legal Consent if user has not accepted terms & privacy or verified phone
-  const isConsentPath = window.location.pathname === "/legal-consent" || isTermsPage;
-  if (user && (!user.acceptedTerms || !user.privacyAccepted || !user.phoneVerified) && !isConsentPath) {
-    console.log("[ProtectedRoute] Redirecting to /legal-consent:", {
-      acceptedTerms: user.acceptedTerms,
-      privacyAccepted: user.privacyAccepted,
-      phoneVerified: user.phoneVerified
+  // Redirect to Legal Consent only if explicitly unaccepted
+  if (user && (!isTermsAccepted || !isPrivacyAccepted || !isPhoneVerified) && !isConsentPath) {
+    console.log("[ProtectedRoute] Onboarding incomplete -> Redirecting to /legal-consent:", {
+      isTermsAccepted,
+      isPrivacyAccepted,
+      isPhoneVerified
     });
-    return (
-      <Navigate
-        to="/legal-consent"
-        replace
-      />
-    );
+    return <Navigate to="/legal-consent" replace />;
   }
 
   return children;

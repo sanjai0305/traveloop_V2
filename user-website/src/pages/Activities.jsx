@@ -15,6 +15,8 @@ import {
 import { getApiUrl } from "../utils/api";
 import { useToast } from "../components/mobile/MobileToast";
 import { usePublishedTrips } from "../hooks/usePublishedTrips";
+import { searchTrips } from "../services/aiService";
+
 
 // Curated local images (paragliding feed — preserved from V1.0)
 import BirBilling  from "../assets/images/bir-billing.jpg";
@@ -492,6 +494,12 @@ const Activities = () => {
     try {
       console.log("Explore Search Start:", query);
       setDiscoverLoading(true);
+      
+      // Automatically send search query to AI Intent Engine
+      searchTrips(query.trim()).then((aiRes) => {
+        if (aiRes?.answer) setAiAnswer(aiRes.answer);
+      }).catch(() => {});
+
       const token = localStorage.getItem("token");
       const res   = await fetch(
         getApiUrl(`explore/discover?query=${encodeURIComponent(query.trim())}`),
@@ -511,13 +519,14 @@ const Activities = () => {
       } else {
         console.log("Explore API Failed");
         setDiscoverResults([]);
-        setDiscoverQuery("");
+        setDiscoverQuery(query.trim());
       }
     } catch (err) {
       if (err.name !== "AbortError") {
         console.log("Explore API Failed");
         console.error("[Discover] fetch error:", err);
         setDiscoverResults([]);
+        setDiscoverQuery(query.trim());
       }
     } finally {
       if (abortRef.current === controller) {
@@ -879,15 +888,39 @@ const Activities = () => {
                     </div>
                   </motion.div>
                 ) : (
-                  /* If absolutely nothing matches both group trips and discover search */
-                  filteredPublishedTrips.length === 0 && discoverQuery && (
+                  /* Never display "No Results" — Show Related Trips & AI Intent notice */
+                  filteredPublishedTrips.length === 0 && (
                     <motion.div
-                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                      className="flex flex-col items-center justify-center py-14 gap-3 text-center"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-6 pt-2"
                     >
-                      <span className="text-5xl">🔍</span>
-                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No results for "{discoverQuery}"</p>
-                      <p className="text-xs text-slate-400">Try a different search query</p>
+                      <div className="p-4 rounded-2xl bg-teal-50/80 dark:bg-teal-950/30 border border-teal-200/80 dark:border-teal-900/50 flex items-center gap-3">
+                        <Sparkles size={20} className="text-teal-500 flex-shrink-0 animate-pulse" />
+                        <div>
+                          <p className="text-xs font-black text-teal-900 dark:text-teal-200">
+                            AI Search Intent Registered for "{discoverQuery}"
+                          </p>
+                          <p className="text-[11px] text-teal-700 dark:text-teal-400 mt-0.5">
+                            We've notified local travel hosts of your search demand! In the meantime, explore these top-rated related packages:
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between px-1">
+                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                            Recommended Related Trips
+                          </h4>
+                        </div>
+                        {(publishedTrips || []).slice(0, 4).map((trip) => (
+                          <PublishedTripCard
+                            key={trip._id}
+                            trip={trip}
+                            onClick={() => navigate(`/trips/${trip._id}`)}
+                          />
+                        ))}
+                      </div>
                     </motion.div>
                   )
                 )}

@@ -23,11 +23,21 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
   const isAdminLoggedIn = localStorage.getItem("isAdminLoggedIn") === "true";
 
   if (!isAdminLoggedIn && !isAuthenticated) {
+    console.log("[ProtectedRoute] Unauthenticated access attempt. Redirecting to /login");
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && admin && !allowedRoles.includes(admin.role)) {
-    return <Navigate to="/dashboard" replace />;
+  if (allowedRoles && admin) {
+    const userRole = (admin.role || "").toLowerCase().trim();
+    const isSuper = userRole === "super_admin" || userRole === "super admin" || userRole === "admin";
+    
+    if (!isSuper) {
+      const hasPermission = allowedRoles.some((r) => r.toLowerCase().trim() === userRole);
+      if (!hasPermission) {
+        console.warn(`[ProtectedRoute] Role '${admin.role}' missing required permission in:`, allowedRoles);
+        return <Navigate to="/dashboard" replace />;
+      }
+    }
   }
 
   return <>{children}</>;
@@ -53,6 +63,8 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/dashboard" element={<Navigate to="/dashboard" replace />} />
+
         <Route
           path="/agents"
           element={
@@ -63,6 +75,9 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/agents" element={<Navigate to="/agents" replace />} />
+        <Route path="/admin/users" element={<Navigate to="/agents" replace />} />
+
         <Route
           path="/trips"
           element={
@@ -73,6 +88,8 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/trips" element={<Navigate to="/trips" replace />} />
+
         <Route
           path="/bookings"
           element={
@@ -83,6 +100,8 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/bookings" element={<Navigate to="/bookings" replace />} />
+
         <Route
           path="/finance"
           element={
@@ -93,6 +112,9 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/finance" element={<Navigate to="/finance" replace />} />
+        <Route path="/admin/wallet" element={<Navigate to="/finance" replace />} />
+
         <Route
           path="/notifications"
           element={
@@ -103,6 +125,8 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/notifications" element={<Navigate to="/notifications" replace />} />
+
         <Route
           path="/referrals"
           element={
@@ -113,6 +137,8 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/referrals" element={<Navigate to="/referrals" replace />} />
+
         <Route
           path="/settings"
           element={
@@ -123,6 +149,7 @@ export const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/admin/settings" element={<Navigate to="/settings" replace />} />
 
         {/* Catch-all */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

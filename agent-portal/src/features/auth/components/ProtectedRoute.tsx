@@ -78,17 +78,21 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return 6; // Fully completed!
   };
 
+  console.log("✅ ProtectedRoute Authenticated");
   const kycStep = getKycStep(agent);
-  console.log(`[ProtectedRoute] Auth Check | Agent ID: ${agent._id} | Backend Current Step: ${agent.currentStep || 'N/A'} | Resolved KYC Step: ${kycStep} | Path: ${location.pathname}`);
+  console.log(`[ProtectedRoute] Auth Check | Agent ID: ${agent.id || agent._id} | Resolved KYC Step: ${kycStep} | Path: ${location.pathname}`);
 
   if (location.pathname !== "/complete-profile") {
     if (kycStep < 6) {
+      if (kycStep === 4) console.log("✅ Legal Consent Loaded");
       console.log(`[ProtectedRoute] KYC incomplete (step ${kycStep}) — redirecting to /complete-profile?step=${kycStep}`);
       return <Navigate to={`/complete-profile?step=${kycStep}`} replace />;
+    } else {
+      console.log("✅ Dashboard Loaded");
     }
   } else {
     if (kycStep === 6) {
-      console.log("[ProtectedRoute] KYC completed — redirecting to /dashboard");
+      console.log("✅ Dashboard Loaded — redirecting to /dashboard");
       return <Navigate to="/dashboard" replace />;
     }
   }

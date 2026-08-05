@@ -19,6 +19,7 @@ const LegalConsent: React.FC = () => {
   const canSubmit = termsAccepted && privacyAccepted;
 
   useEffect(() => {
+    console.log("✅ Legal Consent Loaded");
     if (!isLoading && !isAuthenticated) {
       navigate("/login", { replace: true });
     }
