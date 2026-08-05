@@ -1,5 +1,19 @@
+/**
+ * db.js
+ *
+ * Database connectivity + master data seeding.
+ *
+ * WHY supabaseAdmin for seeding: Master lookup tables (bus_types, hotel_amenities, etc.)
+ * may have RLS enabled. The Service Role client bypasses RLS to safely insert seed data
+ * on startup without needing a per-table RLS policy for the anonymous role.
+ *
+ * The regular `supabase` anon client is exported for use in routes/controllers
+ * that perform RLS-governed end-user operations.
+ */
+
 import "./env.js";
 import supabase from "./supabase.js";
+import supabaseAdmin from "./supabaseAdmin.js";
 
 export const connectDB = async () => {
   try {
@@ -8,7 +22,7 @@ export const connectDB = async () => {
       process.env.SUPABASE_URL || "Using fallback"
     );
 
-    // Verify connectivity by reading master bus_types table
+    // Verify connectivity using the anon client (tests public read access)
     const { error } = await supabase.from("bus_types").select("id").limit(1);
     if (error && error.code !== "PGRST116") {
       console.warn("[Supabase Connect Notice]", error.message);
@@ -16,20 +30,24 @@ export const connectDB = async () => {
       console.log(`✅ Supabase PostgreSQL Connected`);
     }
 
-    // Seed master data if tables are empty
+    // Seed master data if tables are empty.
+    // Uses supabaseAdmin to bypass RLS on lookup tables.
     const seedIfEmpty = async (table, defaults) => {
       try {
-        const { count, error: countErr } = await supabase
+        const { count, error: countErr } = await supabaseAdmin
           .from(table)
           .select("id", { count: "exact", head: true });
 
         if (!countErr && (count === 0 || count === null)) {
           const insertPayload = defaults.map((name) => ({ name }));
-          await supabase.from(table).insert(insertPayload);
+          await supabaseAdmin.from(table).insert(insertPayload);
           console.log(`Seeded default values for Supabase table: ${table}`);
         }
       } catch (seedErr) {
-        console.warn(`[Seed Warning] Failed to seed ${table}:`, seedErr.message);
+        console.warn(
+          `[Seed Warning] Failed to seed ${table}:`,
+          seedErr.message
+        );
       }
     };
 

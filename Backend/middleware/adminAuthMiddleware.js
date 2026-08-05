@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import supabase from "../config/supabase.js";
+import supabase from "../config/supabaseAdmin.js";
 
 export const verifyAdmin = async (req, res, next) => {
   let token;

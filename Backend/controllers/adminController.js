@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import supabase from "../config/supabase.js";
+import supabase from "../config/supabaseAdmin.js";
 import { sendAdminOtpEmail } from "../services/emailService.js";
 
 const generateToken = (id, email) => {
