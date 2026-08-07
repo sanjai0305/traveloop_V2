@@ -23,16 +23,15 @@ import {
   BarChart3,
 } from "lucide-react";
 
-const DEV_MODE = import.meta.env.DEV || import.meta.env.VITE_DEV_MODE === "true";
-const DEV_EMAIL = "sanjaim0940r@gmail.com";
-const DEV_PASS = "admin@123";
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || import.meta.env.VITE_DEV_EMAIL || "sanjaim0940r@gmail.com";
+const ADMIN_PASS = import.meta.env.VITE_ADMIN_PASSWORD || import.meta.env.VITE_DEV_PASS || "admin@123";
 
 export const Auth: React.FC = () => {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
 
-  const [email, setEmail] = useState(DEV_MODE ? DEV_EMAIL : "");
-  const [password, setPassword] = useState(DEV_MODE ? DEV_PASS : "");
+  const [email, setEmail] = useState(ADMIN_EMAIL);
+  const [password, setPassword] = useState(ADMIN_PASS);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -322,71 +321,68 @@ export const Auth: React.FC = () => {
                   </div>
                 </div>
 
-                {/* DEV: Collapsible Local Development panel */}
-                {DEV_MODE && (
-                  <div style={{ borderRadius: "12px", border: "1px solid #E5E7EB", overflow: "hidden", transition: "border-color 0.2s" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#BFDBFE"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#E5E7EB"; }}>
+                {/* Always-Visible Admin Credentials Panel */}
+                <div style={{ borderRadius: "12px", border: "1px solid #E5E7EB", overflow: "hidden", transition: "border-color 0.2s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#BFDBFE"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = "#E5E7EB"; }}>
 
-                    {/* Toggle header */}
-                    <button type="button" onClick={() => setDevExpanded(v => !v)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: "#F8FAFF", border: "none", cursor: "pointer", textAlign: "left" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <BarChart3 style={{ width: "13px", height: "13px", color: "#2563EB" }} />
-                        <span style={{ fontSize: "12px", fontWeight: 600, color: "#374151" }}>Local Development</span>
-                        <span style={{ padding: "1px 7px", borderRadius: "5px", background: "#EFF6FF", border: "1px solid #BFDBFE", fontSize: "9px", fontWeight: 700, color: "#2563EB", letterSpacing: "0.08em", textTransform: "uppercase" }}>LOCAL</span>
+                  {/* Toggle header */}
+                  <button type="button" onClick={() => setDevExpanded(v => !v)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: "#F8FAFF", border: "none", cursor: "pointer", textAlign: "left" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <BarChart3 style={{ width: "13px", height: "13px", color: "#2563EB" }} />
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "#374151" }}>Admin Credentials</span>
+                    </div>
+                    <ChevronDown style={{ width: "14px", height: "14px", color: "#9CA3AF", transition: "transform 0.22s", transform: devExpanded ? "rotate(180deg)" : "rotate(0deg)" }} />
+                  </button>
+
+                  {/* Expanded content */}
+                  <div style={{ maxHeight: devExpanded ? "320px" : "0px", overflow: "hidden", transition: "max-height 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
+                    <div style={{ padding: "14px", borderTop: "1px solid #F3F4F6", display: "flex", flexDirection: "column", gap: "10px", background: "#fff" }}>
+
+                      {/* Email row */}
+                      <div>
+                        <label style={{ fontSize: "10px", fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase", display: "block", marginBottom: "5px" }}>Email</label>
+                        <div style={{ display: "flex", alignItems: "center", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "9px 12px", gap: "8px" }}>
+                          <span style={{ flex: 1, fontSize: "12px", color: "#374151", fontFamily: "'SF Mono','Fira Code',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ADMIN_EMAIL}</span>
+                          <button type="button" onClick={() => handleCopy(ADMIN_EMAIL, "email")} title="Copy email"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: copiedEmail ? "#10B981" : "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s, transform 0.15s", flexShrink: 0, transform: copiedEmail ? "scale(1.15)" : "scale(1)" }}>
+                            {copiedEmail ? <Check style={{ width: "13px", height: "13px" }} /> : <Copy style={{ width: "13px", height: "13px" }} />}
+                          </button>
+                        </div>
                       </div>
-                      <ChevronDown style={{ width: "14px", height: "14px", color: "#9CA3AF", transition: "transform 0.22s", transform: devExpanded ? "rotate(180deg)" : "rotate(0deg)" }} />
-                    </button>
 
-                    {/* Expanded content */}
-                    <div style={{ maxHeight: devExpanded ? "320px" : "0px", overflow: "hidden", transition: "max-height 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
-                      <div style={{ padding: "14px", borderTop: "1px solid #F3F4F6", display: "flex", flexDirection: "column", gap: "10px", background: "#fff" }}>
-
-                        {/* Email row */}
-                        <div>
-                          <label style={{ fontSize: "10px", fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase", display: "block", marginBottom: "5px" }}>Email</label>
-                          <div style={{ display: "flex", alignItems: "center", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "9px 12px", gap: "8px" }}>
-                            <span style={{ flex: 1, fontSize: "12px", color: "#374151", fontFamily: "'SF Mono','Fira Code',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{DEV_EMAIL}</span>
-                            <button type="button" onClick={() => handleCopy(DEV_EMAIL, "email")} title="Copy email"
-                              style={{ background: "none", border: "none", cursor: "pointer", color: copiedEmail ? "#10B981" : "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s, transform 0.15s", flexShrink: 0, transform: copiedEmail ? "scale(1.15)" : "scale(1)" }}>
-                              {copiedEmail ? <Check style={{ width: "13px", height: "13px" }} /> : <Copy style={{ width: "13px", height: "13px" }} />}
-                            </button>
-                          </div>
+                      {/* Password row */}
+                      <div>
+                        <label style={{ fontSize: "10px", fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase", display: "block", marginBottom: "5px" }}>Password</label>
+                        <div style={{ display: "flex", alignItems: "center", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "9px 12px", gap: "8px" }}>
+                          <span style={{ flex: 1, fontSize: "12px", color: "#374151", fontFamily: "'SF Mono','Fira Code',monospace", letterSpacing: devShowPass ? "0" : "0.1em" }}>
+                            {devShowPass ? ADMIN_PASS : "••••••••••"}
+                          </span>
+                          <button type="button" onClick={() => setDevShowPass(v => !v)} title={devShowPass ? "Hide" : "Show"}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s", flexShrink: 0 }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#2563EB"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#9CA3AF"; }}>
+                            {devShowPass ? <EyeOff style={{ width: "13px", height: "13px" }} /> : <Eye style={{ width: "13px", height: "13px" }} />}
+                          </button>
+                          <div style={{ width: "1px", height: "14px", background: "#E5E7EB", flexShrink: 0 }} />
+                          <button type="button" onClick={() => handleCopy(ADMIN_PASS, "pass")} title="Copy password"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: copiedPass ? "#10B981" : "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s, transform 0.15s", flexShrink: 0, transform: copiedPass ? "scale(1.15)" : "scale(1)" }}>
+                            {copiedPass ? <Check style={{ width: "13px", height: "13px" }} /> : <Copy style={{ width: "13px", height: "13px" }} />}
+                          </button>
                         </div>
+                      </div>
 
-                        {/* Password row */}
-                        <div>
-                          <label style={{ fontSize: "10px", fontWeight: 600, color: "#9CA3AF", letterSpacing: "0.07em", textTransform: "uppercase", display: "block", marginBottom: "5px" }}>Password</label>
-                          <div style={{ display: "flex", alignItems: "center", background: "#F9FAFB", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "9px 12px", gap: "8px" }}>
-                            <span style={{ flex: 1, fontSize: "12px", color: "#374151", fontFamily: "'SF Mono','Fira Code',monospace", letterSpacing: devShowPass ? "0" : "0.1em" }}>
-                              {devShowPass ? DEV_PASS : "••••••••••"}
-                            </span>
-                            <button type="button" onClick={() => setDevShowPass(v => !v)} title={devShowPass ? "Hide" : "Show"}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s", flexShrink: 0 }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#2563EB"; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#9CA3AF"; }}>
-                              {devShowPass ? <EyeOff style={{ width: "13px", height: "13px" }} /> : <Eye style={{ width: "13px", height: "13px" }} />}
-                            </button>
-                            <div style={{ width: "1px", height: "14px", background: "#E5E7EB", flexShrink: 0 }} />
-                            <button type="button" onClick={() => handleCopy(DEV_PASS, "pass")} title="Copy password"
-                              style={{ background: "none", border: "none", cursor: "pointer", color: copiedPass ? "#10B981" : "#9CA3AF", display: "flex", alignItems: "center", padding: "2px", transition: "color 0.18s, transform 0.15s", flexShrink: 0, transform: copiedPass ? "scale(1.15)" : "scale(1)" }}>
-                              {copiedPass ? <Check style={{ width: "13px", height: "13px" }} /> : <Copy style={{ width: "13px", height: "13px" }} />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Note */}
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "9px 11px", borderRadius: "8px", background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-                          <Info style={{ width: "12px", height: "12px", color: "#2563EB", flexShrink: 0, marginTop: "1px" }} />
-                          <p style={{ fontSize: "11px", color: "#3B82F6", lineHeight: 1.5, margin: 0 }}>
-                            This panel is only available in local development and is automatically hidden in production.
-                          </p>
-                        </div>
+                      {/* Note */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "9px 11px", borderRadius: "8px", background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
+                        <Info style={{ width: "12px", height: "12px", color: "#2563EB", flexShrink: 0, marginTop: "1px" }} />
+                        <p style={{ fontSize: "11px", color: "#3B82F6", lineHeight: 1.5, margin: 0 }}>
+                          Use these administrator credentials to sign in to the Traveloop Admin Portal.
+                        </p>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Divider */}
                 <div style={{ height: "1px", background: "#F3F4F6" }} />
