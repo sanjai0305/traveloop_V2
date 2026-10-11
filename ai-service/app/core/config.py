@@ -20,6 +20,13 @@ class Settings(BaseModel):
     db_password: str = Field(default="")
     db_ssl: bool = Field(default=False)
 
+    # AWS S3 Storage Configuration
+    aws_region: str = Field(default="ap-south-1")
+    aws_s3_bucket: str = Field(default="traveloop-media")
+    aws_cloudfront_domain: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+
     gemini_api_key: str = Field(..., min_length=0)
     gemini_model: str = Field(default="gemini-flash-latest", min_length=1)
     redis_url: str = Field(default="redis://localhost:6379/0", min_length=1)
@@ -59,6 +66,11 @@ def get_settings() -> Settings:
         db_user=os.getenv("DB_USER", "traveloop_app"),
         db_password=os.getenv("DB_PASSWORD", ""),
         db_ssl=os.getenv("DB_SSL", "false").lower() == "true",
+        aws_region=os.getenv("AWS_REGION", "ap-south-1"),
+        aws_s3_bucket=os.getenv("AWS_S3_BUCKET", "traveloop-media"),
+        aws_cloudfront_domain=os.getenv("AWS_CLOUDFRONT_DOMAIN") or None,
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID") or None,
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY") or None,
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),

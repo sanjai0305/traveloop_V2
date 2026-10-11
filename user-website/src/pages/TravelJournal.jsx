@@ -8,6 +8,7 @@ import PageHeader from "../components/common/PageHeader";
 import DesktopDialog from "../components/common/DesktopDialog";
 import EmptyState from "../components/common/EmptyState";
 import { getApiUrl } from "../utils/api";
+import { uploadFile } from "../services/uploadService";
 import { useTheme } from "../context/ThemeContext";
 import { useToast } from "../components/mobile/MobileToast";
 import {
@@ -221,14 +222,29 @@ const TravelJournal = () => {
     }
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setForm(f => ({ ...f, photos: [...f.photos, { url: ev.target.result, caption: "" }] }));
-    };
-    reader.readAsDataURL(file);
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file.");
+      return;
+    }
+
+    try {
+      toast.info("Uploading photo to S3...");
+      const result = await uploadFile(file, "gallery");
+      if (result && result.url) {
+        setForm((f) => ({
+          ...f,
+          photos: [...f.photos, { url: result.url, caption: "" }],
+        }));
+        toast.success("Photo uploaded successfully!");
+      }
+    } catch (err) {
+      console.error("[Journal Photo Upload Error]:", err);
+      toast.error(err.message || "Failed to upload photo to storage.");
+    }
   };
 
   const addHighlight = () => {

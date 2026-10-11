@@ -85,7 +85,7 @@ Traditional travel management suffers from severe operational fragmentation:
 | **Interactive Transit** | Visual Bus Seat Layout & Booking | Dynamic grid generation based on coach type (AC Sleeper, Volvo, Semi-Sleeper), interactive seat selection, and conflict reservation checks | `user-website`, `agent-portal`, `Backend` (`seatRoutes.js`) |
 | **Digital Boarding** | Dynamic QR Code Boarding Passes | QR generation for bookings, downloadable passes, and driver camera scanning using `html5-qrcode` | `driver-portal`, `user-website`, `Backend` (`boardingRoutes.js`) |
 | **Driver Operations** | Live Manifest & Boarding Validation | Real-time passenger list, instant QR verification, status updates (`BOARDED` / `NOT_BOARDED`), and departure announcements | `driver-portal`, `Backend` (`driverRoutes.js`) |
-| **Agency KYC** | Multi-Step Agency Onboarding | 5-step registration with business license, document upload via Cloudinary/Multer, and admin verification workflow | `agent-portal`, `admin-portal`, `Backend` (`agentRoutes.js`) |
+| **Agency KYC** | Multi-Step Agency Onboarding | 5-step registration with business license, document upload via AWS S3 / Multer, and admin verification workflow | `agent-portal`, `admin-portal`, `Backend` (`agentRoutes.js`) |
 | **Admin Governance** | Platform Admin Dashboard | Agency approvals, commission rate controls, package approval/rejection, financial settlements, and audit activity logging | `admin-portal`, `Backend` (`adminRoutes.js`) |
 | **Real-Time Engine** | Group Collaboration & Chat | Real-time Socket.io rooms per trip, live typing indicators, instant messaging, user presence tracking, and notification dispatches | `user-website`, `Backend` (`server.js`, Socket.io) |
 | **Travel Utility** | Multi-Currency Budgeting & Split | Dynamic expense categorization, total recalculation, and member expense tracking | `user-website`, `Backend` (`budgetRoutes.js`, `budgets` table) |
@@ -137,7 +137,7 @@ Traditional travel management suffers from severe operational fragmentation:
 | **Payments** | Razorpay SDK | `^2.9.6` | Order generation and webhook payment signature verification | Confirmed |
 | **Client Auth & Push** | Firebase / Firebase Admin | `^12.14.0` / `^10.3.0` | Google OAuth, Phone OTP verification, and JWT cross-verification | Confirmed |
 | **Document Export** | PDFKit & jsPDF | `^0.18.0` / `^2.5.2` | Server and client generation of booking receipts and boarding pass PDFs | Confirmed |
-| **Cloud Storage** | Cloudinary | `^2.10.0` | Cloud asset upload storage for KYC documents and trip gallery media | Confirmed |
+| **Cloud Storage** | AWS S3 / CloudFront | `@aws-sdk/client-s3` `^3.1149.0` | Secure object storage for media, KYC documents, avatars, and attachments | Confirmed |
 | **Reverse Proxy** | Nginx | `1.27-alpine` | Multi-tenant reverse proxy and static distribution server | Confirmed |
 | **Containerization** | Docker & Docker Compose | Compose file `3.9` | Multi-container composition of 7 services, health checks, and bridge networking | Confirmed |
 | **CI/CD & Process Mgr**| GitHub Actions & PM2 | `appleboy/ssh-action@v1.2.0` | Automated git deployment pipeline to AWS EC2 with PM2 process manager | Confirmed |
@@ -179,7 +179,7 @@ flowchart TB
     subgraph ExternalServices["Third-Party Integrations"]
         FB["Firebase Admin (Auth / OTP)"]
         RZP["Razorpay (Payments & Orders)"]
-        CLD["Cloudinary (KYC & Images)"]
+        S3["AWS S3 & CloudFront (Media, KYC & Documents)"]
         MAIL["Nodemailer / Gmail OAuth2"]
         METEO["Open-Meteo Weather API"]
     end
@@ -231,7 +231,7 @@ traveloop_V2/
 ├── README.md                       # Comprehensive platform architectural documentation
 │
 ├── Backend/                        # Central Node.js / Express API Server (Port 5000)
-│   ├── config/                     # Service configs (MySQL pool, DB query abstraction, Firebase Admin, Cloudinary)
+│   ├── config/                     # Service configs (MySQL pool, DB query abstraction, Firebase Admin, AWS S3)
 │   ├── controllers/                # 18 business logic controllers (auth, trips, bookings, admin, ai, etc.)
 │   ├── middleware/                 # 8 middlewares (auth, adminAuth, agentAuth, driverAuth, sanitize, rateLimit)
 │   ├── routes/                     # 38 Express route modules mounting all REST endpoints
@@ -530,10 +530,12 @@ GEMINI_API_KEY=your-gemini-api-key
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=your-razorpay-secret
 
-# ── Cloudinary Media Storage ──
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-cloudinary-key
-CLOUDINARY_API_SECRET=your-cloudinary-secret
+# ── AWS S3 Object Storage (Media & Documents) ──
+AWS_REGION=ap-south-1
+AWS_S3_BUCKET=your-unique-traveloop-bucket-name
+AWS_CLOUDFRONT_DOMAIN=
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
 
 # ── Internal Service Interconnects ──
 AI_SERVICE_URL=http://localhost:8000

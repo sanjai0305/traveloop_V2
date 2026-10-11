@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import MainLayout from "../layouts/MainLayout";
 import { getApiUrl } from "../utils/api";
+import { uploadFile } from "../services/uploadService";
 import { useToast } from "../components/mobile/MobileToast";
 import { useAuth } from "../context/AuthContext";
 
@@ -193,6 +194,26 @@ const EditTrip = () => {
   const clearImage = () => {
     handleChange("image", "");
     setImagePreview("");
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file (JPG, PNG, WEBP).");
+      return;
+    }
+    try {
+      toast.info("Uploading cover image to S3...");
+      const result = await uploadFile(file, "covers");
+      if (result && result.url) {
+        handleImageUrl(result.url);
+        toast.success("Cover image uploaded to S3!");
+      }
+    } catch (err) {
+      console.error("[Cover Upload Error]:", err);
+      toast.error(err.message || "Failed to upload image.");
+    }
   };
 
   // ── VALIDATION ─────────────────────────────────────────────────────────────
@@ -568,31 +589,38 @@ const EditTrip = () => {
                   </div>
                 )}
 
-                {/* URL Input */}
-                <Field label="Image URL" hint="Paste a direct image link">
-                  <div className="relative">
-                    <Camera size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-violet-500 pointer-events-none" />
-                    <input
-                      type="url"
-                      value={form.image}
-                      onChange={e => handleImageUrl(e.target.value)}
-                      placeholder="https://images.unsplash.com/..."
-                      className="w-full h-12 pl-10 pr-10 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10 text-sm font-medium text-slate-800 placeholder:text-slate-400 bg-slate-50/50 outline-none transition-all"
-                    />
-                    {form.image && (
-                      <button
-                        onClick={clearImage}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 cursor-pointer transition-all"
-                      >
-                        <X size={15} />
-                      </button>
-                    )}
+                {/* URL or Direct S3 Upload */}
+                <Field label="Image URL or File" hint="Paste a direct image link or upload to S3">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Camera size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-violet-500 pointer-events-none" />
+                      <input
+                        type="url"
+                        value={form.image}
+                        onChange={e => handleImageUrl(e.target.value)}
+                        placeholder="https://images.unsplash.com/..."
+                        className="w-full h-12 pl-10 pr-10 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10 text-sm font-medium text-slate-800 placeholder:text-slate-400 bg-slate-50/50 outline-none transition-all"
+                      />
+                      {form.image && (
+                        <button
+                          onClick={clearImage}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500 cursor-pointer transition-all"
+                        >
+                          <X size={15} />
+                        </button>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold rounded-xl text-xs cursor-pointer transition-all border border-violet-200 shrink-0">
+                      <Upload size={14} />
+                      <span>Upload</span>
+                      <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                    </label>
                   </div>
                 </Field>
 
                 <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
                   <Info size={11} />
-                  You can use any public image URL (e.g. from Unsplash). Image upload support is coming soon.
+                  Paste an image link or upload directly to secure Amazon S3 cloud storage.
                 </p>
               </div>
 

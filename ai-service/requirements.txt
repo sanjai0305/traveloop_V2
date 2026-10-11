@@ -13,3 +13,4 @@ sqlalchemy
 python-dotenv
 pydantic
 google-generativeai
+boto3

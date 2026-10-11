@@ -973,8 +973,18 @@ router.put("/settings", protectAgent, async (req, res) => {
 router.post("/upload", protectAgent, uploadMiddleware.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
-    const result = await UploadService.uploadFile(req.file);
-    res.json({ success: true, url: result.secure_url || result.url });
+    const folder = req.body.folder || "agents";
+    const result = await UploadService.uploadFile(req.file, folder, {
+      ownerId: req.agent?.id || req.agent?._id,
+      entityType: req.body.entityType || "agent_media",
+    });
+    res.json({
+      success: true,
+      url: result.url,
+      secure_url: result.url,
+      objectKey: result.objectKey,
+      fileId: result.fileId,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

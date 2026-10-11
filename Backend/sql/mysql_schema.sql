@@ -796,4 +796,28 @@ CREATE TABLE IF NOT EXISTS commissions (
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------
+-- 41. UPLOADED_FILES TABLE (AWS S3 Storage Registry)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS uploaded_files (
+    id VARCHAR(36) PRIMARY KEY,
+    owner_id VARCHAR(36),
+    entity_type VARCHAR(50) DEFAULT 'general',
+    entity_id VARCHAR(36),
+    original_filename VARCHAR(255) NOT NULL,
+    storage_provider VARCHAR(50) DEFAULT 's3',
+    bucket_name VARCHAR(255) NOT NULL,
+    object_key VARCHAR(500) NOT NULL UNIQUE,
+    mime_type VARCHAR(100),
+    file_size BIGINT DEFAULT 0,
+    visibility ENUM('public', 'private') DEFAULT 'public',
+    metadata JSON,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_files_owner (owner_id),
+    INDEX idx_files_entity (entity_type, entity_id),
+    INDEX idx_files_visibility (visibility),
+    INDEX idx_files_object_key (object_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

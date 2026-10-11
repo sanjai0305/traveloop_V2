@@ -22,6 +22,7 @@ import {
   DollarSign, Sliders, X, Info as InfoIcon
 } from "lucide-react";
 import { getApiUrl } from "../utils/api";
+import { uploadFile } from "../services/uploadService";
 import BottomSheet from "../components/mobile/BottomSheet";
 import { useToast } from "../components/mobile/MobileToast";
 import { verifyReferralCode } from "../services/authService";
@@ -466,13 +467,23 @@ const Profile = () => {
   const handleAvatarChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64Str = event.target.result;
-      setProfileUser(prev => ({ ...prev, avatar: base64Str }));
-      await updateProfileDetails({ avatar: base64Str }, "Avatar updated successfully!");
-    };
-    reader.readAsDataURL(file);
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file (JPG, PNG, WEBP).");
+      return;
+    }
+
+    try {
+      toast.info("Uploading avatar to S3...");
+      const result = await uploadFile(file, "avatars");
+      if (result && result.url) {
+        setProfileUser((prev) => ({ ...prev, avatar: result.url }));
+        await updateProfileDetails({ avatar: result.url }, "Avatar updated successfully!");
+      }
+    } catch (err) {
+      console.error("[Avatar Upload Error]:", err);
+      toast.error(err.message || "Failed to upload avatar to storage.");
+    }
   };
 
   const handlePersonalSubmit = async (e) => {

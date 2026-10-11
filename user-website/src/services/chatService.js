@@ -145,30 +145,29 @@ export const subscribeToMessages = (tripId, callback) => {
   });
 };
 
-// Helper to upload media file to Cloudinary
-const uploadToCloudinary = async (blob, fileName) => {
+// Helper to upload media file to S3 via backend storage API
+const uploadToS3Storage = async (blob, fileName) => {
   const file = new File([blob], fileName, { type: blob.type });
   const formData = new FormData();
   formData.append("file", file);
-  formData.append(
-    "upload_preset",
-    import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "traveloop_agents"
-  );
-  
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "hf0hgprc";
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-    {
-      method: "POST",
-      body: formData,
-    }
-  );
-  
+  formData.append("folder", "chat");
+
+  const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
+
+  const response = await fetch(`${host}/api/upload`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error?.message || "Failed to upload to Cloudinary");
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to upload chat attachment to S3 storage.");
   }
-  return data.secure_url;
+  return data.url;
 };
 
 // Send a message
@@ -189,7 +188,7 @@ export const sendMessage = async (tripId, payload) => {
       blob = dataURLtoBlob(compressedBase64);
       fileName = `${fileName}.jpg`;
     }
-    fileUrl = await uploadToCloudinary(blob, fileName);
+    fileUrl = await uploadToS3Storage(blob, fileName);
   }
 
   const messagesCollectionRef = collection(db, "trips", tripId, "messages");
