@@ -48,8 +48,12 @@ cp .env.example .env
 Required and optional settings:
 
 ```env
-MONGODB_URI=mongodb://localhost:27017
-DATABASE_NAME=ai_service
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=traveloop
+DB_USER=traveloop_app
+DB_PASSWORD=your_secure_mysql_password
+DB_SSL=false
 GEMINI_API_KEY=your-gemini-api-key
 REDIS_URL=redis://localhost:6379/0
 REDIS_MEMORY_TTL_SECONDS=86400
@@ -69,6 +73,12 @@ RECOMMENDATION_CACHE_TTL_SECONDS=900
 
 ## Local Services
 
+Run MySQL 8.0:
+
+```bash
+docker run -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=traveloop mysql:8.0
+```
+
 Run Redis:
 
 ```bash
@@ -80,8 +90,6 @@ Run Qdrant:
 ```bash
 docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
 ```
-
-Run MongoDB locally or set `MONGODB_URI` to a hosted MongoDB database.
 
 ## Run
 

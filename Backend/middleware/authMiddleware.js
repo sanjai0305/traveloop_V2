@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import admin from "../config/firebaseAdmin.js";
-import { getDbClient } from "../config/supabase.js";
+import { db } from "../config/db.js";
 
 const protect = async (req, res, next) => {
   let token;
@@ -15,7 +15,6 @@ const protect = async (req, res, next) => {
   ) {
     try {
       token = req.headers.authorization.split(" ")[1];
-      const db = await getDbClient();
 
       let userId;
       let firebaseUid;
@@ -48,7 +47,7 @@ const protect = async (req, res, next) => {
 
       let user = null;
 
-      // 3. User lookup in Supabase
+      // 3. User lookup in MySQL
       if (userId) {
         const { data: userById } = await db
           .from("users")
@@ -76,9 +75,22 @@ const protect = async (req, res, next) => {
         user = userByEmail;
       }
 
-      // 4. Auto-provision user if Firebase token is valid but user record doesn't exist yet in Supabase
+      // Link firebase_uid to existing MySQL user if not already linked
+      if (user && !user.firebase_uid && firebaseUid) {
+        try {
+          await db
+            .from("users")
+            .update({ firebase_uid: firebaseUid })
+            .eq("id", user.id);
+          user.firebase_uid = firebaseUid;
+        } catch (linkErr) {
+          console.warn("[Auth Middleware] Notice: could not link firebase_uid:", linkErr.message);
+        }
+      }
+
+      // 4. Auto-provision user if Firebase token is valid but user record doesn't exist yet in MySQL
       if (!user && email) {
-        console.log(`[Auth Middleware] Auto-provisioning new Supabase user for email: ${email}`);
+        console.log(`[Auth Middleware] Auto-provisioning new MySQL user for email: ${email}`);
         const { data: newUser } = await db
           .from("users")
           .insert([
@@ -96,7 +108,7 @@ const protect = async (req, res, next) => {
       }
 
       if (user) {
-        console.log(`✅ Supabase User Loaded: ${user.id} (${user.email})`);
+        console.log(`✅ MySQL User Loaded: ${user.id} (${user.email})`);
         req.user = {
           _id: user.id,
           id: user.id,
@@ -105,7 +117,7 @@ const protect = async (req, res, next) => {
         return next();
       }
 
-      // 5. Agent lookup in Supabase
+      // 5. Agent lookup in MySQL
       let agent = null;
       if (userId) {
         const { data: agentById } = await db
@@ -126,7 +138,7 @@ const protect = async (req, res, next) => {
       }
 
       if (agent) {
-        console.log(`✅ Supabase Agent Loaded: ${agent.id}`);
+        console.log(`✅ MySQL Agent Loaded: ${agent.id}`);
         req.agent = {
           _id: agent.id,
           id: agent.id,

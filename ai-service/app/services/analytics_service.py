@@ -61,37 +61,37 @@ class AnalyticsService:
         if cached_response:
             return AnalyticsResponse.model_validate(cached_response)
 
-        supabase_filters = self._build_supabase_filters(filters)
+        sql_filters = self._build_sql_filters(filters)
 
         try:
-            total_queries = analytics_repository.count_analytics(supabase_filters)
+            total_queries = analytics_repository.count_analytics(sql_filters)
             top_destinations = [
                 CountMetric(name=d["name"], count=d["count"])
-                for d in analytics_repository.top_counts(supabase_filters, "destination")
+                for d in analytics_repository.top_counts(sql_filters, "destination")
             ]
             top_themes = [
                 CountMetric(name=d["name"], count=d["count"])
-                for d in analytics_repository.top_counts(supabase_filters, "theme")
+                for d in analytics_repository.top_counts(sql_filters, "theme")
             ]
             budget_distribution = {
                 d["name"]: d["count"]
-                for d in analytics_repository.distribution(supabase_filters, "budget", sorted(ALLOWED_BUDGETS))
+                for d in analytics_repository.distribution(sql_filters, "budget", sorted(ALLOWED_BUDGETS))
             }
             duration_distribution = {
                 d["name"]: d["count"]
-                for d in analytics_repository.distribution(supabase_filters, "duration", sorted(ALLOWED_DURATIONS))
+                for d in analytics_repository.distribution(sql_filters, "duration", sorted(ALLOWED_DURATIONS))
             }
-            peak_hour = analytics_repository.peak_search_hour(supabase_filters)
+            peak_hour = analytics_repository.peak_search_hour(sql_filters)
             peak_search_hour = str(peak_hour) if peak_hour is not None else None
-            weekly_growth = analytics_repository.get_weekly_growth(supabase_filters)
+            weekly_growth = analytics_repository.get_weekly_growth(sql_filters)
 
             weekly_demand = [
                 TimeSeriesPoint(label=d["date"], count=d["count"])
-                for d in analytics_repository.time_series(supabase_filters, "%Y-W%U")
+                for d in analytics_repository.time_series(sql_filters, "%Y-W%U")
             ]
             monthly_demand = [
                 TimeSeriesPoint(label=d["date"], count=d["count"])
-                for d in analytics_repository.time_series(supabase_filters, "%Y-%m")
+                for d in analytics_repository.time_series(sql_filters, "%Y-%m")
             ]
             day_names = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"}
             hourly_heatmap = [
@@ -100,7 +100,7 @@ class AnalyticsService:
                     hour=d["hour"],
                     count=d["count"],
                 )
-                for d in analytics_repository.hourly_heatmap(supabase_filters)
+                for d in analytics_repository.hourly_heatmap(sql_filters)
             ]
         except Exception as exc:
             logger.exception("Analytics aggregation failed")
@@ -126,8 +126,8 @@ class AnalyticsService:
         return response
 
     async def ensure_indexes(self) -> None:
-        # Supabase PostgreSQL indexes are managed via schema.sql
-        logger.info("Supabase: indexes managed via schema.sql")
+        # MySQL indexes are managed via mysql_schema.sql
+        logger.info("MySQL: indexes managed via mysql_schema.sql")
 
     async def invalidate_dashboard_cache(self) -> None:
         try:
@@ -152,7 +152,7 @@ class AnalyticsService:
                 analytics_doc["timestamp"] = analytics_doc["timestamp"].isoformat()
             analytics_repository.insert_analytics(analytics_doc)
         except Exception as exc:
-            logger.exception("Failed to store analytics in Supabase")
+            logger.exception("Failed to store analytics in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to store demand analytics",
@@ -169,7 +169,7 @@ class AnalyticsService:
         try:
             analytics_repository.upsert_daily_statistics(stat_date, increment=1)
         except Exception as exc:
-            logger.exception("Failed to update daily statistics in Supabase")
+            logger.exception("Failed to update daily statistics in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to update daily statistics",
@@ -177,29 +177,29 @@ class AnalyticsService:
 
         logger.info("Statistics Updated")
 
-    def _build_supabase_filters(self, filters: AnalyticsFilters) -> dict[str, Any]:
-        supabase_filters: dict[str, Any] = {}
+    def _build_sql_filters(self, filters: AnalyticsFilters) -> dict[str, Any]:
+        sql_filters: dict[str, Any] = {}
 
         if filters.from_date:
-            supabase_filters["date_from"] = datetime.combine(
+            sql_filters["date_from"] = datetime.combine(
                 filters.from_date, time.min, tzinfo=timezone.utc
             ).isoformat()
         if filters.to_date:
-            supabase_filters["date_to"] = datetime.combine(
+            sql_filters["date_to"] = datetime.combine(
                 filters.to_date, time.max, tzinfo=timezone.utc
             ).isoformat()
         if filters.destination:
-            supabase_filters["destination"] = filters.destination
+            sql_filters["destination"] = filters.destination
         if filters.theme:
-            supabase_filters["theme"] = filters.theme
+            sql_filters["theme"] = filters.theme
         if filters.budget:
-            supabase_filters["budget"] = filters.budget
+            sql_filters["budget"] = filters.budget
         if filters.user_id:
-            supabase_filters["user_id"] = filters.user_id
+            sql_filters["user_id"] = filters.user_id
         if filters.group_type:
-            supabase_filters["group_type"] = filters.group_type
+            sql_filters["group_type"] = filters.group_type
 
-        return supabase_filters
+        return sql_filters
 
     def _cache_key(self, namespace: str, filters: AnalyticsFilters) -> str:
         payload = filters.model_dump(mode="json", exclude_none=True)

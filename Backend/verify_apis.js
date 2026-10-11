@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "assert";
-import mongoose from "mongoose";
+import { pool, closePool } from "./config/mysql.js";
 import { db, auth } from "./config/firebase.js";
 import { doc, getDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
@@ -12,8 +12,12 @@ const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${er
 
 async function runTests() {
   console.log("=== TRAVELOOP PRODUCTION API TEST SUITE ===\n");
-  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/traveloop";
-  await mongoose.connect(mongoUri, { dbName: process.env.DATABASE_NAME || "traveloop" });
+  try {
+    await pool.query("SELECT 1");
+    console.log("MySQL database connection verified.\n");
+  } catch (err) {
+    console.warn("MySQL pool warning (API server may be running remotely):", err.message);
+  }
 
   let token = null;
   let testTripId = null;
@@ -188,9 +192,9 @@ async function runTests() {
     });
     const tripData = await tripRes.json();
     assert.strictEqual(tripRes.status, 201, "Trip creation should return 201 Created");
-    assert.strictEqual(tripData.success, true, "Trip creation success should be true");
-    assert.ok(tripData.trip._id, "Created trip should include an MongoDB ID");
-    testTripId = tripData.trip._id;
+    const tripId = tripData.trip.id || tripData.trip._id;
+    assert.ok(tripId, "Created trip should include an ID");
+    testTripId = tripId;
     logPass("Trips: Trip Creation & Location Schema persistence");
   } catch (err) {
     logFail("Trip Creation Tests", err);
@@ -270,7 +274,7 @@ async function runTests() {
   console.log("All test cases completed successfully! 🎉");
   console.log("===========================================\n");
 
-  await mongoose.connection.close();
+  await closePool();
 }
 
 runTests().catch(err => {

@@ -136,8 +136,8 @@ class RecommendationService:
             logger.exception("New trip recommendation generation failed")
 
     async def ensure_indexes(self) -> None:
-        # Supabase PostgreSQL indexes are managed via schema.sql
-        logger.info("Supabase: indexes managed via schema.sql")
+        # MySQL indexes are managed via mysql_schema.sql
+        logger.info("MySQL: indexes managed via mysql_schema.sql")
 
     async def invalidate_cache(self, user_id: str) -> None:
         try:
@@ -225,25 +225,23 @@ class RecommendationService:
 
     async def match_trip_against_intents(self, trip_id: str, trip: TripCreate) -> None:
         """
-        When an agent publishes a trip, compare it against stored travel_intents in Supabase.
+        When an agent publishes a trip, compare it against stored travel_intents in MySQL.
         Find matching users and create recommendation records.
         """
-        from app.database.supabase import get_supabase
-        client = get_supabase()
+        from app.database.mysql import fetch_all
         dest = (trip.destination or "").strip()
 
         try:
-            res = (
-                client.table("travel_intents")
-                .select("user_id, user_ids, destination, theme")
-                .eq("status", "active")
-                .ilike("destination", dest)
-                .limit(100)
-                .execute()
-            )
-            intents = res.data or []
+            dest_pattern = f"%{dest}%" if dest else "%"
+            sql = """
+                SELECT user_id, user_ids, destination, theme
+                FROM travel_intents
+                WHERE status = 'active' AND destination LIKE :dest_pattern
+                LIMIT 100
+            """
+            intents = fetch_all(sql, {"dest_pattern": dest_pattern})
         except Exception as q_err:
-            logger.warning(f"match_trip_against_intents Supabase error: {q_err}")
+            logger.warning(f"match_trip_against_intents MySQL error: {q_err}")
             intents = []
 
         matched_user_ids: set[str] = set()
@@ -251,9 +249,12 @@ class RecommendationService:
             uids = intent.get("user_ids") or []
             if isinstance(uids, str):
                 import json as json_lib
-                uids = json_lib.loads(uids)
+                try:
+                    uids = json_lib.loads(uids)
+                except Exception:
+                    uids = []
             uid_single = intent.get("user_id")
-            for u in ([uid_single] + uids):
+            for u in ([uid_single] + (uids if isinstance(uids, list) else [])):
                 if u and u != "anonymous":
                     matched_user_ids.add(u)
 
@@ -270,16 +271,14 @@ class RecommendationService:
             await self.invalidate_user_cache(uid)
 
     async def _popularity_score(self, trip: TripCreate) -> float:
-        from app.database.supabase import get_supabase
+        from app.database.mysql import fetch_one
         try:
-            client = get_supabase()
-            res = (
-                client.table("travel_intents")
-                .select("id", count="exact")
-                .ilike("destination", trip.destination or "")
-                .execute()
+            dest_pattern = f"%{trip.destination or ''}%"
+            row = fetch_one(
+                "SELECT COUNT(*) AS cnt FROM travel_intents WHERE destination LIKE :dest_pattern",
+                {"dest_pattern": dest_pattern},
             )
-            count = res.count or 0
+            count = row.get("cnt", 0) if row else 0
             return min(count / 100, 1.0)
         except Exception:
             return 0.0

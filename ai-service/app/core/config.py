@@ -12,10 +12,15 @@ class Settings(BaseModel):
     api_title: str = "AI Service API"
     api_version: str = "1.0.0"
 
-    supabase_url: str = Field(default="https://yjektwftyyfkudxfwtkf.supabase.co", min_length=1)
-    supabase_service_role_key: str = Field(..., min_length=1)
-    supabase_anon_key: str | None = None
-    gemini_api_key: str = Field(..., min_length=1)
+    # MySQL Configuration
+    db_host: str = Field(default="localhost")
+    db_port: int = Field(default=3306)
+    db_name: str = Field(default="traveloop")
+    db_user: str = Field(default="traveloop_app")
+    db_password: str = Field(default="")
+    db_ssl: bool = Field(default=False)
+
+    gemini_api_key: str = Field(..., min_length=0)
     gemini_model: str = Field(default="gemini-flash-latest", min_length=1)
     redis_url: str = Field(default="redis://localhost:6379/0", min_length=1)
     redis_memory_ttl_seconds: int = Field(default=86400, ge=60)
@@ -48,14 +53,17 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
-        supabase_url=os.getenv("SUPABASE_URL", "https://yjektwftyyfkudxfwtkf.supabase.co"),
-        supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY", "sb_secret_T5Kp834lfmaclIuxd-Y-LQ_X11kh34e"),
-        supabase_anon_key=os.getenv("SUPABASE_ANON_KEY", "sb_publishable_zLv_UPjsCB3h1L_691i1ng_fbS9zlWs"),
+        db_host=os.getenv("DB_HOST", "localhost"),
+        db_port=int(os.getenv("DB_PORT", "3306")),
+        db_name=os.getenv("DB_NAME", "traveloop"),
+        db_user=os.getenv("DB_USER", "traveloop_app"),
+        db_password=os.getenv("DB_PASSWORD", ""),
+        db_ssl=os.getenv("DB_SSL", "false").lower() == "true",
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-latest"),
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-        redis_memory_ttl_seconds=os.getenv("REDIS_MEMORY_TTL_SECONDS", "86400"),
-        redis_memory_max_messages=os.getenv("REDIS_MEMORY_MAX_MESSAGES", "30"),
+        redis_memory_ttl_seconds=int(os.getenv("REDIS_MEMORY_TTL_SECONDS", "86400")),
+        redis_memory_max_messages=int(os.getenv("REDIS_MEMORY_MAX_MESSAGES", "30")),
         qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
         qdrant_api_key=os.getenv("QDRANT_API_KEY") or None,
         qdrant_collection_name=os.getenv("QDRANT_COLLECTION_NAME", "trip_vectors"),
@@ -67,20 +75,18 @@ def get_settings() -> Settings:
             "QDRANT_SEARCH_INTENT_COLLECTION_NAME",
             "traveler_search_intents",
         ),
-        qdrant_timeout_seconds=os.getenv("QDRANT_TIMEOUT_SECONDS", "10"),
+        qdrant_timeout_seconds=float(os.getenv("QDRANT_TIMEOUT_SECONDS", "10.0")),
         embedding_model_name=os.getenv(
             "EMBEDDING_MODEL_NAME",
             "BAAI/bge-small-en-v1.5",
         ),
-        search_top_k=os.getenv("SEARCH_TOP_K", "5"),
-        search_min_score=os.getenv("SEARCH_MIN_SCORE", "0.65"),
-        recommendation_similarity_threshold=os.getenv(
-            "RECOMMENDATION_SIMILARITY_THRESHOLD",
-            "0.75",
+        search_top_k=int(os.getenv("SEARCH_TOP_K", "5")),
+        search_min_score=float(os.getenv("SEARCH_MIN_SCORE", "0.65")),
+        recommendation_similarity_threshold=float(
+            os.getenv("RECOMMENDATION_SIMILARITY_THRESHOLD", "0.75"),
         ),
-        recommendation_top_k=os.getenv("RECOMMENDATION_TOP_K", "10"),
-        recommendation_cache_ttl_seconds=os.getenv(
-            "RECOMMENDATION_CACHE_TTL_SECONDS",
-            "900",
+        recommendation_top_k=int(os.getenv("RECOMMENDATION_TOP_K", "10")),
+        recommendation_cache_ttl_seconds=int(
+            os.getenv("RECOMMENDATION_CACHE_TTL_SECONDS", "900"),
         ),
     )

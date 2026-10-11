@@ -136,7 +136,7 @@ class RagService:
                 score_threshold=settings.search_min_score,
             )
         except Exception as q_err:
-            logger.warning(f"Qdrant vector search notice (fallback to Supabase): {q_err}")
+            logger.warning(f"Qdrant vector search notice (fallback to MySQL): {q_err}")
             try:
                 db_trips = trip_repository.search_trips_keyword(query, limit=settings.search_top_k)
                 retrieved = [
@@ -145,7 +145,7 @@ class RagService:
                         title=str(item.get("title", "")),
                         score=0.88,
                         destination=str(item.get("destination", "")),
-                        match_type="supabase_keyword",
+                        match_type="mysql_keyword",
                     )
                     for item in db_trips
                 ]
@@ -155,8 +155,8 @@ class RagService:
                         for t in retrieved
                     )
                     return retrieved, context_str
-            except Exception as sb_err:
-                logger.warning(f"Supabase fallback trip search error: {sb_err}")
+            except Exception as db_err:
+                logger.warning(f"MySQL fallback trip search error: {db_err}")
 
         if not results:
             return [], "No relevant trip information was retrieved."
@@ -171,7 +171,7 @@ class RagService:
     ) -> None:
         doc = trip_document.model_dump()
         doc["semantic_document"] = semantic_document
-        # Convert datetimes to ISO strings for Supabase
+        # Convert datetimes to ISO strings for MySQL
         for k, v in doc.items():
             if hasattr(v, "isoformat"):
                 doc[k] = v.isoformat()
@@ -179,17 +179,17 @@ class RagService:
         try:
             trip_repository.save_trip(doc)
         except Exception as exc:
-            logger.exception("Failed to save trip in Supabase")
+            logger.exception("Failed to save trip in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Failed to save trip in Supabase",
+                detail="Failed to save trip in database",
             ) from exc
 
     async def _mark_trip_embedded(self, trip_id: str) -> None:
         try:
             trip_repository.mark_trip_embedded(trip_id)
         except Exception as exc:
-            logger.exception("Failed to update trip embedding status in Supabase")
+            logger.exception("Failed to update trip embedding status in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to update trip embedding status",

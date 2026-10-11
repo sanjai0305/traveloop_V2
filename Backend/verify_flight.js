@@ -1,10 +1,7 @@
 import "dotenv/config";
 import assert from "assert";
-import mongoose from "mongoose";
-import User from "./models/User.js";
-import Trip from "./models/Trip.js";
-import Flight from "./models/Flight.js";
-import Notification from "./models/Notification.js";
+import { pool, closePool } from "./config/mysql.js";
+
 const BASE_URL = process.env.VITE_API_URL || "http://localhost:5000/api";
 
 const logPass = (name) => console.log(`\x1b[32m✓ [PASS] ${name}\x1b[0m`);
@@ -13,10 +10,12 @@ const logFail = (name, error) => console.error(`\x1b[31m✗ [FAIL] ${name}: ${er
 async function runTests() {
   console.log("=== TRAVELOOP FLIGHT TRACKER & TIMELINE INTEGRATION TEST SUITE ===\n");
 
-  // Connect database
-  const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/traveloop";
-  await mongoose.connect(mongoUri, { dbName: process.env.DATABASE_NAME || "traveloop" });
-  console.log("Database connected successfully.\n");
+  try {
+    await pool.query("SELECT 1");
+    console.log("MySQL Database connected successfully.\n");
+  } catch (err) {
+    console.warn("MySQL pool warning:", err.message);
+  }
 
   const emailOwner = `owner_flight_${Date.now()}@test.com`;
   const emailEditor = `editor_flight_${Date.now()}@test.com`;
@@ -322,9 +321,9 @@ async function runTests() {
     assert.strictEqual(meBeforeData.success, true);
     assert.strictEqual(meBeforeData.user.email, emailEdgeCase);
 
-    // 3. Delete the user directly in MongoDB to simulate user deleted/disabled
-    const dbDeleteResult = await User.deleteOne({ _id: edgeCaseId });
-    assert.strictEqual(dbDeleteResult.deletedCount, 1, "Database deletion confirmed");
+    // 3. Delete the user directly in MySQL to simulate user deleted/disabled
+    const [dbDeleteResult] = await pool.query("DELETE FROM users WHERE id = ?", [edgeCaseId]);
+    assert.strictEqual(dbDeleteResult.affectedRows, 1, "Database deletion confirmed");
 
     // 4. Fetch /auth/me with same token -> Should return 401 and "USER_NOT_FOUND" code
     const meAfterRes = await fetch(`${BASE_URL}/auth/me`, {
@@ -352,28 +351,13 @@ async function runTests() {
 async function cleanup() {
   console.log("Cleaning up test database records...");
   try {
-    // Delete test users
-    await User.deleteMany({
-      email: {
-        $in: [
-          /owner_flight_/,
-          /editor_flight_/,
-          /viewer_flight_/,
-          /edge_case_/
-        ]
-      }
-    });
-
-    // Delete flights, trips, and notifications created in test
-    await Flight.deleteMany({});
-    await Trip.deleteMany({ title: "Flight Test Trip" });
-    await Notification.deleteMany({});
-
+    await pool.query("DELETE FROM users WHERE email LIKE '%flight_%' OR email LIKE '%edge_case_%'");
+    await pool.query("DELETE FROM trips WHERE title = 'Flight Test Trip'");
     console.log("Cleanup completed.");
   } catch (e) {
-    console.error("Cleanup failed:", e);
+    console.error("Cleanup failed:", e.message);
   } finally {
-    await mongoose.disconnect();
+    await closePool();
     console.log("Database disconnected.");
   }
 }

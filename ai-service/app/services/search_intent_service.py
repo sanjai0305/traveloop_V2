@@ -65,7 +65,7 @@ class SearchIntentService:
                 "timestamp": document.timestamp.isoformat() if hasattr(document.timestamp, "isoformat") else str(document.timestamp),
             })
         except Exception as exc:
-            logger.exception("Failed to store traveler search intent in Supabase")
+            logger.exception("Failed to store traveler search intent in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to store traveler search intent",
@@ -91,8 +91,8 @@ class SearchIntentService:
         return document
 
     async def ensure_indexes(self) -> None:
-        # Supabase PostgreSQL indexes are managed via schema.sql — nothing to do here
-        logger.info("Supabase: indexes managed via schema.sql")
+        # MySQL indexes are managed via mysql_schema.sql — nothing to do here
+        logger.info("MySQL: indexes managed via mysql_schema.sql")
 
 
 search_intent_service = SearchIntentService(embedding_service, extractor_service)

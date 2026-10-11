@@ -1,14 +1,14 @@
-import supabase from "../config/supabase.js";
+import db from "../config/db.js";
 
 export const getSystemHealth = async (req, res) => {
-  console.log("[Health Check] Checking infrastructure status...");
+  console.log("[Health Check] Checking MySQL infrastructure status...");
 
-  let supabaseStatus = "unhealthy";
+  let dbStatus = "unhealthy";
   try {
-    const { error } = await supabase.from("bus_types").select("id").limit(1);
-    supabaseStatus = error ? "unhealthy" : "healthy";
+    const rows = await db.query("SELECT 1 AS connected");
+    dbStatus = (rows && rows[0]?.connected === 1) ? "healthy" : "unhealthy";
   } catch {
-    supabaseStatus = "unhealthy";
+    dbStatus = "unhealthy";
   }
 
   const uptimeSeconds = process.uptime();
@@ -17,10 +17,12 @@ export const getSystemHealth = async (req, res) => {
   const uptimeString  = `${hours}h ${minutes}m`;
   const memoryString  = `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`;
 
-  res.status(supabaseStatus === "healthy" ? 200 : 503).json({
-    supabase: supabaseStatus,
-    database: supabaseStatus,
+  res.status(dbStatus === "healthy" ? 200 : 503).json({
+    mysql:    dbStatus,
+    database: dbStatus,
     uptime:   uptimeString,
     memory:   memoryString,
   });
 };
+
+export default getSystemHealth;

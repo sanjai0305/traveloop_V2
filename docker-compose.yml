@@ -12,11 +12,38 @@ networks:
 
 # ── Persistent volumes ────────────────────────────────
 volumes:
+  mysql-data:
   redis-data:
   qdrant-data:
 
 # ── Services ──────────────────────────────────────────
 services:
+
+  # ────────────────────────────────────────────────────
+  #  MySQL 8.0 (Primary Relational Database)
+  # ────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: traveloop-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-traveloop_root_password}
+      MYSQL_DATABASE: ${DB_NAME:-traveloop}
+      MYSQL_USER: ${DB_USER:-traveloop_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-traveloop_secure_password}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./Backend/sql/mysql_schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "3306:3306"
+    networks:
+      - traveloop-net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ────────────────────────────────────────────────────
   #  Redis  (AI memory + seat reservation cache)
@@ -71,10 +98,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: traveloop
+      DB_USER: traveloop_app
+      DB_PASSWORD: ${DB_PASSWORD:-traveloop_secure_password}
+      DB_SSL: "false"
       REDIS_URL: redis://redis:6379
     ports:
       - "5000:5000"
     depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -100,11 +135,19 @@ services:
     env_file:
       - ./ai-service/.env
     environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: traveloop
+      DB_USER: traveloop_app
+      DB_PASSWORD: ${DB_PASSWORD:-traveloop_secure_password}
+      DB_SSL: "false"
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
     ports:
       - "8000:8000"
     depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
       qdrant:

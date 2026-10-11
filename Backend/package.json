@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "TravelLoop Backend API - Supabase PostgreSQL Powered",
+  "description": "TravelLoop Backend API - MySQL Powered",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -12,7 +12,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.0",
     "@vercel/node": "^4.0.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.10.0",
@@ -26,6 +25,7 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
+    "mysql2": "^3.24.5",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.18.0",
     "qrcode": "^1.5.4",

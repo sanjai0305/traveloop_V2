@@ -35,12 +35,12 @@ class ProfileService:
 
         try:
             profile_doc = profile.model_dump()
-            # Convert embedding list to JSON-serializable for Supabase JSONB
+            # Convert embedding list to JSON-serializable for MySQL JSON column
             profile_doc["profile_embedding"] = profile_embedding
             profile_doc["updated_at"] = datetime.now(timezone.utc).isoformat()
             recommendation_repository.upsert_user_profile(user_id, profile_doc)
         except Exception as exc:
-            logger.exception("Failed to update user profile in Supabase")
+            logger.exception("Failed to update user profile in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to update user profile",
@@ -65,7 +65,7 @@ class ProfileService:
         try:
             document = recommendation_repository.get_user_profile(user_id)
         except Exception as exc:
-            logger.exception("Failed to load user profile from Supabase")
+            logger.exception("Failed to load user profile from MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to load user profile",
@@ -74,7 +74,7 @@ class ProfileService:
         return UserProfileDocument.model_validate(document) if document else None
 
     async def ensure_indexes(self) -> None:
-        logger.info("Supabase: indexes managed via schema.sql")
+        logger.info("MySQL: indexes managed via mysql_schema.sql")
 
     async def _build_profile_payload(self, user_id: str) -> dict[str, list[str]]:
         from app.repositories.chat_history_repository import chat_history_repository
@@ -101,26 +101,19 @@ class ProfileService:
         field_name: str,
         limit: int = 10,
     ) -> list[str]:
-        from app.database.supabase import get_supabase
+        from app.database.mysql import fetch_all
         try:
-            client = get_supabase()
-            res = (
-                client.table("travel_intents")
-                .select(field_name)
-                .eq("user_id", user_id)
-                .not_.is_(field_name, "null")
-                .limit(100)
-                .execute()
-            )
+            sql = f"SELECT `{field_name}` FROM `travel_intents` WHERE `user_id` = :user_id AND `{field_name}` IS NOT NULL LIMIT 100"
+            rows = fetch_all(sql, {"user_id": user_id})
             counts: dict[str, int] = {}
-            for row in (res.data or []):
+            for row in rows:
                 val = row.get(field_name)
                 if val:
                     counts[val] = counts.get(val, 0) + 1
             sorted_vals = sorted(counts, key=lambda k: counts[k], reverse=True)
             return sorted_vals[:limit]
         except Exception as exc:
-            logger.warning(f"Could not aggregate profile values from Supabase: {exc}")
+            logger.warning(f"Could not aggregate profile values from MySQL: {exc}")
             return []
 
     def _build_profile_text(self, profile_payload: dict[str, list[str]]) -> str:

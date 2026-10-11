@@ -89,13 +89,17 @@ if (!admin.apps.length) {
 
   console.log("[Firebase Admin Debug] Service Account Keys Configured:", Object.keys(serviceAccount));
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    ...(process.env.FIREBASE_DATABASE_URL && { databaseURL: process.env.FIREBASE_DATABASE_URL }),
-    ...(process.env.FIREBASE_STORAGE_BUCKET && { storageBucket: process.env.FIREBASE_STORAGE_BUCKET }),
-  });
-
-  console.log("✅ Firebase Admin Initialized Successfully");
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      ...(process.env.FIREBASE_DATABASE_URL && { databaseURL: process.env.FIREBASE_DATABASE_URL }),
+      ...(process.env.FIREBASE_STORAGE_BUCKET && { storageBucket: process.env.FIREBASE_STORAGE_BUCKET }),
+    });
+    console.log("✅ Firebase Admin Initialized Successfully");
+  } catch (initErr) {
+    console.warn("⚠️ [Firebase Admin] Initialization warning (invalid or placeholder key):", initErr.message);
+    console.warn("⚠️ [Firebase Admin] Token verification will require a valid PEM service account private key in .env.");
+  }
 }
 
 export default admin;

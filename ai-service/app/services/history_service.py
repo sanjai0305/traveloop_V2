@@ -23,7 +23,7 @@ class HistoryService:
         try:
             chat_history_repository.save_message(user_id, session_id, role, message)
         except Exception as exc:
-            logger.exception("Failed to store chat history in Supabase")
+            logger.exception("Failed to store chat history in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to store chat history",
@@ -35,7 +35,7 @@ class HistoryService:
         try:
             documents = chat_history_repository.get_history(user_id)
         except Exception as exc:
-            logger.exception("Failed to load chat history from Supabase")
+            logger.exception("Failed to load chat history from MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to load chat history",
@@ -57,7 +57,7 @@ class HistoryService:
         try:
             return chat_history_repository.get_user_preferences(user_id)
         except Exception as exc:
-            logger.exception("Failed to load user preferences from Supabase")
+            logger.exception("Failed to load user preferences from MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to load user preferences",
@@ -87,7 +87,7 @@ class HistoryService:
         try:
             chat_history_repository.update_user_preferences(user_id, updated_preferences)
         except Exception as exc:
-            logger.exception("Failed to update user preferences in Supabase")
+            logger.exception("Failed to update user preferences in MySQL")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Failed to update user preferences",
@@ -97,8 +97,8 @@ class HistoryService:
         return new_preferences
 
     async def ensure_indexes(self) -> None:
-        # Supabase PostgreSQL indexes are managed via schema.sql
-        logger.info("Supabase: indexes managed via schema.sql")
+        # MySQL indexes are managed via mysql_schema.sql
+        logger.info("MySQL: indexes managed via mysql_schema.sql")
 
 
 history_service = HistoryService()

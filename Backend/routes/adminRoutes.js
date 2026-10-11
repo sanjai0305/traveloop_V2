@@ -1,4 +1,5 @@
 import express from "express";
+import { db } from "../config/db.js";
 import {
   verifyAdmin,
   verifyFinance,
@@ -103,9 +104,8 @@ router.patch("/notifications/:id/read", verifyAdmin, markNotificationRead);
 // Withdrawal Approval Routes
 router.get("/withdrawals", verifyAdmin, async (req, res) => {
   try {
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = (await import("../config/supabase.js")).default;
-    const { data: withdrawals } = await supabase.from("withdrawals").select("*, agents(*)").order("created_at", { ascending: false });
+    const { data: withdrawals, error } = await db.from("withdrawals").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
     res.status(200).json({ success: true, withdrawals: (withdrawals || []).map(w => ({ ...w, _id: w.id })) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -118,9 +118,9 @@ router.patch("/withdrawals/:id", verifyAdmin, async (req, res) => {
     if (!["Approved", "Rejected", "Completed"].includes(status)) {
       return res.status(400).json({ success: false, message: "Invalid status" });
     }
-    const supabase = (await import("../config/supabase.js")).default;
-    const { data: withdrawal } = await supabase.from("withdrawals").update({ status, approved_at: new Date() }).eq("id", req.params.id).select().single();
-    res.status(200).json({ success: true, message: `Withdrawal updated to ${status}`, withdrawal: { ...withdrawal, _id: withdrawal.id } });
+    const { data: withdrawal, error } = await db.from("withdrawals").update({ status, approved_at: new Date() }).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.status(200).json({ success: true, message: `Withdrawal updated to ${status}`, withdrawal: { ...withdrawal, _id: withdrawal?.id } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

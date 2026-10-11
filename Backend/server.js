@@ -11,8 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import uploadRoutes from "./routes/uploadRoutes.js";
 
-import { connectDB } from "./config/db.js";
-import supabase from "./config/supabase.js";
+import { connectDB, db } from "./config/db.js";
 import sanitizeInput from "./middleware/sanitize.js";
 
 process.on("unhandledRejection", (reason, promise) => {
@@ -391,7 +390,7 @@ app.use("/api/health", healthRoutes);
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "TravelLoop Backend Running (Supabase PostgreSQL) 🚀",
+    message: "TravelLoop Backend Running (MySQL) 🚀",
     db: "connected",
   });
 });
@@ -445,7 +444,7 @@ app.get("/api/qr/:bookingId", async (req, res) => {
   try {
     const { bookingId } = req.params;
 
-    const { data: booking } = await supabase
+    const { data: booking } = await db
       .from("bookings")
       .select("*")
       .or(`id.eq.${bookingId},booking_code.eq.${bookingId}`)
@@ -512,7 +511,7 @@ let port = parseInt(process.env.PORT || "5000", 10);
 if (process.env.NODE_ENV === "production") {
   server.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    console.log(`✅ Supabase PostgreSQL Connected`);
+    console.log(`✅ MySQL Connected`);
     console.log(`✅ Socket.io enabled`);
     console.log(`✅ Routes loaded successfully`);
   });
@@ -522,7 +521,7 @@ if (process.env.NODE_ENV === "production") {
   const startServer = (p) => {
     server.listen(p, () => {
       console.log(`🚀 Server running on port ${p}`);
-      console.log(`✅ Supabase PostgreSQL Connected`);
+      console.log(`✅ MySQL Connected`);
       console.log(`✅ Socket.io enabled`);
       console.log(`\n── Registered Trip & Booking API Endpoints ──`);
       console.log(`  - POST   /api/trips/create`);

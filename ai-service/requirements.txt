@@ -7,8 +7,9 @@ qdrant-client
 sentence-transformers
 redis
 redis[hiredis]
-supabase
-postgrest
+pymysql
+cryptography
+sqlalchemy
 python-dotenv
 pydantic
 google-generativeai

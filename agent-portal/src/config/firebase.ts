@@ -11,7 +11,7 @@ import { getDatabase } from "firebase/database";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBEHvDMDVGXejyqg_rLROm9CW6va73802Y",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBEHvDMDVGXejyq_gRLOm9CW6va73802Y",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "traveloop-version-2-83bd2.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "traveloop-version-2-83bd2",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "traveloop-version-2-83bd2.firebasestorage.app",

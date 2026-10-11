@@ -157,8 +157,8 @@ router.post("/login", async (req, res) => {
           code: insertError.code,
         });
 
-        // Duplicate constraint fallback (Postgres 23505)
-        if (insertError.code === "23505" || insertError.message?.toLowerCase().includes("unique constraint")) {
+        // Duplicate constraint fallback (MySQL 1062 / ER_DUP_ENTRY / Postgres 23505)
+        if (insertError.code === "23505" || insertError.code === "ER_DUP_ENTRY" || insertError.errno === 1062 || insertError.message?.toLowerCase().includes("unique constraint") || insertError.message?.toLowerCase().includes("duplicate entry")) {
           console.warn(`⚠️ [Agent Login] Duplicate constraint hit. Refetching agent by email '${verifiedEmail}'...`);
           const { data: reFetched } = await supabase
             .from("agents")
@@ -552,7 +552,7 @@ const handleCreateAgentTrip = async (req, res) => {
     const price = Number(req.body.pricePerPerson ?? req.body.price_per_person ?? req.body.price ?? 0);
     const slots = Number(req.body.totalSlots ?? req.body.total_slots ?? req.body.totalSeats ?? req.body.total_seats ?? 20);
 
-    // Build sanitised payload strictly matching public.agent_trips PostgreSQL schema
+    // Build sanitised payload strictly matching agent_trips MySQL schema
     const tripPayload = {
       agent_id: agentId,
       title: req.body.title || req.body.name || "Untitled Package",

@@ -419,7 +419,7 @@ export const googleAuth = async (req, res) => {
       }
       user = byEmail;
 
-      // 2. If not found by email, search by google_id
+      // 2. If not found by email, search by google_id or firebase_uid
       if (!user && sub) {
         const { data: byGoogleId, error: googleErr } = await supabase
           .from("users")
@@ -428,17 +428,21 @@ export const googleAuth = async (req, res) => {
           .maybeSingle();
 
         if (googleErr) {
-          console.error("⚠️ [Google Auth] Supabase lookup by google_id error:", {
-            message: googleErr.message,
-            details: googleErr.details,
-            hint: googleErr.hint,
-            code: googleErr.code,
-          });
+          console.error("⚠️ [Google Auth] MySQL lookup by google_id error:", googleErr.message);
         }
         user = byGoogleId;
+
+        if (!user) {
+          const { data: byFbUid } = await supabase
+            .from("users")
+            .select("*")
+            .eq("firebase_uid", sub)
+            .maybeSingle();
+          user = byFbUid;
+        }
       }
     } catch (dbEx) {
-      console.error("⚠️ [Google Auth] Supabase lookup exception:", dbEx.message);
+      console.error("⚠️ [Google Auth] Database lookup exception:", dbEx.message);
     }
 
     if (!user) {
@@ -448,12 +452,13 @@ export const googleAuth = async (req, res) => {
         name: name || "Google User",
         email,
         google_id: sub,
+        firebase_uid: sub,
         avatar: picture || null,
         is_verified: true,
         role: "user",
       };
 
-      console.log("[Google Auth] Attempting Supabase user insert with payload:", insertPayload);
+      console.log("[Google Auth] Attempting user insert with payload:", insertPayload);
 
       let { data: newUser, error: insertError } = await supabase
         .from("users")
@@ -469,8 +474,8 @@ export const googleAuth = async (req, res) => {
           code: insertError.code,
         });
 
-        // Duplicate email fallback / race condition handling (Postgres 23505)
-        if (insertError.code === "23505" || insertError.message?.toLowerCase().includes("unique constraint")) {
+        // Duplicate email fallback / race condition handling (MySQL 1062 / ER_DUP_ENTRY / Postgres 23505)
+        if (insertError.code === "23505" || insertError.code === "ER_DUP_ENTRY" || insertError.errno === 1062 || insertError.message?.toLowerCase().includes("unique constraint") || insertError.message?.toLowerCase().includes("duplicate entry")) {
           console.warn(`⚠️ [Google Auth] Race condition/duplicate constraint hit. Refetching user by email '${email}'...`);
           const { data: reFetched } = await supabase
             .from("users")

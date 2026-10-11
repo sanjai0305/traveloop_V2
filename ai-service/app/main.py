@@ -16,7 +16,7 @@ from app.api import (
     recommendations,
     search,
 )
-from app.core.database import connect_to_supabase, close_supabase_connection
+from app.core.database import connect_to_mysql, close_mysql_connection
 from app.core.gemini import connect_to_gemini
 from app.core.qdrant import close_qdrant_connection, connect_to_qdrant
 from app.core.redis import close_redis_connection, connect_to_redis
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        await connect_to_supabase()
+        await connect_to_mysql()
         await history_service.ensure_indexes()
         await analytics_service.ensure_indexes()
         await profile_service.ensure_indexes()
@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     finally:
         await close_qdrant_connection()
         await close_redis_connection()
-        await close_supabase_connection()
+        await close_mysql_connection()
 
 
 app = FastAPI(

@@ -1,6 +1,6 @@
 import "../config/env.js";
 import bcrypt from "bcryptjs";
-import supabaseAdmin from "../config/supabaseAdmin.js";
+import { db } from "../config/db.js";
 
 async function createAdminScript() {
   console.log("=========================================");
@@ -18,7 +18,7 @@ async function createAdminScript() {
 
   try {
     // Check if email already exists
-    const { data: existingAdmin, error: checkError } = await supabaseAdmin
+    const { data: existingAdmin, error: checkError } = await db
       .from("admins")
       .select("id, email")
       .eq("email", email)
@@ -46,7 +46,7 @@ async function createAdminScript() {
       "super_admin"
     ];
 
-    const { data: newAdmin, error: insertError } = await supabaseAdmin
+    const { data: newAdmin, error: insertError } = await db
       .from("admins")
       .insert([
         {

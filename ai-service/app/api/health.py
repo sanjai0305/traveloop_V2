@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.config import get_settings
-from app.core.database import ping_supabase
+from app.core.database import ping_mysql
 from app.core.gemini import gemini_client
 
 
@@ -13,11 +13,11 @@ async def health_check() -> dict[str, str]:
     settings = get_settings()
 
     try:
-        ping_supabase()
+        await ping_mysql()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Supabase PostgreSQL is not connected",
+            detail="MySQL is not connected",
         ) from exc
 
     try:
@@ -31,6 +31,7 @@ async def health_check() -> dict[str, str]:
     return {
         "status": "healthy",
         "service": settings.app_name,
-        "supabase": "connected",
+        "mysql": "connected",
+        "database": "connected",
         "gemini": "connected",
     }
