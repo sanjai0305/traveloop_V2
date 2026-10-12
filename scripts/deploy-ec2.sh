@@ -11,7 +11,6 @@ BACKEND_DIR="${APP_DIR}/Backend"
 AI_DIR="${APP_DIR}/ai-service"
 EXPECTED_REPO="traveloop_V2"
 BRANCH="main"
-BACKUP_DIR=""
 
 echo "=================================================================="
 echo "Starting Traveloop V2 Production Deployment: $(date -u)"
@@ -36,36 +35,6 @@ run_journalctl() {
         sudo journalctl "$@"
     fi
 }
-
-# Cleanup and safety trap on exit
-cleanup_on_exit() {
-    local exit_code=$?
-    if [ "${exit_code}" -ne 0 ]; then
-        echo "==================================================================" >&2
-        echo "DEPLOYMENT FAILED (Exit Code: ${exit_code})" >&2
-        if [ -n "${BACKUP_DIR}" ] && [ -d "${BACKUP_DIR}" ]; then
-            echo "Preserving pre-deployment environment backup at: ${BACKUP_DIR}" >&2
-            # Restore live environment files if removed or corrupted
-            if [ -f "${BACKUP_DIR}/backend.env" ] && [ ! -s "${BACKEND_DIR}/.env" ]; then
-                cp -p "${BACKUP_DIR}/backend.env" "${BACKEND_DIR}/.env"
-                chmod 600 "${BACKEND_DIR}/.env" 2>/dev/null || true
-                echo "Restored Backend/.env from backup." >&2
-            fi
-            if [ -f "${BACKUP_DIR}/serviceAccountKey.json" ] && [ ! -s "${BACKEND_DIR}/config/serviceAccountKey.json" ]; then
-                cp -p "${BACKUP_DIR}/serviceAccountKey.json" "${BACKEND_DIR}/config/serviceAccountKey.json"
-                chmod 600 "${BACKEND_DIR}/config/serviceAccountKey.json" 2>/dev/null || true
-                echo "Restored Backend/config/serviceAccountKey.json from backup." >&2
-            fi
-            if [ -f "${BACKUP_DIR}/ai.env" ] && [ ! -s "${AI_DIR}/.env" ]; then
-                cp -p "${BACKUP_DIR}/ai.env" "${AI_DIR}/.env"
-                chmod 600 "${AI_DIR}/.env" 2>/dev/null || true
-                echo "Restored ai-service/.env from backup." >&2
-            fi
-        fi
-        echo "==================================================================" >&2
-    fi
-}
-trap cleanup_on_exit EXIT
 
 # 1. Verify target directory
 if [ ! -d "${APP_DIR}" ]; then
@@ -167,25 +136,21 @@ echo " - Backend deps changed: ${BACKEND_DEPS_CHANGED}"
 echo " - AI service changed:   ${AI_CHANGED}"
 echo " - AI deps changed:      ${AI_DEPS_CHANGED}"
 
-# 5. Permission-restricted backup of local production environment and credential files
+# 5. Backup local production environment and credential files
 BACKUP_DIR="/tmp/traveloop_pre_deploy_$(date +%s)"
 mkdir -p "${BACKUP_DIR}"
-chmod 700 "${BACKUP_DIR}"
 
 if [ -f "${BACKEND_DIR}/.env" ]; then
     cp -p "${BACKEND_DIR}/.env" "${BACKUP_DIR}/backend.env"
-    chmod 600 "${BACKUP_DIR}/backend.env"
-    echo "Backed up local Backend/.env to ${BACKUP_DIR} (chmod 600)"
+    echo "Backed up local Backend/.env to ${BACKUP_DIR}"
 fi
 if [ -f "${BACKEND_DIR}/config/serviceAccountKey.json" ]; then
     cp -p "${BACKEND_DIR}/config/serviceAccountKey.json" "${BACKUP_DIR}/serviceAccountKey.json"
-    chmod 600 "${BACKUP_DIR}/serviceAccountKey.json"
-    echo "Backed up local Backend/config/serviceAccountKey.json to ${BACKUP_DIR} (chmod 600)"
+    echo "Backed up local Backend/config/serviceAccountKey.json to ${BACKUP_DIR}"
 fi
 if [ -f "${AI_DIR}/.env" ]; then
     cp -p "${AI_DIR}/.env" "${BACKUP_DIR}/ai.env"
-    chmod 600 "${BACKUP_DIR}/ai.env"
-    echo "Backed up local ai-service/.env to ${BACKUP_DIR} (chmod 600)"
+    echo "Backed up local ai-service/.env to ${BACKUP_DIR}"
 fi
 
 # 6. Perform fast-forward merge (never using hard reset or forced checkout)
@@ -208,10 +173,8 @@ if [ -f "${BACKUP_DIR}/ai.env" ] && [ ! -f "${AI_DIR}/.env" ]; then
     echo "Restored production ai-service/.env from backup."
 fi
 
-# Ensure existing environment files retain strict 600 permissions
-[ -f "${BACKEND_DIR}/.env" ] && chmod 600 "${BACKEND_DIR}/.env" 2>/dev/null || true
-[ -f "${AI_DIR}/.env" ] && chmod 600 "${AI_DIR}/.env" 2>/dev/null || true
-[ -f "${BACKEND_DIR}/config/serviceAccountKey.json" ] && chmod 600 "${BACKEND_DIR}/config/serviceAccountKey.json" 2>/dev/null || true
+# Remove temporary backup files
+rm -rf "${BACKUP_DIR}"
 
 # Ensure repository files are owned by ubuntu user if script executed as root
 if [ "$(id -u)" -eq 0 ]; then
@@ -316,18 +279,12 @@ if [ "${AI_CHANGED}" = "true" ]; then
 
     if [ "${AI_HEALTHY}" != "true" ]; then
         echo "ERROR: AI service health check failed after 90s timeout!" >&2
-        echo "=== AI Service Status ===" >&2
+        echo "=== Service Status ===" >&2
         run_systemctl status traveloop-ai.service --no-pager >&2 || true
         echo "=== Recent AI Logs ===" >&2
         run_journalctl -u traveloop-ai.service -n 50 --no-pager >&2 || true
         exit 1
     fi
-fi
-
-# 13. Clean up temporary backup only after successful and verified deployment
-if [ -n "${BACKUP_DIR}" ] && [ -d "${BACKUP_DIR}" ]; then
-    rm -rf "${BACKUP_DIR}"
-    echo "Cleaned up pre-deployment temporary backup after successful deployment."
 fi
 
 DEPLOYED_SHA=$(git rev-parse HEAD)
