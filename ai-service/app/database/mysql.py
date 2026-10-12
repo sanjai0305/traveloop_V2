@@ -1,4 +1,6 @@
 import logging
+import ssl
+import os
 import json
 from typing import Any, List, Optional
 from sqlalchemy import create_engine, text
@@ -25,6 +27,16 @@ def init_mysql():
 
     connection_url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
 
+    connect_args = {}
+    if settings.db_ssl:
+        ca_path = os.getenv("DB_SSL_CA_PATH", "/home/ubuntu/global-bundle.pem")
+        if not os.path.isfile(ca_path):
+            raise FileNotFoundError(f"RDS CA certificate not found: {ca_path}")
+        ssl_context = ssl.create_default_context(cafile=ca_path)
+        ssl_context.check_hostname = True
+        ssl_context.verify_mode = ssl.CERT_REQUIRED
+        connect_args["ssl"] = ssl_context
+
     logger.info(f"[MySQL Init] Connecting to {user}@{host}:{port}/{database}...")
     _engine = create_engine(
         connection_url,
@@ -32,6 +44,7 @@ def init_mysql():
         max_overflow=5,
         pool_recycle=3600,
         pool_pre_ping=True,
+        connect_args=connect_args,
     )
     _SessionFactory = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
     logger.info("✅ MySQL SQLAlchemy Engine Initialized")
