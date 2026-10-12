@@ -106,7 +106,7 @@ jobs:
   deploy-ec2:
     name: Deploy to EC2 via AWS SSM
     needs: ci
-    if: needs.ci.outputs.should_deploy == 'true'
+    if: needs.ci.outputs.should_deploy == 'true' && vars.ENABLE_EC2_DEPLOY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -183,22 +183,21 @@ jobs:
           echo "Fetching latest changes from origin/main..."
           git fetch origin main
 
-          if [ ! -f "scripts/deploy-ec2.sh" ]; then
-            echo "Checking out scripts/deploy-ec2.sh from origin/main..."
-            git checkout origin/main -- scripts/deploy-ec2.sh 2>/dev/null || true
-          fi
-
-          if [ -f "scripts/deploy-ec2.sh" ]; then
-            chmod +x scripts/deploy-ec2.sh
-            export FORCE_DEPLOY="{force_deploy}"
-            export FORCE_RESTART_BACKEND="{force_restart_backend}"
-            export FORCE_RESTART_AI="{force_restart_ai}"
-            export FORCE_DEP_INSTALL="{force_dep_install}"
-            ./scripts/deploy-ec2.sh
+          DEPLOY_SCRIPT="$(mktemp /tmp/traveloop-deploy-ec2.XXXXXX)"
+          if git cat-file -e "origin/main:scripts/deploy-ec2.sh" 2>/dev/null; then
+            echo "Loading deployment script into temporary file..."
+            git show "origin/main:scripts/deploy-ec2.sh" > "$DEPLOY_SCRIPT"
           else
-            echo "ERROR: scripts/deploy-ec2.sh could not be located after fetch!" >&2
+            echo "ERROR: scripts/deploy-ec2.sh is missing from origin/main!" >&2
             exit 1
           fi
+
+          chmod 700 "$DEPLOY_SCRIPT"
+          export FORCE_DEPLOY="{force_deploy}"
+          export FORCE_RESTART_BACKEND="{force_restart_backend}"
+          export FORCE_RESTART_AI="{force_restart_ai}"
+          export FORCE_DEP_INSTALL="{force_dep_install}"
+          "$DEPLOY_SCRIPT"
           """
 
           params = {"commands": [command]}

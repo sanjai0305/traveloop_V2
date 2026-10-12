@@ -16,7 +16,7 @@ const firebaseConfig = {
   measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-RW489M96SW",
 };
 
-console.log("[Firebase Config] Initializing with project ID:", firebaseConfig.projectId, "API Key:", firebaseConfig.apiKey);
+console.log("[Firebase Config] Initializing with project ID:", firebaseConfig.projectId);
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);

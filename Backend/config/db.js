@@ -29,8 +29,14 @@ class MySQLQueryBuilder {
   }
 
   select(columns = "*") {
-    this.operation = "SELECT";
     this.selectColumns = columns;
+
+    // Preserve write operations in Supabase-style mutation chains.
+    // For example, insert(...).select().single() must execute INSERT.
+    if (!["INSERT", "UPDATE", "DELETE"].includes(this.operation)) {
+      this.operation = "SELECT";
+    }
+
     return this;
   }
 

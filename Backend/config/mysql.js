@@ -7,6 +7,7 @@
  */
 
 import "./env.js";
+import fs from "node:fs";
 import mysql from "mysql2/promise";
 
 const dbHost = process.env.DB_HOST || "localhost";
@@ -14,7 +15,15 @@ const dbPort = parseInt(process.env.DB_PORT || "3306", 10);
 const dbName = process.env.DB_NAME || "traveloop";
 const dbUser = process.env.DB_USER || "traveloop_app";
 const dbPassword = process.env.DB_PASSWORD || "";
-const dbSsl = process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined;
+const dbSsl = process.env.DB_SSL === "true"
+  ? {
+      ca: fs.readFileSync(
+        process.env.DB_SSL_CA_PATH || "/home/ubuntu/global-bundle.pem",
+        "utf8",
+      ),
+      rejectUnauthorized: true,
+    }
+  : undefined;
 
 let pool = null;
 
