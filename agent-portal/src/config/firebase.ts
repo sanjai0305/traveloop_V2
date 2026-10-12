@@ -6,7 +6,6 @@ import {
   getFirestore,
 } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider, EmailAuthProvider } from "firebase/auth";
-import { getStorage } from "firebase/storage";
 import { getDatabase } from "firebase/database";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -14,7 +13,6 @@ const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBEHvDMDVGXejyq_gRLOm9CW6va73802Y",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "traveloop-version-2-83bd2.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "traveloop-version-2-83bd2",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "traveloop-version-2-83bd2.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "740933888609",
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:740933888609:web:4cfdd9521d5af064205820",
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-RW489M96SW",
@@ -48,9 +46,6 @@ try {
 }
 const db = firestore;
 
-// Initialize Storage
-const storage = getStorage(app);
-
 // Initialize Realtime Database
 let rtdb;
 try {
@@ -76,7 +71,6 @@ export {
   auth,
   firestore,
   db,
-  storage,
   rtdb,
   analytics,
   GoogleAuthProvider,

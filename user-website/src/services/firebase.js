@@ -4,7 +4,6 @@ export {
   auth,
   firestore,
   db,
-  storage,
   rtdb,
   analytics,
   GoogleAuthProvider,

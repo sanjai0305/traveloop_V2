@@ -11,7 +11,6 @@ if (!admin.apps.length) {
     FIREBASE_CLIENT_EMAIL: Boolean(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_CLIENT_EMAIL.trim().length > 0),
     FIREBASE_PRIVATE_KEY: Boolean(process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_PRIVATE_KEY.trim().length > 0),
     FIREBASE_SERVICE_ACCOUNT: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_SERVICE_ACCOUNT.trim().length > 0),
-    FIREBASE_STORAGE_BUCKET: Boolean(process.env.FIREBASE_STORAGE_BUCKET && process.env.FIREBASE_STORAGE_BUCKET.trim().length > 0),
   });
 
   let serviceAccount;
@@ -92,8 +91,6 @@ if (!admin.apps.length) {
   try {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      ...(process.env.FIREBASE_DATABASE_URL && { databaseURL: process.env.FIREBASE_DATABASE_URL }),
-      ...(process.env.FIREBASE_STORAGE_BUCKET && { storageBucket: process.env.FIREBASE_STORAGE_BUCKET }),
     });
     console.log("✅ Firebase Admin Initialized Successfully");
   } catch (initErr) {

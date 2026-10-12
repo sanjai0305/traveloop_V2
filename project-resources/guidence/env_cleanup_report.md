@@ -14,10 +14,7 @@ This report summarizes the environment variables cleanup and verification for pr
 ## 2. Added Keys (missing keys added with defaults/empty values)
 - `FIREBASE_API_KEY` (default: `empty`)
 - `FIREBASE_AUTH_DOMAIN` (default: `empty`)
-- `FIREBASE_STORAGE_BUCKET` (default: `empty`)
-- `FIREBASE_MESSAGING_SENDER_ID` (default: `empty`)
 - `FIREBASE_APP_ID` (default: `empty`)
-- `FIREBASE_DATABASE_URL` (default: `empty`)
 - `GOOGLE_MAPS_API_KEY` (default: `empty`)
 - `GOOGLE_PLACES_API_KEY` (default: `empty`)
 - `GEMINI_API_KEY` (default: `empty`)
@@ -38,15 +35,14 @@ This report summarizes the environment variables cleanup and verification for pr
 - `SUPPORT_EMAIL` (default: `empty`)
 
 ## 3. Removed Keys (obsolete/deprecated/platform-specific)
-None detected.
+- `FIREBASE_DATABASE_URL` (unused in Backend; Realtime DB is only used client-side for presence/typing via auto-discovery)
+- `FIREBASE_STORAGE_BUCKET` / `VITE_FIREBASE_STORAGE_BUCKET` (unused; AWS S3 is the permanent object storage provider)
 
 ## 4. Missing Keys Detected
 - `FIREBASE_API_KEY`
 - `FIREBASE_AUTH_DOMAIN`
-- `FIREBASE_STORAGE_BUCKET`
 - `FIREBASE_MESSAGING_SENDER_ID`
 - `FIREBASE_APP_ID`
-- `FIREBASE_DATABASE_URL`
 - `GOOGLE_MAPS_API_KEY`
 - `GOOGLE_PLACES_API_KEY`
 - `GEMINI_API_KEY`
