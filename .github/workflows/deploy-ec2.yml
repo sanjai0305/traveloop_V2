@@ -1,0 +1,268 @@
+name: Production CI/CD — EC2 Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Force EC2 deployment even if no backend/AI changes detected"
+        type: boolean
+        default: false
+      force_restart_backend:
+        description: "Force restart Backend systemd service"
+        type: boolean
+        default: false
+      force_restart_ai:
+        description: "Force restart AI systemd service"
+        type: boolean
+        default: false
+      force_dep_install:
+        description: "Force dependency reinstallation on EC2"
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-ec2-deployment
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ─── CI CHECKS ─────────────────────────────────────────────────────────────
+  ci:
+    name: Run CI Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      ai: ${{ steps.filter.outputs.ai }}
+      deploy_scripts: ${{ steps.filter.outputs.deploy_scripts }}
+      should_deploy: ${{ steps.filter.outputs.backend == 'true' || steps.filter.outputs.ai == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch' || inputs.force_deploy == true }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Detect Changed Paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'Backend/**'
+            ai:
+              - 'ai-service/**'
+            deploy_scripts:
+              - 'scripts/**'
+              - '.github/workflows/deploy-ec2.yml'
+
+      # Node.js Backend CI Checks
+      - name: Setup Node.js 22
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install Backend Dependencies
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: Backend
+        run: npm ci --ignore-scripts
+
+      - name: Validate Backend JavaScript Syntax
+        if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: Backend
+        run: |
+          echo "Running syntax validation on Backend source files..."
+          node --check server.js
+          git ls-files "*.js" | while IFS= read -r file; do
+            node --check "$file"
+          done
+          echo "Backend syntax validation passed successfully!"
+
+      # Python AI Service CI Checks
+      - name: Setup Python 3.11
+        if: steps.filter.outputs.ai == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Validate AI Service Python Syntax
+        if: steps.filter.outputs.ai == 'true' || steps.filter.outputs.deploy_scripts == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: ai-service
+        run: |
+          echo "Running syntax validation on AI service Python files..."
+          git ls-files "*.py" | while IFS= read -r pyfile; do
+            python -m py_compile "$pyfile"
+          done
+          echo "AI service Python syntax validation passed successfully!"
+
+  # ─── PRODUCTION EC2 DEPLOYMENT ──────────────────────────────────────────────
+  deploy-ec2:
+    name: Deploy to EC2 via AWS SSM
+    needs: ci
+    if: needs.ci.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate AWS & Deployment Configuration Variables
+        run: |
+          echo "Checking required GitHub repository variables..."
+          MISSING_VARS=()
+
+          if [ -z "${{ vars.AWS_ROLE_ARN }}" ]; then
+            MISSING_VARS+=("AWS_ROLE_ARN")
+          fi
+          if [ -z "${{ vars.AWS_REGION }}" ]; then
+            MISSING_VARS+=("AWS_REGION")
+          fi
+          if [ -z "${{ vars.EC2_INSTANCE_ID }}" ]; then
+            MISSING_VARS+=("EC2_INSTANCE_ID")
+          fi
+
+          if [ ${#MISSING_VARS[@]} -ne 0 ]; then
+            echo "::error::Missing required repository variables: ${MISSING_VARS[*]}"
+            echo "Please set them in GitHub Repository Settings -> Secrets and variables -> Actions -> Variables:"
+            echo "  - AWS_ROLE_ARN: arn:aws:iam::487003833040:role/TraveloopGitHubActionsDeployRole"
+            echo "  - AWS_REGION: ap-south-1"
+            echo "  - EC2_INSTANCE_ID: i-051750329f2359ec6"
+            exit 1
+          fi
+
+          echo "Configuration validation passed: AWS_REGION=${{ vars.AWS_REGION }}, EC2_INSTANCE_ID=${{ vars.EC2_INSTANCE_ID }}"
+
+      - name: Authenticate to AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Dispatch and Monitor SSM Run Command
+        env:
+          EC2_ID: ${{ vars.EC2_INSTANCE_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+          FORCE_DEPLOY: ${{ inputs.force_deploy || 'false' }}
+          FORCE_RESTART_BACKEND: ${{ inputs.force_restart_backend || 'false' }}
+          FORCE_RESTART_AI: ${{ inputs.force_restart_ai || 'false' }}
+          FORCE_DEP_INSTALL: ${{ inputs.force_dep_install || 'false' }}
+        run: |
+          set -euo pipefail
+
+          echo "Preparing deployment command for EC2 Instance: ${EC2_ID} (Commit: ${COMMIT_SHA})"
+
+          # Build SSM command payload that safely bootstraps deploy-ec2.sh if needed
+          python3 - << 'EOF'
+          import json
+          import os
+
+          force_deploy = os.environ.get("FORCE_DEPLOY", "false")
+          force_restart_backend = os.environ.get("FORCE_RESTART_BACKEND", "false")
+          force_restart_ai = os.environ.get("FORCE_RESTART_AI", "false")
+          force_dep_install = os.environ.get("FORCE_DEP_INSTALL", "false")
+
+          command = f"""set -e
+          APP_DIR="/home/ubuntu/traveloop_V2"
+          if [ ! -d "$APP_DIR" ]; then
+            echo "ERROR: Target directory $APP_DIR does not exist on instance!" >&2
+            exit 1
+          fi
+
+          cd "$APP_DIR"
+          git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
+          echo "Fetching latest changes from origin/main..."
+          git fetch origin main
+
+          if [ ! -f "scripts/deploy-ec2.sh" ]; then
+            echo "Checking out scripts/deploy-ec2.sh from origin/main..."
+            git checkout origin/main -- scripts/deploy-ec2.sh 2>/dev/null || true
+          fi
+
+          if [ -f "scripts/deploy-ec2.sh" ]; then
+            chmod +x scripts/deploy-ec2.sh
+            export FORCE_DEPLOY="{force_deploy}"
+            export FORCE_RESTART_BACKEND="{force_restart_backend}"
+            export FORCE_RESTART_AI="{force_restart_ai}"
+            export FORCE_DEP_INSTALL="{force_dep_install}"
+            ./scripts/deploy-ec2.sh
+          else
+            echo "ERROR: scripts/deploy-ec2.sh could not be located after fetch!" >&2
+            exit 1
+          fi
+          """
+
+          params = {"commands": [command]}
+          with open("ssm_parameters.json", "w") as f:
+              json.dump(params, f)
+          EOF
+
+          echo "Sending AWS-RunShellScript SSM command..."
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${EC2_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Traveloop V2 Commit ${COMMIT_SHA}" \
+            --parameters file://ssm_parameters.json \
+            --output text \
+            --query "Command.CommandId")
+
+          echo "SSM Command dispatched successfully! Command ID: ${COMMAND_ID}"
+          echo "Polling execution status..."
+
+          MAX_POLLS=60 # 60 * 5s = 5 minutes
+          POLL_COUNT=0
+
+          while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
+            POLL_COUNT=$((POLL_COUNT + 1))
+            sleep 5
+
+            INVOCATION=$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${EC2_ID}" \
+              --output json 2>/dev/null || true)
+
+            if [ -z "${INVOCATION}" ]; then
+              echo "Waiting for SSM command invocation record (${POLL_COUNT}/${MAX_POLLS})..."
+              continue
+            fi
+
+            STATUS=$(echo "${INVOCATION}" | jq -r '.Status // "Pending"')
+            echo "SSM Status (Check ${POLL_COUNT}/${MAX_POLLS}): ${STATUS}"
+
+            case "${STATUS}" in
+              Success)
+                echo "==================== SSM DEPLOYMENT STDOUT ===================="
+                echo "${INVOCATION}" | jq -r '.StandardOutputContent // ""'
+                echo "================================================================"
+                echo "Deployment completed and verified healthy!"
+                exit 0
+                ;;
+              Failed|TimedOut|Cancelled)
+                echo "::error::SSM deployment failed with status: ${STATUS}"
+                echo "==================== SSM DEPLOYMENT STDERR ===================="
+                echo "${INVOCATION}" | jq -r '.StandardErrorContent // ""'
+                echo "==================== SSM DEPLOYMENT STDOUT ===================="
+                echo "${INVOCATION}" | jq -r '.StandardOutputContent // ""'
+                echo "================================================================"
+                exit 1
+                ;;
+              Pending|InProgress|Delayed)
+                # Keep polling
+                ;;
+              *)
+                echo "Current status: ${STATUS}. Waiting..."
+                ;;
+            esac
+          done
+
+          echo "::error::Deployment timed out after waiting 5 minutes for SSM command ${COMMAND_ID}."
+          exit 1

@@ -2,28 +2,36 @@
 # BACKEND SPECIFIC
 # =========================
 
-
+# ENVIRONMENT FILES
+.env
+.env.*
+!.env.example
 
 # NODE MODULES
+node_modules/
 Backend/node_modules/
-node_modules
 
 # LOGS
+logs/
 Backend/logs/
 Backend/*.log
 
 # TEMP FILES
+tmp/
 Backend/tmp/
 
 # UPLOADS
+uploads/
 Backend/uploads/
 
 # DATABASE FILES
+*.sqlite
+*.db
 Backend/*.sqlite
 Backend/*.db
 
 # Firebase credentials
 serviceAccountKey.json
-*.json
+*serviceAccountKey*.json
 Backend/serviceAccountKey.json
 Backend/config/serviceAccountKey.json
