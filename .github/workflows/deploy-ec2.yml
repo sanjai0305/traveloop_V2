@@ -106,7 +106,7 @@ jobs:
   deploy-ec2:
     name: Deploy to EC2 via AWS SSM
     needs: ci
-    if: needs.ci.outputs.should_deploy == 'true'
+    if: needs.ci.outputs.should_deploy == 'true' && vars.ENABLE_EC2_DEPLOY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
