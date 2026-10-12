@@ -184,9 +184,10 @@ jobs:
           git fetch origin main
 
           DEPLOY_SCRIPT="$(mktemp /tmp/traveloop-deploy-ec2.XXXXXX)"
+          trap 'rm -f "$DEPLOY_SCRIPT"' EXIT
           if git cat-file -e "origin/main:scripts/deploy-ec2.sh" 2>/dev/null; then
             echo "Loading deployment script into temporary file..."
-            git show "origin/main:scripts/deploy-ec2.sh" > "$DEPLOY_SCRIPT"
+            git show "origin/main:scripts/deploy-ec2.sh" | tr -d '\r' > "$DEPLOY_SCRIPT"
           else
             echo "ERROR: scripts/deploy-ec2.sh is missing from origin/main!" >&2
             exit 1
