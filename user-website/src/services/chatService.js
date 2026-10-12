@@ -20,6 +20,7 @@ import {
   remove as rRemove 
 } from "firebase/database";
 import { db, rtdb } from "./firebase";
+import { getApiUrl } from "../utils/api";
 
 // Helper to convert dataURL/base64 to Blob
 function dataURLtoBlob(dataurl) {
@@ -152,10 +153,9 @@ const uploadToS3Storage = async (blob, fileName) => {
   formData.append("file", file);
   formData.append("folder", "chat");
 
-  const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
   const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
 
-  const response = await fetch(`${host}/api/upload`, {
+  const response = await fetch(getApiUrl("upload"), {
     method: "POST",
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

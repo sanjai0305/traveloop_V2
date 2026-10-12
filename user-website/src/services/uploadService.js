@@ -1,3 +1,5 @@
+import { getApiUrl } from "../utils/api";
+
 /**
  * Compress an image file using browser canvas
  * @param {File} file - Original image file
@@ -72,9 +74,9 @@ export const uploadFile = async (file, folder = "general", onProgress, retries =
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
+      const uploadUrl = getApiUrl("upload");
 
-      xhr.open("POST", `${host}/api/upload`);
+      xhr.open("POST", uploadUrl);
       if (token) {
         xhr.setRequestHeader("Authorization", `Bearer ${token}`);
       }
@@ -138,11 +140,8 @@ export const uploadFile = async (file, folder = "general", onProgress, retries =
  * @param {function} onProgress - Progress callback
  */
 export const uploadDirectToS3 = async (file, folder = "general", onProgress) => {
-  const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
-  const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-
   // 1. Request presigned upload URL
-  const presignRes = await fetch(`${host}/api/upload/presign`, {
+  const presignRes = await fetch(getApiUrl("upload/presign"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -187,7 +186,7 @@ export const uploadDirectToS3 = async (file, folder = "general", onProgress) => 
   });
 
   // 3. Confirm upload with backend
-  const confirmRes = await fetch(`${host}/api/upload/confirm`, {
+  const confirmRes = await fetch(getApiUrl("upload/confirm"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

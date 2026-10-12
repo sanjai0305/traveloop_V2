@@ -5,6 +5,7 @@ import { PaymentStatus } from "./PaymentStatusManager";
 import QRPayment from "./QRPayment";
 import UPIPayment from "./UPIPayment";
 import PaymentRetry from "./PaymentRetry";
+import { getApiUrl } from "../../utils/api";
 
 
 const isValidObjectId = (id) => {
@@ -73,10 +74,9 @@ export const PaymentModal = ({
     setStatus(PaymentStatus.OPENING_GATEWAY);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
       // 1. Create order
-      const orderRes = await fetch(`${host}/api/payment/create-order`, {
+      const orderRes = await fetch(getApiUrl("payment/create-order"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -127,7 +127,7 @@ export const PaymentModal = ({
           });
           setStatus(PaymentStatus.VERIFICATION_PENDING);
           try {
-            const verifyRes = await fetch(`${host}/api/payment/verify`, {
+            const verifyRes = await fetch(getApiUrl("payment/verify"), {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -185,9 +185,8 @@ export const PaymentModal = ({
     setStatus(PaymentStatus.OPENING_GATEWAY);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-      const response = await fetch(`${host}/api/payment/generate-qr`, {
+      const response = await fetch(getApiUrl("payment/generate-qr"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -219,9 +218,8 @@ export const PaymentModal = ({
     }
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
       
-      const response = await fetch(`${host}/api/payment/confirm-manual`, {
+      const response = await fetch(getApiUrl("payment/confirm-manual"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -250,11 +248,10 @@ export const PaymentModal = ({
   // Start polling checkout status every 5 seconds
   const startPolling = () => {
     const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-    const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
     const id = setInterval(async () => {
       try {
-        const res = await fetch(`${host}/api/payment/status/${bookingId}`, {
+        const res = await fetch(getApiUrl(`payment/status/${bookingId}`), {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -283,9 +280,8 @@ export const PaymentModal = ({
     setStatus(PaymentStatus.VERIFICATION_PENDING);
     try {
       const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
-      const host = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-      const res = await fetch(`${host}/api/payment/confirm-manual`, {
+      const res = await fetch(getApiUrl("payment/confirm-manual"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

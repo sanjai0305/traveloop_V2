@@ -15,10 +15,32 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
-// Request Interceptor: Attach token
+// Request Interceptor: Attach token and normalize URL to prevent duplicate /api
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    // 1. Normalize config.url so it never doubles /api against baseURL
+    if (config.url) {
+      let urlStr = config.url.trim();
+
+      // If it contains duplicate /api/api, collapse it
+      if (urlStr.includes("/api/api/")) {
+        urlStr = urlStr.replace(/\/api\/+api(\/|$)/g, "/api$1");
+      }
+
+      // If it starts with /api/ or api/, strip it because baseURL already includes /api
+      if (urlStr === "/api" || urlStr === "api") {
+        urlStr = "/";
+      } else if (urlStr.startsWith("/api/")) {
+        urlStr = "/" + urlStr.slice(5).replace(/^\/+/, "");
+      } else if (urlStr.startsWith("api/")) {
+        urlStr = "/" + urlStr.slice(4).replace(/^\/+/, "");
+      }
+
+      config.url = urlStr;
+    }
+
+    // 2. Attach Authorization token
+    const token = localStorage.getItem("token") || localStorage.getItem("agentToken");
     if (token) {
       config.headers["Authorization"] = `Bearer ${token}`;
     }
